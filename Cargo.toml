@@ -1,35 +1,8 @@
-[package]
-name = "poost"
-version = "0.1.0"
-edition = "2024"
+[workspace]
 
-[dependencies]
-axum = { version = "0.7", features = ["macros"] }
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-anyhow = "1"
-uuid = { version = "1.7", features = ["v4", "serde"] }
-sysinfo = "0.30"
-hex = "0.4"
-tower-http = { version = "0.5", features = ["trace", "limit"] }
-wgpu = { version = "25" }
-once_cell = "1.21.3"
-base64 = "0.21"
-indexmap = { version = "2.9.0", features = ["serde"] }
 
-zkvm-interface = { git = "https://github.com/eth-applied-research-group/ere", package = "zkvm-interface" }
-ere-sp1 = { git = "https://github.com/eth-applied-research-group/ere", package = "ere-sp1" }
-rust-embed = "8"
-reth-stateless = { git = "https://github.com/kevaundray/reth", rev = "2da36a83250abbe9ebad72a6146b236a8f8b3bb6" }
 
-[dev-dependencies]
-rand = "0.8"
-http-body-util = "0.1"
-tempfile = "*"
 
-[build-dependencies]
-ere_sp1 = { git = "https://github.com/eth-applied-research-group/ere", package = "ere-sp1" }
-zkvm_interface = { git = "https://github.com/eth-applied-research-group/ere", package = "zkvm-interface" }
+[workspace.dependencies]
+
+
