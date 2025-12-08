@@ -1,5 +1,5 @@
 [workspace]
-members = ["bins/poost-cli", "bins/client-cli", "crates/poost-client", "crates/poost-core", "crates/poost-server"]
+members = ["bins/poost-cli", "bins/client-cli", "crates/poost-client", "crates/poost-core", "crates/poost-server", "guest-programs/guest-lib"]
 
 
 
@@ -9,13 +9,76 @@ ere-zkvm-interface = { git = "https://github.com/eth-applied-research-group/ere"
 ere-platform-trait = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c" }
 ere-dockerized = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", package = "ere-dockerized" }
 ere-io = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", package = "ere-io" }
+ere-platform-airbender = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", default-features = false }
+ere-platform-openvm = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", default-features = false }
+ere-platform-pico = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", default-features = false }
+ere-platform-risc0 = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", default-features = false }
+ere-platform-sp1 = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", default-features = false }
+ere-platform-zisk = { git = "https://github.com/eth-applied-research-group/ere", rev = "6266b242edad2d315b753155a6538ea900be2b9c", default-features = false }
 
-#serde
+# serde
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 #tokio
 tokio = { version = "1.48.0", features = ["full"] }
 
-#in-house-crates
+
+# openvm
+openvm = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.1" }
+openvm-ecc-guest = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.1", default-features = false }
+openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.1", default-features = false }
+openvm-algebra-guest = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.1", default-features = false }
+openvm-keccak256 = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.1", default-features = false }
+openvm-revm-crypto = { git = "https://github.com/axiom-crypto/openvm-reth-benchmark.git", branch = "openvm-v1.4.1-reth-1.8.3", default-features = false }
+
+# reth
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+reth-errors = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+reth-trie-common = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241", default-features = false }
+
+# alloy
+alloy-primitives = { version = "1.4.1", default-features = false }
+alloy-consensus = { version = "1.1.2", default-features = false }
+alloy-eips = { version = "1.1.2", default-features = false }
+alloy-hardforks = { version = "0.4.5", default-features = false }
+alloy-chains = { version = "0.2.5", default-features = false }
+alloy-rlp = { version = "0.3.10", default-features = false }
+alloy-trie = { version = "0.9.1", default-features = false }
+
+# revm
+revm = { version = "33.1.0", default-features = false }
+revm-bytecode = { version = "7.1.1", default-features = false }
+
+# ethrex
+ethrex-guest-program = { git = "https://github.com/lambdaclass/ethrex.git", rev = "c68e76d6b569c60a667a1240a91e637bf2ea0d0b", package = "guest_program" }
+ethrex-common = { git = "https://github.com/lambdaclass/ethrex.git", rev = "c68e76d6b569c60a667a1240a91e637bf2ea0d0b", default-features = false }
+
+# misc
+bincode = "1.3"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+sha2 = { version = "0.10.9", default-features = false }
+serde_with = { version = "3", default-features = false }
+thiserror = { version = "2.0.0", default-features = false }
+anyhow = { version = "1.0", default-features = false }
+once_cell = { version = "1.21", default-features = false }
+rkyv = "0.8.10"
+
+ethereum_ssz_derive = "0.9"
+ethereum_ssz = "0.9"
+
+k256 = { version = "0.13", default-features = false, features = [
+    "ecdsa",
+    "serde",
+    "pem",
+] }
+sparsestate = { git = "https://github.com/eth-act/zkvm-ethereum-mpt.git", tag = "v0.4.0" }
+
+
+# in-house-crates
 poost-core = { path = "./crates/poost-core" }
