@@ -4,10 +4,112 @@
 set -e
 
 # Configuration
-SERVER_URL="http://localhost:3000"
-PROGRAM_ID="sp1"  # Using the pre-compiled SP1 program
+ZKVM="${ZKVM:-sp1}"  # Default to sp1, can be overridden by environment variable
+PORT=3001
+SERVER_URL="http://localhost:$PORT"
+PROGRAM_ID="basic-$ZKVM"
+INPUT_FILE="test-fixture/basic/input/valid"  # Binary input file
+FIXTURE_URL="https://raw.githubusercontent.com/han0110/zkboost/test-fixtures/basic.tar.gz"
+FIXTURE_ARCHIVE="basic.tar.gz"
+FIXTURE_DIR="test-fixture/basic"
+CONFIG_FILE="test-fixture/basic/basic.toml"
 PROOF_FILE="proof_response.json"
 VERIFY_FILE="verify_request.json"
+
+# Download and extract test fixtures if not already present
+if [ ! -d "$FIXTURE_DIR" ]; then
+    echo "Test fixture not found, downloading..."
+
+    # Download if archive doesn't exist
+    if [ ! -f "$FIXTURE_ARCHIVE" ]; then
+        echo "Downloading $FIXTURE_URL..."
+        curl -L -o "$FIXTURE_ARCHIVE" "$FIXTURE_URL"
+        echo "Download complete"
+    else
+        echo "Archive already exists, skipping download"
+    fi
+
+    # Extract archive
+    echo "Extracting $FIXTURE_ARCHIVE..."
+    tar -xzf "$FIXTURE_ARCHIVE"
+    echo "Test fixture extracted to $FIXTURE_DIR"
+else
+    echo "Test fixture already exists at $FIXTURE_DIR"
+fi
+
+# Build the server
+echo "========================================"
+echo "Building zkboost server..."
+cargo build --release
+echo "Build complete"
+
+# Configure zkVM in config file
+echo "========================================"
+echo "Configuring zkVM: $ZKVM"
+if [ -f "$CONFIG_FILE" ]; then
+    # Replace zkVM kind and program paths
+    sed -i "s/kind = \"[^\"]*\"/kind = \"$ZKVM\"/" "$CONFIG_FILE"
+    sed -i "s|program-id = \"basic-[^\"]*\"|program-id = \"basic-$ZKVM\"|" "$CONFIG_FILE"
+    sed -i "s|program-path = \"./test-fixture/basic/elf/[^\"]*\"|program-path = \"./test-fixture/basic/elf/$ZKVM\"|" "$CONFIG_FILE"
+
+    echo "Config updated for $ZKVM"
+else
+    echo "ERROR: Config file not found at $CONFIG_FILE"
+    exit 1
+fi
+
+# Start the server in background
+echo "========================================"
+echo "Starting zkboost server..."
+RUST_LOG=info ./target/release/zkboost --config "$CONFIG_FILE" --port $PORT > zkboost.log 2>&1 &
+SERVER_PID=$!
+echo "Server started with PID: $SERVER_PID"
+
+# Wait for server to be ready (port listening)
+echo "Waiting for server to start on port $PORT..."
+TIMEOUT=300
+ELAPSED=0
+until nc -z localhost $PORT 2>/dev/null; do
+    if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo "ERROR: Server failed to start within ${TIMEOUT}s"
+        kill $SERVER_PID 2>/dev/null || true
+        exit 1
+    fi
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+echo "Server is ready"
+
+# Cleanup function to stop server on exit
+cleanup() {
+    echo ""
+    echo "Stopping server (PID: $SERVER_PID)..."
+
+    # Send SIGTERM for graceful shutdown
+    kill $SERVER_PID 2>/dev/null || true
+
+    # Wait for server to exit gracefully (up to 10 seconds)
+    echo "Waiting for server to shutdown gracefully..."
+    for i in {1..10}; do
+        if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "Server stopped gracefully"
+            break
+        fi
+        sleep 1
+    done
+
+    # Force kill if still running
+    if kill -0 $SERVER_PID 2>/dev/null; then
+        echo "Server still running, forcing shutdown..."
+        kill -9 $SERVER_PID 2>/dev/null || true
+    fi
+
+    # Wait a bit more for Docker cleanup
+    echo "Waiting for Docker containers to cleanup..."
+    sleep 2
+}
+trap cleanup EXIT
+
 
 # Helper function to make API calls with error handling
 make_request() {
@@ -39,7 +141,7 @@ make_request() {
 
     # Validate JSON response
     if ! echo "$response" | jq '.' > /dev/null 2>&1; then
-        echo "ERROR: Invalid JSON response from $endpoint"
+        echo "ERROR: Invalid JSON response from $endpoint $response"
         exit 1
     fi
 
@@ -48,16 +150,22 @@ make_request() {
         "prove")
             # Save the full response for later use
             echo "$response" > "$PROOF_FILE"
-            # Get proof size and proving time
-            echo "Proof size: $(jq '.proof | length' "$PROOF_FILE") bytes"
+            # Get proof size (base64 string length to bytes) and proving time
+            proof_base64=$(jq -r '.proof' "$PROOF_FILE")
+            proof_size=$(echo "$proof_base64" | base64 -d | wc -c)
+            echo "Proof size: $proof_size bytes"
             echo "Proving time: $(jq '.proving_time_milliseconds' "$PROOF_FILE")ms"
             echo "Proof generated successfully (full proof saved to $PROOF_FILE)"
-            # Print first 32 bytes of the proof as base64 string
-            echo "First 32 bytes of proof (base64): $(jq -r '.proof | .[0:32]' "$PROOF_FILE" | base64)"
+            # Print first 32 characters of base64 proof
+            echo "First 32 chars of proof (base64): $(echo "$proof_base64" | cut -c1-32)..."
             ;;
         "execute")
             # Display execution metrics
-            echo "Execution time: $(jq '.execution_time_milliseconds' <<< "$response")ms"
+            # Duration is serialized as {secs: N, nanos: N}
+            exec_secs=$(jq '.execution_duration.secs' <<< "$response")
+            exec_nanos=$(jq '.execution_duration.nanos' <<< "$response")
+            exec_ms=$((exec_secs * 1000 + exec_nanos / 1000000))
+            echo "Execution time: ${exec_ms}ms"
             echo "Total cycles: $(jq '.total_num_cycles' <<< "$response")"
             ;;
         "verify")
@@ -77,29 +185,34 @@ make_request() {
     esac
 }
 
+echo "========================================"
 echo "Starting workflow test..."
 echo "========================================"
+
+# Check if input file exists
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "ERROR: Input file not found at $INPUT_FILE"
+    exit 1
+fi
+
+# Encode input file to base64
+INPUT_BASE64=$(base64 -w 0 "$INPUT_FILE")
+echo "Input file encoded (size: $(wc -c < "$INPUT_FILE") bytes)"
 
 # Step 1: Get server info
 make_request "GET" "info" "" "Getting server information"
 
-# Step 2: Execute the program with supplied values
+# Step 2: Execute the program with base64-encoded input
 EXECUTE_DATA="{
     \"program_id\": \"$PROGRAM_ID\",
-    \"input\": {
-        \"value1\": 10,
-        \"value2\": 100
-    }
+    \"input\": \"$INPUT_BASE64\"
 }"
 make_request "POST" "execute" "$EXECUTE_DATA" "Executing program"
 
-# Step 3: Generate proof with supplied values
+# Step 3: Generate proof with base64-encoded input
 PROVE_DATA="{
     \"program_id\": \"$PROGRAM_ID\",
-    \"input\": {
-        \"value1\": 10,
-        \"value2\": 100
-    }
+    \"input\": \"$INPUT_BASE64\"
 }"
 make_request "POST" "prove" "$PROVE_DATA" "Generating proof"
 

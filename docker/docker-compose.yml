@@ -1,11 +1,14 @@
 services:
-  poost:
+  zkboost:
     build:
       context: ..  # Context is the project root (one level up)
       dockerfile: docker/Dockerfile # Path to Dockerfile _from_ the context
     ports:
       - "3000:3000"
+    volumes:
+      # Needed for ere-dockerized to create container
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - RUST_LOG=info,poost=debug # Example: Set log level for the app
+      - RUST_LOG=info,zkboost=debug # Example: Set log level for the app
     # healthcheck:
     #   test: ["CMD", "curl", "-f", "http://localhost:3000/info"]

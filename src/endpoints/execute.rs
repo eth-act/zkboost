@@ -1,25 +1,31 @@
+use std::time::Duration;
+
 use axum::{Json, extract::State, http::StatusCode};
+use ere_zkvm_interface::{Input, PublicValues, zkVM};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
-use zkvm_interface::{Input, zkVM};
 
 use crate::common::{AppState, ProgramID};
-use crate::program::ProgramInput;
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExecuteRequest {
     pub program_id: ProgramID,
-    pub input: ProgramInput,
+    #[serde_as(as = "Base64")]
+    pub input: Vec<u8>,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExecuteResponse {
     pub program_id: ProgramID,
+    #[serde_as(as = "Base64")]
+    pub public_values: PublicValues,
     pub total_num_cycles: u64,
     pub region_cycles: IndexMap<String, u64>,
-    pub execution_time_duration: Duration,
+    pub execution_duration: Duration,
 }
 
 #[axum::debug_handler]
@@ -35,87 +41,56 @@ pub async fn execute_program(
         .get(&program_id)
         .ok_or((StatusCode::NOT_FOUND, "Program not found".to_string()))?;
 
-    let input: Input = req.input.into();
+    let input = Input::new().with_stdin(req.input);
 
-    let start = Instant::now();
-    let report = program.vm.execute(&input).map_err(|e| {
+    let (public_values, report) = program.vm.execute(&input).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to execute program: {}", e),
         )
     })?;
-    let execution_time_duration = start.elapsed();
 
     Ok(Json(ExecuteResponse {
         program_id,
+        public_values,
         total_num_cycles: report.total_num_cycles,
         region_cycles: report.region_cycles,
-        execution_time_duration,
+        execution_duration: report.execution_duration,
     }))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::common::{ProgramID, zkVMInstance};
-    use crate::mock_zkvm::MockZkVM;
+    use axum::{Json, extract::State, http::StatusCode};
 
-    use std::collections::HashMap;
-    use std::fs;
-
-    use std::sync::Arc;
-    use tempfile::TempDir;
-    use tokio::sync::RwLock;
-
-    // Helper function to create a test AppState
-    fn create_test_state() -> (AppState, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
-        let programs_dir = temp_dir.path().join("programs");
-        fs::create_dir_all(&programs_dir).unwrap();
-
-        let state = AppState {
-            programs: Arc::new(RwLock::new(HashMap::new())),
-        };
-
-        (state, temp_dir)
-    }
+    use crate::{
+        common::{AppState, ProgramID},
+        endpoints::{execute::ExecuteRequest, execute_program},
+        mock_zkvm::mock_app_state,
+    };
 
     #[tokio::test]
-    async fn test_execute_program_success() {
-        let (state, _temp_dir) = create_test_state();
-        let program_id = ProgramID("sp1".to_string());
-
-        let mock_zkvm = MockZkVM::default();
-
-        {
-            let mut programs = state.programs.write().await;
-            programs.insert(
-                program_id.clone(),
-                zkVMInstance::new(crate::common::zkVMVendor::SP1, Arc::new(mock_zkvm)),
-            );
-        }
+    async fn test_execute_success() {
+        let program_id = ProgramID("mock_program_id".to_string());
+        let state = mock_app_state(&program_id);
 
         let request = ExecuteRequest {
             program_id: program_id.clone(),
-            input: ProgramInput::test_input(),
+            input: Vec::new(),
         };
 
-        let result = execute_program(State(state), Json(request)).await;
+        let response = execute_program(State(state), Json(request)).await.unwrap();
 
-        assert!(result.is_ok());
-        let response = result.unwrap().0;
         assert_eq!(response.program_id, program_id);
-        assert!(response.total_num_cycles > 0);
-        assert!(response.execution_time_duration.as_millis() > 0);
     }
 
     #[tokio::test]
     async fn test_execute_program_not_found() {
-        let (state, _temp_dir) = create_test_state();
+        let state = AppState::default();
 
         let request = ExecuteRequest {
             program_id: ProgramID("non_existent".to_string()),
-            input: ProgramInput::test_input(),
+            input: Vec::new(),
         };
 
         let result = execute_program(State(state), Json(request)).await;

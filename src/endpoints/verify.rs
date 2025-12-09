@@ -1,29 +1,25 @@
 use axum::{Json, extract::State, http::StatusCode};
+use ere_zkvm_interface::{Proof, PublicValues};
 use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
-use zkvm_interface::zkVM;
 
 use crate::common::{AppState, ProgramID};
-use crate::{
-    common::{zkVMInstance, zkVMVendor},
-    endpoints::{prove::ProveRequest, prove_program},
-    program::ProgramInput,
-};
 
-use std::collections::HashMap;
-use std::fs;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyRequest {
     pub program_id: ProgramID,
+    #[serde_as(as = "Base64")]
     pub proof: Vec<u8>,
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyResponse {
     pub program_id: ProgramID,
+    #[serde_as(as = "Base64")]
+    pub public_values: PublicValues,
     pub verified: bool,
     // Empty if verification returned true
     pub failure_reason: String,
@@ -43,60 +39,46 @@ pub async fn verify_proof(
         .ok_or((StatusCode::NOT_FOUND, "Program not found".to_string()))?;
 
     // Verify the proof
-    let (verified, failure_reason) = match program.vm.verify(&req.proof) {
-        Ok(_) => (true, String::default()),
-        Err(err) => (false, format!("{}", err)),
-    };
+    let (verified, public_values, failure_reason) =
+        match program.vm.verify(&Proof::Compressed(req.proof)) {
+            Ok(public_values) => (true, public_values, String::new()),
+            Err(err) => {
+                let failure_reason = match err.downcast_ref::<ere_dockerized::zkvm::Error>() {
+                    Some(ere_dockerized::zkvm::Error::zkVM(err)) => err.to_string(),
+                    // Connection or RPC errors
+                    Some(err) => return Err((StatusCode::INTERNAL_SERVER_ERROR, err.to_string())),
+                    None => err.to_string(),
+                };
+                (false, Vec::new(), failure_reason)
+            }
+        };
 
     Ok(Json(VerifyResponse {
         program_id: req.program_id,
         verified,
+        public_values,
         failure_reason,
     }))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::mock_zkvm::MockZkVM;
-    use std::collections::HashMap;
-    use std::fs;
-    use std::sync::Arc;
-    use tempfile::TempDir;
-    use tokio::sync::RwLock;
+    use axum::{Json, extract::State, http::StatusCode};
 
-    // Helper function to create a test AppState
-    fn create_test_state() -> (AppState, TempDir) {
-        let temp_dir = TempDir::new().unwrap();
-        let programs_dir = temp_dir.path().join("programs");
-        fs::create_dir_all(&programs_dir).unwrap();
-
-        let state = AppState {
-            programs: Arc::new(RwLock::new(HashMap::new())),
-        };
-
-        (state, temp_dir)
-    }
+    use crate::{
+        common::{AppState, ProgramID},
+        endpoints::{prove::ProveRequest, prove_program, verify::VerifyRequest, verify_proof},
+        mock_zkvm::mock_app_state,
+    };
 
     #[tokio::test]
-    async fn test_verify_proof_success() {
-        let program_id = ProgramID::from(zkVMVendor::SP1);
-        let mock_zkvm = MockZkVM::default();
-
-        let state = AppState {
-            programs: Arc::new(RwLock::new(HashMap::new())),
-        };
-        {
-            let mut programs = state.programs.write().await;
-            programs.insert(
-                program_id.clone(),
-                zkVMInstance::new(zkVMVendor::SP1, Arc::new(mock_zkvm)),
-            );
-        }
+    async fn test_verify_valid_proof() {
+        let program_id = ProgramID("mock_program_id".to_string());
+        let state = mock_app_state(&program_id);
 
         let request = ProveRequest {
             program_id: program_id.clone(),
-            input: ProgramInput::test_input(),
+            input: Vec::new(),
         };
 
         let result = prove_program(State(state.clone()), Json(request))
@@ -118,18 +100,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_verify_proof_invalid_proof() {
-        let (state, _temp_dir) = create_test_state();
-        let program_id = ProgramID::from(zkVMVendor::SP1);
-
-        let mock_zkvm = MockZkVM::default();
-        {
-            let mut programs = state.programs.write().await;
-            programs.insert(
-                program_id.clone(),
-                zkVMInstance::new(zkVMVendor::SP1, Arc::new(mock_zkvm)),
-            );
-        }
+    async fn test_verify_invalid_proof() {
+        let program_id = ProgramID("mock_program_id".to_string());
+        let state = mock_app_state(&program_id);
 
         let request = VerifyRequest {
             program_id: program_id.clone(),
@@ -145,8 +118,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_verify_proof_not_found() {
-        let (state, _temp_dir) = create_test_state();
+    async fn test_verify_program_not_found() {
+        let state = AppState::default();
 
         let request = VerifyRequest {
             program_id: ProgramID("non_existent".to_string()),

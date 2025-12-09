@@ -1,3 +1,6 @@
 target
 notes.md
 .env
+.vscode
+test-fixture
+*.log

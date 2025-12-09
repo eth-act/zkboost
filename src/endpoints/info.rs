@@ -40,15 +40,21 @@ pub struct OsInfo {
 /// Get informatio about the CPU
 /// Note: unfortunately this has been unreliable on ARM macs and AWS machines
 fn get_cpu_info() -> CpuInfo {
-    let mut sys = System::new_all();
-    sys.refresh_cpu();
-    let cpu = sys.global_cpu_info();
+    let sys = System::new_all();
+
+    // Get info from first CPU as representative
+    let (frequency, model, vendor) = sys
+        .cpus()
+        .iter()
+        .max_by(|a, b| a.frequency().cmp(&b.frequency()))
+        .map(|cpu| (cpu.frequency(), cpu.brand(), cpu.vendor_id()))
+        .unwrap_or((0, "Unknown", "Unknown"));
 
     CpuInfo {
-        model: cpu.brand().to_string(),
-        cores: sys.physical_core_count().unwrap_or(0),
-        frequency: cpu.frequency(),
-        vendor: cpu.vendor_id().to_string(),
+        model: model.to_string(),
+        cores: System::physical_core_count().unwrap_or(0),
+        frequency,
+        vendor: vendor.to_string(),
     }
 }
 

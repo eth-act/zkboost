@@ -55,7 +55,7 @@ struct ProveResponse {
     proving_time: Duration,
 }
 
-// SERVER_URL is the url of the poost
+// SERVER_URL is the url of the zkboost
 const SERVER_URL: &str = "http://localhost:3000";
 // PROGRAM_ID is the program identifier.
 // Currently, we have one program per zkvm and use the zkvm
