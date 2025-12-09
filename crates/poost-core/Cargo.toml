@@ -8,3 +8,5 @@ serde.workspace = true
 ere-zkvm-interface.workspace = true
 indexmap.workspace = true
 anyhow.workspace = true
+sysinfo = "0.30"
+wgpu = { version = "25" }
