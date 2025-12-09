@@ -7,3 +7,4 @@ edition = "2024"
 serde.workspace = true
 ere-zkvm-interface.workspace = true
 indexmap.workspace = true
+anyhow.workspace = true

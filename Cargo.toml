@@ -19,6 +19,7 @@ tokio = { version = "1.48.0", features = ["full"] }
 
 # misc
 indexmap = { version = "2.9.0", features = ["serde"] }
+anyhow = { version = "1.0.100" }
 
 #in-house-crates
 poost-core = { path = "./crates/poost-core" }

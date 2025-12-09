@@ -162,6 +162,7 @@ version = "0.1.0"
 name = "poost-core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ere-zkvm-interface",
  "indexmap",
  "serde",
