@@ -1,18 +1,16 @@
-use std::time::Duration;
-use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use crate::{common::ProgramID, program::ProgramInput};
 
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ExecuteRequest {
+pub struct ProveRequest {
     pub program_id: ProgramID,
     pub input: ProgramInput,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ExecuteResponse {
+pub struct ProveResponse {
     pub program_id: ProgramID,
-    pub total_num_cycles: u64,
-    pub region_cycles: IndexMap<String, u64>,
-    pub execution_time_duration: Duration,
+    pub proof: Vec<u8>,
+    pub proving_time_milliseconds: u128,
 }
