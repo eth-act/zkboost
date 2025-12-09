@@ -16,18 +16,18 @@ impl Config {
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
         let string = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read config at {:?}", path))?;
+            .with_context(|| format!("Failed to read config at {path:?}"))?;
 
         match path.extension().and_then(|s| s.to_str()) {
             Some("toml") => Self::from_toml_str(&string),
-            Some(ext) => anyhow::bail!("Unsupported config format: .{}", ext),
+            Some(ext) => anyhow::bail!("Unsupported config format: .{ext}"),
             None => anyhow::bail!("Config file must have an extension (e.g., .toml)"),
         }
     }
 
     /// Parse config from TOML string
     pub fn from_toml_str(s: &str) -> anyhow::Result<Self> {
-        toml::from_str(s).with_context(|| format!("Failed to deserialize TOML config:\n{}", s))
+        toml::from_str(s).with_context(|| format!("Failed to deserialize TOML config:\n{s}"))
     }
 }
 

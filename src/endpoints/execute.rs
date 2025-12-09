@@ -46,7 +46,7 @@ pub async fn execute_program(
     let (public_values, report) = program.vm.execute(&input).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to execute program: {}", e),
+            format!("Failed to execute program: {e}"),
         )
     })?;
 

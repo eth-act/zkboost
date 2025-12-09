@@ -47,7 +47,7 @@ pub async fn prove_program(
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to generate proof: {}", e),
+                    format!("Failed to generate proof: {e}"),
                 )
             })?;
 
