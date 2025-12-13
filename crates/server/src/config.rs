@@ -1,19 +1,26 @@
+//! Server configuration and TOML parsing.
+//!
+//! Defines the configuration structure for loading zkVM programs from TOML files.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use ere_dockerized::zkVMKind;
 use ere_zkvm_interface::ProverResourceType;
 use serde::{Deserialize, Serialize};
+use zkboost_types::ProgramID;
 
+/// Server configuration loaded from a TOML file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Config {
+pub(crate) struct Config {
+    /// List of zkVM programs to load on server startup.
     #[serde(default)]
-    pub zkvm: Vec<zkVM>,
+    pub(crate) zkvm: Vec<zkVMConfig>,
 }
 
 impl Config {
-    /// Load config from file (auto-detects format from extension)
-    pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    /// Load config from file (auto-detects format from extension).
+    pub(crate) fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
         let string = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config at {path:?}"))?;
@@ -25,20 +32,25 @@ impl Config {
         }
     }
 
-    /// Parse config from TOML string
-    pub fn from_toml_str(s: &str) -> anyhow::Result<Self> {
+    /// Parse config from TOML string.
+    pub(crate) fn from_toml_str(s: &str) -> anyhow::Result<Self> {
         toml::from_str(s).with_context(|| format!("Failed to deserialize TOML config:\n{s}"))
     }
 }
 
+/// Configuration for a single zkVM program.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[allow(non_camel_case_types)]
-pub struct zkVM {
-    pub kind: zkVMKind,
-    pub resource: ProverResourceType,
-    pub program_id: String,
-    pub program_path: PathBuf,
+pub(crate) struct zkVMConfig {
+    /// The kind of zkVM backend to use.
+    pub(crate) kind: zkVMKind,
+    /// The compute resource type for proving (CPU, GPU, or network).
+    pub(crate) resource: ProverResourceType,
+    /// Unique identifier for this program.
+    pub(crate) program_id: ProgramID,
+    /// Path to the compiled program binary.
+    pub(crate) program_path: PathBuf,
 }
 
 #[cfg(test)]
@@ -48,7 +60,7 @@ mod test {
     use ere_dockerized::zkVMKind;
     use ere_zkvm_interface::{NetworkProverConfig, ProverResourceType};
 
-    use crate::config::{self, Config};
+    use crate::config::{Config, zkVMConfig};
 
     #[test]
     fn test_from_toml_str() {
@@ -75,25 +87,25 @@ mod test {
         assert_eq!(
             config.zkvm,
             [
-                config::zkVM {
+                zkVMConfig {
                     kind: zkVMKind::OpenVM,
                     resource: ProverResourceType::Cpu,
-                    program_id: "openvm-test".to_string(),
+                    program_id: "openvm-test".into(),
                     program_path: PathBuf::from("openvm-test-elf"),
                 },
-                config::zkVM {
+                zkVMConfig {
                     kind: zkVMKind::SP1,
                     resource: ProverResourceType::Network(NetworkProverConfig {
                         endpoint: "http://localhost:3000".to_string(),
                         api_key: Some("secret".to_string())
                     }),
-                    program_id: "sp1-test".to_string(),
+                    program_id: "sp1-test".into(),
                     program_path: PathBuf::from("sp1-test-elf"),
                 },
-                config::zkVM {
+                zkVMConfig {
                     kind: zkVMKind::Zisk,
                     resource: ProverResourceType::Gpu,
-                    program_id: "zisk-test".to_string(),
+                    program_id: "zisk-test".into(),
                     program_path: PathBuf::from("zisk-test-elf"),
                 }
             ]

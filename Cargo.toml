@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "crates/api",
     "crates/client",
     "crates/server",
+    "crates/types",
 ]
 resolver = "2"
 
@@ -12,11 +12,28 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unnameable_types = "warn"
+unreachable_pub = "warn"
+unused_crate_dependencies = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.rustdoc]
+all = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+result_large_err = "allow"
+
 [workspace.dependencies]
 anyhow = "1.0"
 axum = "0.8"
 clap = "4.5"
 indexmap = "2.12"
+reqwest = "0.12"
 serde = "1.0"
 serde_with = "3.16"
 sysinfo = "0.37"
@@ -29,3 +46,7 @@ wgpu = "27"
 
 ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "e602c1824e1ce6dcfce58c199978957c3347a49c" }
 ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "e602c1824e1ce6dcfce58c199978957c3347a49c" }
+
+zkboost-client = { path = "crates/client" }
+zkboost-server = { path = "crates/server" }
+zkboost-types = { path = "crates/types" }

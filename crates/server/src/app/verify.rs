@@ -1,33 +1,16 @@
 use axum::{Json, extract::State, http::StatusCode};
-use ere_zkvm_interface::{Proof, PublicValues};
-use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, serde_as};
+use ere_zkvm_interface::Proof;
 use tracing::instrument;
+use zkboost_types::{VerifyRequest, VerifyResponse};
 
-use crate::common::{AppState, ProgramID};
+use crate::app::AppState;
 
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VerifyRequest {
-    pub program_id: ProgramID,
-    #[serde_as(as = "Base64")]
-    pub proof: Vec<u8>,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VerifyResponse {
-    pub program_id: ProgramID,
-    #[serde_as(as = "Base64")]
-    pub public_values: PublicValues,
-    pub verified: bool,
-    // Empty if verification returned true
-    pub failure_reason: String,
-}
-
+/// HTTP handler for the `/verify` endpoint.
+///
+/// Verifies a cryptographic proof without re-executing the program.
 #[axum::debug_handler]
 #[instrument(skip_all)]
-pub async fn verify_proof(
+pub(crate) async fn verify_proof(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Result<Json<VerifyResponse>, (StatusCode, String)> {
@@ -64,16 +47,16 @@ pub async fn verify_proof(
 #[cfg(test)]
 mod tests {
     use axum::{Json, extract::State, http::StatusCode};
+    use zkboost_types::{ProgramID, ProveRequest, VerifyRequest};
 
     use crate::{
-        common::{AppState, ProgramID},
-        endpoints::{prove::ProveRequest, prove_program, verify::VerifyRequest, verify_proof},
-        mock_zkvm::mock_app_state,
+        app::{AppState, prove::prove_program, verify::verify_proof},
+        mock::mock_app_state,
     };
 
     #[tokio::test]
     async fn test_verify_valid_proof() {
-        let program_id = ProgramID("mock_program_id".to_string());
+        let program_id = ProgramID::from("mock_program_id");
         let state = mock_app_state(&program_id);
 
         let request = ProveRequest {
@@ -101,7 +84,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_invalid_proof() {
-        let program_id = ProgramID("mock_program_id".to_string());
+        let program_id = ProgramID::from("mock_program_id");
         let state = mock_app_state(&program_id);
 
         let request = VerifyRequest {
@@ -122,7 +105,7 @@ mod tests {
         let state = AppState::default();
 
         let request = VerifyRequest {
-            program_id: ProgramID("non_existent".to_string()),
+            program_id: ProgramID::from("non_existent"),
             proof: b"example_proof".to_vec(),
         };
 

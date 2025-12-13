@@ -4,4 +4,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
+anyhow.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+zkboost-types.workspace = true

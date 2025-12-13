@@ -1,33 +1,16 @@
 use axum::{Json, extract::State, http::StatusCode};
-use ere_zkvm_interface::{Input, Proof, ProofKind, PublicValues};
-use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, serde_as};
+use ere_zkvm_interface::{Input, Proof, ProofKind};
 use tracing::instrument;
+use zkboost_types::{ProveRequest, ProveResponse};
 
-use crate::common::{AppState, ProgramID};
+use crate::app::AppState;
 
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProveRequest {
-    pub program_id: ProgramID,
-    #[serde_as(as = "Base64")]
-    pub input: Vec<u8>,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProveResponse {
-    pub program_id: ProgramID,
-    #[serde_as(as = "Base64")]
-    pub public_values: PublicValues,
-    #[serde_as(as = "Base64")]
-    pub proof: Vec<u8>,
-    pub proving_time_milliseconds: u128,
-}
-
+/// HTTP handler for the `/prove` endpoint.
+///
+/// Executes a zkVM program and generates a cryptographic proof.
 #[axum::debug_handler]
 #[instrument(skip_all)]
-pub async fn prove_program(
+pub(crate) async fn prove_program(
     State(state): State<AppState>,
     Json(req): Json<ProveRequest>,
 ) -> Result<Json<ProveResponse>, (StatusCode, String)> {
@@ -62,23 +45,23 @@ pub async fn prove_program(
         program_id,
         public_values,
         proof,
-        proving_time_milliseconds: report.proving_time.as_millis(),
+        proving_time_ms: report.proving_time.as_millis(),
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use axum::{Json, extract::State, http::StatusCode};
+    use zkboost_types::{ProgramID, ProveRequest};
 
     use crate::{
-        common::{AppState, ProgramID},
-        endpoints::{prove::ProveRequest, prove_program},
-        mock_zkvm::mock_app_state,
+        app::{AppState, prove::prove_program},
+        mock::mock_app_state,
     };
 
     #[tokio::test]
     async fn test_prove_success() {
-        let program_id = ProgramID("mock_program_id".to_string());
+        let program_id = ProgramID::from("mock_program_id");
         let state = mock_app_state(&program_id);
 
         let request = ProveRequest {
@@ -97,7 +80,7 @@ mod tests {
         let state = AppState::default();
 
         let request = ProveRequest {
-            program_id: ProgramID("non_existent".to_string()),
+            program_id: ProgramID::from("non_existent"),
             input: Vec::new(),
         };
 

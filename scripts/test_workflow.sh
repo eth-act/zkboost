@@ -38,8 +38,13 @@ else
 fi
 
 # Pull image
-echo "Pulling image ere-server-$ZKVM..."
-docker image pull "ghcr.io/eth-act/ere/ere-server-$ZKVM:0.0.15-e602c18"
+IMAGE="ghcr.io/eth-act/ere/ere-server-$ZKVM:0.0.15-e602c18"
+if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+    echo "Image $IMAGE already exists, skipping pull"
+else
+    echo "Image $IMAGE not found, pulling..."
+    docker image pull "$IMAGE"
+fi
 
 # Build the server
 echo "========================================"
@@ -158,18 +163,14 @@ make_request() {
             proof_base64=$(jq -r '.proof' "$PROOF_FILE")
             proof_size=$(echo "$proof_base64" | base64 -d | wc -c)
             echo "Proof size: $proof_size bytes"
-            echo "Proving time: $(jq '.proving_time_milliseconds' "$PROOF_FILE")ms"
+            echo "Proving time: $(jq '.proving_time_ms' "$PROOF_FILE")ms"
             echo "Proof generated successfully (full proof saved to $PROOF_FILE)"
             # Print first 32 characters of base64 proof
             echo "First 32 chars of proof (base64): $(echo "$proof_base64" | cut -c1-32)..."
             ;;
         "execute")
             # Display execution metrics
-            # Duration is serialized as {secs: N, nanos: N}
-            exec_secs=$(jq '.execution_duration.secs' <<< "$response")
-            exec_nanos=$(jq '.execution_duration.nanos' <<< "$response")
-            exec_ms=$((exec_secs * 1000 + exec_nanos / 1000000))
-            echo "Execution time: ${exec_ms}ms"
+            echo "Execution time: $(jq '.execution_time_ms' <<< "$response")ms"
             echo "Total cycles: $(jq '.total_num_cycles' <<< "$response")"
             ;;
         "verify")
