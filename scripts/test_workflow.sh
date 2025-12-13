@@ -37,10 +37,14 @@ else
     echo "Test fixture already exists at $FIXTURE_DIR"
 fi
 
+# Pull image
+echo "Pulling image ere-server-$ZKVM..."
+docker image pull "ghcr.io/eth-act/ere/ere-server-$ZKVM:0.0.15-e602c18"
+
 # Build the server
 echo "========================================"
 echo "Building zkboost server..."
-cargo build --release
+cargo build --release --package zkboost-server
 echo "Build complete"
 
 # Configure zkVM in config file
@@ -61,7 +65,7 @@ fi
 # Start the server in background
 echo "========================================"
 echo "Starting zkboost server..."
-RUST_LOG=info ./target/release/zkboost --config "$CONFIG_FILE" --port $PORT > zkboost.log 2>&1 &
+ERE_IMAGE_REGISTRY=ghcr.io/eth-act/ere RUST_LOG=info ./target/release/zkboost-server --config "$CONFIG_FILE" --port $PORT > zkboost.log 2>&1 &
 SERVER_PID=$!
 echo "Server started with PID: $SERVER_PID"
 

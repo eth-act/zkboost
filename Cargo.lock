@@ -506,32 +506,27 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "ere-build-utils"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=98d988c2ec8347f838daea0e3c1d988552ce039f#98d988c2ec8347f838daea0e3c1d988552ce039f"
+source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
 dependencies = [
  "cargo_metadata",
 ]
 
 [[package]]
-name = "ere-compiler"
+name = "ere-common"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=98d988c2ec8347f838daea0e3c1d988552ce039f#98d988c2ec8347f838daea0e3c1d988552ce039f"
+source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
 dependencies = [
- "anyhow",
- "bincode",
- "clap",
- "ere-zkvm-interface",
+ "ere-build-utils",
  "serde",
- "tracing-subscriber",
 ]
 
 [[package]]
 name = "ere-dockerized"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=98d988c2ec8347f838daea0e3c1d988552ce039f#98d988c2ec8347f838daea0e3c1d988552ce039f"
+source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
 dependencies = [
  "anyhow",
- "ere-build-utils",
- "ere-compiler",
+ "ere-common",
  "ere-server",
  "ere-zkvm-interface",
  "parking_lot",
@@ -545,7 +540,7 @@ dependencies = [
 [[package]]
 name = "ere-server"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=98d988c2ec8347f838daea0e3c1d988552ce039f#98d988c2ec8347f838daea0e3c1d988552ce039f"
+source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
 dependencies = [
  "anyhow",
  "bincode",
@@ -560,7 +555,7 @@ dependencies = [
 [[package]]
 name = "ere-zkvm-interface"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=98d988c2ec8347f838daea0e3c1d988552ce039f#98d988c2ec8347f838daea0e3c1d988552ce039f"
+source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
 dependencies = [
  "anyhow",
  "auto_impl",
@@ -3102,7 +3097,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "zkboost"
+name = "zkboost-api"
+version = "0.1.0"
+
+[[package]]
+name = "zkboost-client"
+version = "0.1.0"
+
+[[package]]
+name = "zkboost-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",

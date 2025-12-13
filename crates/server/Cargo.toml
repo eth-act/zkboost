@@ -1,0 +1,24 @@
+[package]
+name = "zkboost-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum = { workspace = true, features = ["macros"] }
+clap = { workspace = true, features = ["derive"] }
+indexmap = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true, features = ["base64"] }
+sysinfo.workspace = true
+tokio = { workspace = true, features = ["full"] }
+toml.workspace = true
+tower-http = { workspace = true, features = ["trace", "limit"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+wgpu.workspace = true
+
+ere-dockerized.workspace = true
+ere-zkvm-interface.workspace = true
