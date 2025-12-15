@@ -6,13 +6,27 @@ use tracing::instrument;
 use wgpu::{Backends, Instance, InstanceDescriptor};
 use zkboost_types::{CpuInfo, MemoryInfo, OsInfo, ServerInfoResponse};
 
+/// HTTP handler for the `/info` endpoint.
+///
+/// Returns information about the server's hardware and operating system.
+#[instrument]
+pub(crate) async fn get_server_info() -> Json<ServerInfoResponse> {
+    Json(ServerInfoResponse {
+        cpu: get_cpu_info(),
+        memory: get_memory_info(),
+        os: get_os_info(),
+        architecture: std::env::consts::ARCH.into(),
+        gpu: get_gpu_info(),
+    })
+}
+
 /// Get information about the CPU.
 ///
 /// Note: unfortunately this has been unreliable on ARM macs and AWS machines.
 fn get_cpu_info() -> CpuInfo {
     let sys = System::new_all();
 
-    // Get info from first CPU as representative
+    // Get info from the CPU cores with maximum frequency as representative
     let (frequency, model, vendor) = sys
         .cpus()
         .iter()
@@ -32,8 +46,8 @@ fn get_cpu_info() -> CpuInfo {
 ///
 /// TODO: I think just having total is likely fine.
 fn get_memory_info() -> MemoryInfo {
-    let mut sys = System::new_all();
-    sys.refresh_memory();
+    let sys = System::new_all();
+
     let total = sys.total_memory();
     let available = sys.available_memory();
     let used = total - available;
@@ -75,19 +89,6 @@ fn get_gpu_info() -> String {
     }
 }
 
-/// HTTP handler for the `/info` endpoint.
-///
-/// Returns information about the server's hardware and operating system.
-#[instrument]
-pub(crate) async fn get_server_info() -> Json<ServerInfoResponse> {
-    Json(ServerInfoResponse {
-        cpu: get_cpu_info(),
-        memory: get_memory_info(),
-        os: get_os_info(),
-        architecture: std::env::consts::ARCH.into(),
-        gpu: get_gpu_info(),
-    })
-}
 #[cfg(test)]
 mod tests {
     use crate::app::info::get_server_info;
@@ -95,8 +96,7 @@ mod tests {
     #[tokio::test]
     async fn test_server_info() {
         let info = get_server_info().await;
-        // TODO: check why cpu_model is empty
-        // assert!(!info.0.cpu.model.is_empty());
+        assert!(!info.0.cpu.model.is_empty());
         assert!(!info.0.memory.total.is_empty());
         assert!(!info.0.os.name.is_empty());
         assert!(!info.0.architecture.is_empty());

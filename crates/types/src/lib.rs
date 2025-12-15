@@ -5,11 +5,11 @@
 //!
 //! ## Overview
 //!
-//! The types are organized around four main operations:
-//! - **Execute**: Run zkVM programs without generating proofs
-//! - **Prove**: Generate cryptographic proofs of program execution
-//! - **Verify**: Verify proofs without re-execution
-//! - **Info**: Query server hardware and system information
+//! The types are organized around 4 main operations:
+//! - Execute - Run zkVM programs without generating proofs
+//! - Prove - Generate cryptographic proofs of program execution
+//! - Verify - Verify proofs without re-execution
+//! - Info - Query server hardware and system information
 //!
 //! All binary data (inputs, outputs, proofs) is serialized as base64 when transmitted over HTTP.
 
@@ -67,7 +67,7 @@ pub struct ExecuteResponse {
     pub total_num_cycles: u64,
     /// Region-specific cycle counts, mapping region names to their cycle counts.
     pub region_cycles: IndexMap<String, u64>,
-    /// Execution duration in milliseconds.
+    /// Execution time in milliseconds.
     pub execution_time_ms: u128,
 }
 

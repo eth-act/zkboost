@@ -5,10 +5,10 @@
 //!
 //! ## Endpoints
 //!
-//! - `POST /execute`: Execute a program without generating a proof
-//! - `POST /prove`: Generate a proof for a program execution
-//! - `POST /verify`: Verify a proof
-//! - `GET /info`: Get server hardware and system information
+//! - `POST /execute` -  Execute a program without generating a proof
+//! - `POST /prove` -  Generate a proof for a program execution
+//! - `POST /verify` -  Verify a proof
+//! - `GET /info` -  Get server hardware and system information
 //!
 //! ## Configuration
 //!
@@ -20,8 +20,6 @@
 //! ```bash
 //! zkboost --config config.toml --port 3001
 //! ```
-
-#![warn(unused_crate_dependencies)]
 
 use std::{net::SocketAddr, path::PathBuf};
 

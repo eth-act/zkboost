@@ -10,12 +10,12 @@ use zkboost_types::{
 /// Provides methods to execute programs, generate proofs, and verify proofs.
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
-pub struct zkBoostClient {
+pub struct zkboostClient {
     base_url: String,
     http_client: HttpClient,
 }
 
-impl zkBoostClient {
+impl zkboostClient {
     /// Creates a new client connected to the specified server URL.
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
