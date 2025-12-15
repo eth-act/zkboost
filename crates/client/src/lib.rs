@@ -25,6 +25,8 @@
 //! # }
 //! ```
 
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+
 pub use client::zkboostClient;
 pub use zkboost_types as types;
 

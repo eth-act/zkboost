@@ -18,7 +18,6 @@ missing_docs = "warn"
 rust_2018_idioms = { level = "deny", priority = -1 }
 unnameable_types = "warn"
 unreachable_pub = "warn"
-unused_crate_dependencies = "deny"
 unused_must_use = "deny"
 
 [workspace.lints.rustdoc]

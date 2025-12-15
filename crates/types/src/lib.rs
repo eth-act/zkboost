@@ -13,6 +13,8 @@
 //!
 //! All binary data (inputs, outputs, proofs) is serialized as base64 when transmitted over HTTP.
 
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+
 pub use ere_zkvm_interface::PublicValues;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};

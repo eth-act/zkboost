@@ -21,6 +21,8 @@
 //! zkboost --config config.toml --port 3001
 //! ```
 
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+
 use std::{net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
