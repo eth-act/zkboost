@@ -2,13 +2,17 @@
 //!
 //! Defines the configuration structure for loading zkVM programs from TOML files.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
 use ere_dockerized::zkVMKind;
 use ere_zkvm_interface::ProverResourceType;
 use serde::{Deserialize, Serialize};
 use zkboost_types::ProgramID;
+
+use crate::config::program::ProgramConfig;
+
+mod program;
 
 /// Server configuration loaded from a TOML file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,17 +54,15 @@ pub(crate) struct zkVMConfig {
     /// Unique identifier for this program.
     pub(crate) program_id: ProgramID,
     /// Path to the compiled program binary.
-    pub(crate) program_path: PathBuf,
+    pub(crate) program: ProgramConfig,
 }
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
-
     use ere_dockerized::zkVMKind;
     use ere_zkvm_interface::{NetworkProverConfig, ProverResourceType};
 
-    use crate::config::{Config, zkVMConfig};
+    use crate::config::{Config, program::ProgramConfig, zkVMConfig};
 
     #[test]
     fn test_from_toml_str() {
@@ -91,7 +93,7 @@ mod test {
                     kind: zkVMKind::OpenVM,
                     resource: ProverResourceType::Cpu,
                     program_id: "openvm-test".into(),
-                    program_path: PathBuf::from("openvm-test-elf"),
+                    program: ProgramConfig::Path("openvm-test-elf".into()),
                 },
                 zkVMConfig {
                     kind: zkVMKind::SP1,
@@ -100,13 +102,13 @@ mod test {
                         api_key: Some("secret".to_string())
                     }),
                     program_id: "sp1-test".into(),
-                    program_path: PathBuf::from("sp1-test-elf"),
+                    program: ProgramConfig::Path("sp1-test-elf".into()),
                 },
                 zkVMConfig {
                     kind: zkVMKind::Zisk,
                     resource: ProverResourceType::Gpu,
                     program_id: "zisk-test".into(),
-                    program_path: PathBuf::from("zisk-test-elf"),
+                    program: ProgramConfig::Path("zisk-test-elf".into()),
                 }
             ]
         );

@@ -12,6 +12,7 @@ workspace = true
 anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
+reqwest = { workspace = true, features = ["blocking"] }
 serde = { workspace = true, features = ["derive"] }
 sysinfo.workspace = true
 tokio = { workspace = true, features = ["full"] }

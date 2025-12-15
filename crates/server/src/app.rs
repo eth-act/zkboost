@@ -1,13 +1,13 @@
 //! Application state, initialization, and HTTP endpoints.
 
-use std::{collections::HashMap, fs, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use axum::{
     Router,
     routing::{get, post},
 };
-use ere_dockerized::{DockerizedzkVM, SerializedProgram};
+use ere_dockerized::DockerizedzkVM;
 use ere_zkvm_interface::zkVM;
 use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
@@ -79,10 +79,7 @@ pub(crate) fn app(state: AppState) -> Router {
 
 /// Initializes a single zkVM instance from configuration.
 fn init_zkvm(config: &zkVMConfig) -> anyhow::Result<zkVMInstance> {
-    let program = fs::read(&config.program_path)
-        .map(SerializedProgram)
-        .with_context(|| format!("Program not found at {}", &config.program_path.display()))?;
-    let zkvm = DockerizedzkVM::new(config.kind, program, config.resource.clone())
+    let zkvm = DockerizedzkVM::new(config.kind, config.program.load()?, config.resource.clone())
         .with_context(|| format!("Failed to initialize DockerizedzkVM, kind {}", config.kind))?;
     Ok(zkVMInstance::new(zkvm))
 }
