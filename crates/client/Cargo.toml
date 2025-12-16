@@ -1,0 +1,15 @@
+[package]
+name = "zkboost-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reqwest = { workspace = true, features = ["json"] }
+thiserror.workspace = true
+serde.workspace = true
+
+zkboost-types.workspace = true

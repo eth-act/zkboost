@@ -1,36 +1,15 @@
-use std::time::Duration;
-
 use axum::{Json, extract::State, http::StatusCode};
-use ere_zkvm_interface::{Input, PublicValues, zkVM};
-use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
-use serde_with::{base64::Base64, serde_as};
+use ere_zkvm_interface::{Input, zkVM};
 use tracing::instrument;
+use zkboost_types::{ExecuteRequest, ExecuteResponse};
 
-use crate::common::{AppState, ProgramID};
+use crate::app::AppState;
 
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ExecuteRequest {
-    pub program_id: ProgramID,
-    #[serde_as(as = "Base64")]
-    pub input: Vec<u8>,
-}
-
-#[serde_as]
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ExecuteResponse {
-    pub program_id: ProgramID,
-    #[serde_as(as = "Base64")]
-    pub public_values: PublicValues,
-    pub total_num_cycles: u64,
-    pub region_cycles: IndexMap<String, u64>,
-    pub execution_duration: Duration,
-}
-
-#[axum::debug_handler]
+/// HTTP handler for the `/execute` endpoint.
+///
+/// Executes a zkVM program without generating a proof.
 #[instrument(skip_all)]
-pub async fn execute_program(
+pub(crate) async fn execute_program(
     State(state): State<AppState>,
     Json(req): Json<ExecuteRequest>,
 ) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
@@ -55,23 +34,23 @@ pub async fn execute_program(
         public_values,
         total_num_cycles: report.total_num_cycles,
         region_cycles: report.region_cycles,
-        execution_duration: report.execution_duration,
+        execution_time_ms: report.execution_duration.as_millis(),
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use axum::{Json, extract::State, http::StatusCode};
+    use zkboost_types::{ExecuteRequest, ProgramID};
 
     use crate::{
-        common::{AppState, ProgramID},
-        endpoints::{execute::ExecuteRequest, execute_program},
-        mock_zkvm::mock_app_state,
+        app::{AppState, execute::execute_program},
+        mock::mock_app_state,
     };
 
     #[tokio::test]
     async fn test_execute_success() {
-        let program_id = ProgramID("mock_program_id".to_string());
+        let program_id = ProgramID::from("mock_program_id");
         let state = mock_app_state(&program_id);
 
         let request = ExecuteRequest {
@@ -89,7 +68,7 @@ mod tests {
         let state = AppState::default();
 
         let request = ExecuteRequest {
-            program_id: ProgramID("non_existent".to_string()),
+            program_id: ProgramID::from("non_existent"),
             input: Vec::new(),
         };
 

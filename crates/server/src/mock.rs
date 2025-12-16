@@ -6,13 +6,13 @@ use ere_zkvm_interface::{
     Input, ProgramExecutionReport, ProgramProvingReport, Proof, ProofKind, PublicValues, zkVM,
 };
 use tokio::sync::RwLock;
+use zkboost_types::ProgramID;
 
-use crate::common::{AppState, ProgramID, zkVMInstance};
+use crate::app::{AppState, zkVMInstance};
 
-#[derive(Default)]
-pub struct MockZkVM;
+pub(crate) struct MockzkVM;
 
-impl zkVM for MockZkVM {
+impl zkVM for MockzkVM {
     fn execute(&self, _: &Input) -> anyhow::Result<(PublicValues, ProgramExecutionReport)> {
         // Simulate some computation time to avoid 0-ms durations in unit tests
         std::thread::sleep(Duration::from_millis(1));
@@ -57,9 +57,9 @@ impl zkVM for MockZkVM {
     }
 }
 
-pub fn mock_app_state(program_id: &ProgramID) -> AppState {
+pub(crate) fn mock_app_state(program_id: &ProgramID) -> AppState {
     let programs =
-        FromIterator::from_iter([(program_id.clone(), zkVMInstance::new(Arc::new(MockZkVM)))]);
+        FromIterator::from_iter([(program_id.clone(), zkVMInstance::new(Arc::new(MockzkVM)))]);
     AppState {
         programs: Arc::new(RwLock::new(programs)),
     }

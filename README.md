@@ -26,9 +26,7 @@ zkboost is an API wrapper on top of [Ere](https://github.com/eth-act/ere) allowi
 
 ## Quick Start
 
-This example assumes you have zkboost server running (e.g., via manual build or (TODO) a Docker image).
-
-> The easiest way to start is by running the `test_workflow.sh` script.
+The easiest way to start is by running the `./scripts/test_workflow.sh` script.
 
 ## Manual Build
 
