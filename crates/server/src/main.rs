@@ -12,7 +12,7 @@
 //!
 //! ## Configuration
 //!
-//! The server is configured via a TOML file that specifies which zkVM programs to load.
+//! The server is configured via a TOML/YAML file that specifies which zkVM programs to load.
 //! See [`config::Config`] for details.
 //!
 //! ## Usage

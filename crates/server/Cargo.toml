@@ -14,6 +14,7 @@ axum = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true, features = ["blocking"] }
 serde = { workspace = true, features = ["derive"] }
+serde_yaml.workspace = true
 sysinfo.workspace = true
 tokio = { workspace = true, features = ["full"] }
 toml.workspace = true
