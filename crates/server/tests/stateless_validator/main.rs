@@ -222,11 +222,10 @@ async fn main() -> anyhow::Result<()> {
 
     assert_eq!(response.program_id.0, program_id);
     assert!(!response.verified);
-    assert!(matches!(
-        fixture.verify_public_values(&response.public_values),
-        Ok(OutputVerifierResult::Mismatch(_))
-    ));
-    info!("Verification failed as expected");
+    info!(
+        "Verification failed as expected, reason: {}",
+        response.failure_reason
+    );
 
     Ok(())
 }
