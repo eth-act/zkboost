@@ -30,14 +30,17 @@ result_large_err = "allow"
 [workspace.dependencies]
 anyhow = "1.0"
 axum = "0.8"
+cargo_metadata = "0.19.0"
 clap = "4.5"
 indexmap = "2.12"
+nix = "0.29"
 reqwest = "0.12"
 serde = "1.0"
 serde_with = "3.16"
 serde_yaml = "0.9"
 sysinfo = "0.37"
 thiserror = "2"
+tempfile = "3.20.0"
 tokio = "1.48"
 toml = "0.9"
 tower-http = "0.6"
@@ -47,6 +50,8 @@ wgpu = "27"
 
 ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
 ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
+benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
+witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
 
 zkboost-client = { path = "crates/client" }
 zkboost-server = { path = "crates/server" }

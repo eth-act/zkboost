@@ -26,7 +26,9 @@ zkboost is an API wrapper on top of [Ere](https://github.com/eth-act/ere) allowi
 
 ## Quick Start
 
-The easiest way to start is by running the `./scripts/test_workflow.sh` script.
+The easiest way to start is by running the `GITHUB_TOKEN=<github-token> RUST_LOG=info cargo test --package zkboost-server --test stateless_validator -- --zkvm sp1 --resource cpu`.
+
+> The `GITHUB_TOKEN` is needed to download compiled artifact from repo [`eth-act/zkevm-benchmark-workload`](https://github.com/eth-act/zkevm-benchmark-workload).
 
 ## Manual Build
 

@@ -26,3 +26,19 @@ wgpu.workspace = true
 ere-dockerized.workspace = true
 ere-zkvm-interface.workspace = true
 zkboost-types.workspace = true
+
+[dev-dependencies]
+cargo_metadata.workspace = true
+clap = { workspace = true, features = ["derive"] }
+nix = { workspace = true, features = ["signal", "process"] }
+tempfile.workspace = true
+
+benchmark-runner.workspace = true
+witness-generator.workspace = true
+
+zkboost-client.workspace = true
+
+[[test]]
+name = "stateless_validator"
+harness = false
+test = false
