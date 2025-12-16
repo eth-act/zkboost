@@ -71,19 +71,19 @@ mod test {
             kind = "openvm"
             resource = "cpu"
             program-id = "openvm-test"
-            program-path = "openvm-test-elf"
+            program = "openvm-test-elf"
 
             [[zkvm]]
             kind = "sp1"
             resource = { network = { endpoint = "http://localhost:3000", api-key = "secret" } } 
             program-id = "sp1-test"
-            program-path = "sp1-test-elf"
+            program = "sp1-test-elf"
 
             [[zkvm]]
             kind = "zisk"
             resource = "gpu"
             program-id = "zisk-test"
-            program-path = "zisk-test-elf"
+            program = "zisk-test-elf"
         "#;
         let config = Config::from_toml_str(toml).unwrap();
         assert_eq!(

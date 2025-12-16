@@ -1,9 +1,11 @@
-use anyhow::{Context, Result};
-use reqwest::Client as HttpClient;
+use reqwest::{Client, IntoUrl, RequestBuilder, Response, Url};
+use serde::{Serialize, de::DeserializeOwned};
 use zkboost_types::{
     ExecuteRequest, ExecuteResponse, ProgramID, ProveRequest, ProveResponse, ServerInfoResponse,
     VerifyRequest, VerifyResponse,
 };
+
+use crate::Error;
 
 /// HTTP client for zkboost servers.
 ///
@@ -11,25 +13,46 @@ use zkboost_types::{
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
 pub struct zkboostClient {
-    base_url: String,
-    http_client: HttpClient,
+    base_url: Url,
+    client: Client,
 }
 
 impl zkboostClient {
     /// Creates a new client connected to the specified server URL.
-    pub fn new(base_url: impl Into<String>) -> Self {
-        Self {
-            base_url: base_url.into(),
-            http_client: HttpClient::new(),
-        }
+    pub fn new(base_url: impl IntoUrl) -> Result<Self, Error> {
+        Ok(Self {
+            base_url: base_url.into_url()?,
+            client: Client::new(),
+        })
     }
 
-    /// Creates a new client with a custom HTTP client.
-    pub fn with_http_client(base_url: impl Into<String>, http_client: HttpClient) -> Self {
-        Self {
-            base_url: base_url.into(),
-            http_client,
-        }
+    /// Creates a new client with a custom [`reqwest::Client`].
+    pub fn with_client(base_url: impl IntoUrl, client: Client) -> Result<Self, Error> {
+        Ok(Self {
+            base_url: base_url.into_url()?,
+            client,
+        })
+    }
+
+    /// Sends a GET request to the specified path and deserializes the response.
+    pub async fn get<Res: DeserializeOwned>(&self, path: &'static str) -> Result<Res, Error> {
+        let res = send(self.client.get(self.base_url.join(path).unwrap())).await?;
+        Ok(res.json::<Res>().await?)
+    }
+
+    /// Sends a POST request with a JSON body and deserializes the response.
+    pub async fn post<Req: Serialize, Res: DeserializeOwned>(
+        &self,
+        path: &'static str,
+        req: Req,
+    ) -> Result<Res, Error> {
+        let res = send(
+            self.client
+                .post(self.base_url.join(path).unwrap())
+                .json(&req),
+        )
+        .await?;
+        Ok(res.json::<Res>().await?)
     }
 
     /// Executes a program without generating a proof.
@@ -37,33 +60,15 @@ impl zkboostClient {
         &self,
         program_id: impl Into<ProgramID>,
         input: Vec<u8>,
-    ) -> Result<ExecuteResponse> {
-        let request = ExecuteRequest {
-            program_id: program_id.into(),
-            input,
-        };
-
-        let response = self
-            .http_client
-            .post(format!("{}/execute", self.base_url))
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send execute request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_msg = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Execute request failed with status {status}: {error_msg}");
-        }
-
-        response
-            .json::<ExecuteResponse>()
-            .await
-            .context("Failed to parse execute response")
+    ) -> Result<ExecuteResponse, Error> {
+        self.post(
+            "execute",
+            ExecuteRequest {
+                program_id: program_id.into(),
+                input,
+            },
+        )
+        .await
     }
 
     /// Generates a proof for a program execution.
@@ -71,33 +76,15 @@ impl zkboostClient {
         &self,
         program_id: impl Into<ProgramID>,
         input: Vec<u8>,
-    ) -> Result<ProveResponse> {
-        let request = ProveRequest {
-            program_id: program_id.into(),
-            input,
-        };
-
-        let response = self
-            .http_client
-            .post(format!("{}/prove", self.base_url))
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send prove request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_msg = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Prove request failed with status {status}: {error_msg}");
-        }
-
-        response
-            .json::<ProveResponse>()
-            .await
-            .context("Failed to parse prove response")
+    ) -> Result<ProveResponse, Error> {
+        self.post(
+            "prove",
+            ProveRequest {
+                program_id: program_id.into(),
+                input,
+            },
+        )
+        .await
     }
 
     /// Verifies a proof without re-executing the program.
@@ -105,56 +92,37 @@ impl zkboostClient {
         &self,
         program_id: impl Into<ProgramID>,
         proof: Vec<u8>,
-    ) -> Result<VerifyResponse> {
-        let request = VerifyRequest {
-            program_id: program_id.into(),
-            proof,
-        };
-
-        let response = self
-            .http_client
-            .post(format!("{}/verify", self.base_url))
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send verify request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_msg = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Verify request failed with status {status}: {error_msg}");
-        }
-
-        response
-            .json::<VerifyResponse>()
-            .await
-            .context("Failed to parse verify response")
+    ) -> Result<VerifyResponse, Error> {
+        self.post(
+            "verify",
+            VerifyRequest {
+                program_id: program_id.into(),
+                proof,
+            },
+        )
+        .await
     }
 
     /// Retrieves server hardware and system information.
-    pub async fn info(&self) -> Result<ServerInfoResponse> {
-        let response = self
-            .http_client
-            .get(format!("{}/info", self.base_url))
-            .send()
-            .await
-            .context("Failed to send info request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_msg = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Info request failed with status {status}: {error_msg}");
-        }
-
-        response
-            .json::<ServerInfoResponse>()
-            .await
-            .context("Failed to parse info response")
+    pub async fn info(&self) -> Result<ServerInfoResponse, Error> {
+        self.get("info").await
     }
+
+    /// Checks if the server is healthy and responsive.
+    pub async fn health(&self) -> Result<(), Error> {
+        send(self.client.get(self.base_url.join("health").unwrap())).await?;
+        Ok(())
+    }
+}
+
+/// Sends an HTTP request and handles error status codes.
+pub(crate) async fn send(request: RequestBuilder) -> Result<Response, Error> {
+    let res = request.send().await?;
+
+    if let Err(inner) = res.error_for_status_ref() {
+        let msg = res.text().await.ok();
+        return Err(Error::ErrorStatus { inner, msg });
+    }
+
+    Ok(res)
 }

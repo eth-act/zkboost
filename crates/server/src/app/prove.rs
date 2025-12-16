@@ -8,7 +8,6 @@ use crate::app::AppState;
 /// HTTP handler for the `/prove` endpoint.
 ///
 /// Executes a zkVM program and generates a cryptographic proof.
-#[axum::debug_handler]
 #[instrument(skip_all)]
 pub(crate) async fn prove_program(
     State(state): State<AppState>,

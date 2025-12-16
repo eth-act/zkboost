@@ -8,7 +8,6 @@ use crate::app::AppState;
 /// HTTP handler for the `/execute` endpoint.
 ///
 /// Executes a zkVM program without generating a proof.
-#[axum::debug_handler]
 #[instrument(skip_all)]
 pub(crate) async fn execute_program(
     State(state): State<AppState>,

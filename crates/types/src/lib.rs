@@ -34,6 +34,12 @@ impl From<String> for ProgramID {
     }
 }
 
+impl From<&String> for ProgramID {
+    fn from(s: &String) -> Self {
+        ProgramID(s.to_string())
+    }
+}
+
 impl From<&str> for ProgramID {
     fn from(s: &str) -> Self {
         ProgramID(s.to_string())

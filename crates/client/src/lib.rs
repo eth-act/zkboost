@@ -6,10 +6,10 @@
 //! ## Example
 //!
 //! ```no_run
-//! use zkboost_client::zkboostClient;
+//! use zkboost_client::{zkboostClient, Error};
 //!
-//! # async fn example() -> anyhow::Result<()> {
-//! let client = zkboostClient::new("http://localhost:3001");
+//! # async fn example() -> Result<(), Error> {
+//! let client = zkboostClient::new("http://localhost:3001")?;
 //!
 //! // Execute a program
 //! let response = client.execute("my_program", vec![1, 2, 3, 4]).await?;
@@ -28,6 +28,8 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 pub use client::zkboostClient;
+pub use error::Error;
 pub use zkboost_types as types;
 
 mod client;
+mod error;

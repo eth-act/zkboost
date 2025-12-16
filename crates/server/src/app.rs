@@ -9,6 +9,7 @@ use axum::{
 };
 use ere_dockerized::DockerizedzkVM;
 use ere_zkvm_interface::zkVM;
+use reqwest::StatusCode;
 use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
 use zkboost_types::ProgramID;
@@ -70,6 +71,7 @@ pub(crate) fn app(state: AppState) -> Router {
         .route("/prove", post(prove_program))
         .route("/verify", post(verify_proof))
         .route("/info", get(get_server_info))
+        .route("/health", get(StatusCode::OK))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         // 400MB limit to account for the proof size

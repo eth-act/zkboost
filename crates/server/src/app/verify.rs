@@ -8,7 +8,6 @@ use crate::app::AppState;
 /// HTTP handler for the `/verify` endpoint.
 ///
 /// Verifies a cryptographic proof without re-executing the program.
-#[axum::debug_handler]
 #[instrument(skip_all)]
 pub(crate) async fn verify_proof(
     State(state): State<AppState>,

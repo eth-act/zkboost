@@ -525,7 +525,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "ere-build-utils"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
+source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
 dependencies = [
  "cargo_metadata",
 ]
@@ -533,7 +533,7 @@ dependencies = [
 [[package]]
 name = "ere-common"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
+source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
 dependencies = [
  "ere-build-utils",
  "serde",
@@ -542,7 +542,7 @@ dependencies = [
 [[package]]
 name = "ere-dockerized"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
+source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
 dependencies = [
  "anyhow",
  "ere-common",
@@ -559,7 +559,7 @@ dependencies = [
 [[package]]
 name = "ere-server"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
+source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
 dependencies = [
  "anyhow",
  "bincode",
@@ -574,7 +574,7 @@ dependencies = [
 [[package]]
 name = "ere-zkvm-interface"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=e602c1824e1ce6dcfce58c199978957c3347a49c#e602c1824e1ce6dcfce58c199978957c3347a49c"
+source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
 dependencies = [
  "anyhow",
  "auto_impl",
@@ -1813,7 +1813,9 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "h2",
  "http",
  "http-body",
@@ -3463,8 +3465,9 @@ dependencies = [
 name = "zkboost-client"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "reqwest",
+ "serde",
+ "thiserror 2.0.17",
  "zkboost-types",
 ]
 
@@ -3477,6 +3480,7 @@ dependencies = [
  "clap",
  "ere-dockerized",
  "ere-zkvm-interface",
+ "reqwest",
  "serde",
  "sysinfo",
  "tokio",

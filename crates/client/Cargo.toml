@@ -8,6 +8,8 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-anyhow.workspace = true
 reqwest = { workspace = true, features = ["json"] }
+thiserror.workspace = true
+serde.workspace = true
+
 zkboost-types.workspace = true
