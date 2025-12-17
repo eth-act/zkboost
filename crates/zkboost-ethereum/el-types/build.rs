@@ -33,10 +33,10 @@ fn generate_workload_info() {
 
             if let Some(query) = query.strip_prefix("tag=") {
                 let (tag, _) = query.split_once('#')?;
-                Some(format!(r#"PackageVersion::Tag("{}")"#, tag))
+                Some(format!(r#"PackageVersion::Tag("{tag}")"#))
             } else {
                 let (_, rev) = query.split_once('#')?;
-                Some(format!(r#"PackageVersion::Rev("{}")"#, rev))
+                Some(format!(r#"PackageVersion::Rev("{rev}")"#))
             }
         })
         .unwrap_or_else(|| panic!("Failed to find version of `benchmark-runner`"));
