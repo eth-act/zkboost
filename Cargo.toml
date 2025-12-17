@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/client",
+    "crates/execution-witness-sentry",
     "crates/server",
     "crates/types",
 ]

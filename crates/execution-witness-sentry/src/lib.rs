@@ -1,0 +1,48 @@
+//! Execution witness sentry - monitors execution layer nodes for new blocks
+//! and fetches their execution witnesses.
+//!
+//! This crate provides functionality to:
+//! - Subscribe to new block headers via WebSocket
+//! - Fetch blocks and execution witnesses via JSON-RPC
+//! - Store block data and witnesses to disk
+//!
+//! ## Example
+//!
+//! ```ignore
+//! use execution_witness_sentry::{Config, ElClient, subscribe_blocks};
+//!
+//! let config = Config::load("config.toml")?;
+//! let client = ElClient::new(url);
+//!
+//! // Subscribe to new blocks
+//! let mut stream = subscribe_blocks(&ws_url).await?;
+//!
+//! while let Some(header) = stream.next().await {
+//!     let witness = client.get_execution_witness(header.number).await?;
+//!     // Process witness...
+//! }
+//! ```
+
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+
+// Used in main.rs binary only.
+use anyhow as _;
+use clap as _;
+use tokio as _;
+use tracing_subscriber as _;
+
+pub mod config;
+pub mod error;
+pub mod rpc;
+pub mod storage;
+pub mod subscription;
+
+// Re-export main types at crate root for convenience.
+pub use config::{Config, Endpoint};
+pub use error::{Error, Result};
+pub use rpc::ElClient;
+pub use storage::{compress_gzip, decompress_gzip, load_block_data, BlockStorage};
+pub use subscription::subscribe_blocks;
+
+// Re-export alloy types that appear in our public API.
+pub use alloy_rpc_types_eth::{Block, Header};

@@ -1,0 +1,13 @@
+output_dir = "."
+chain = "local"
+retain = 10
+
+[[endpoints]]
+name = "node-1"
+el_url = "http://127.0.0.1:32003"
+el_ws_url = "ws://127.0.0.1:32004"
+
+[[endpoints]]
+name = "node-2"
+el_url = "http://127.0.0.1:32010"
+el_ws_url = "ws://127.0.0.1:32011"
