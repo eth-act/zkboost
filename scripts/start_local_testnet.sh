@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+# Requires `docker`, `kurtosis`, `yq`
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+ENCLAVE_NAME=local-testnet
+NETWORK_PARAMS_FILE=$SCRIPT_DIR/network_params.yaml
+ETHEREUM_PKG_VERSION=main
+
+BUILD_IMAGE=true
+BUILDER_PROPOSALS=false
+CI=false
+KEEP_ENCLAVE=false
+RUN_ASSERTOOR_TESTS=false
+
+# Get options
+while getopts "e:b:n:phcak" flag; do
+  case "${flag}" in
+    a) RUN_ASSERTOOR_TESTS=true;;
+    e) ENCLAVE_NAME=${OPTARG};;
+    b) BUILD_IMAGE=${OPTARG};;
+    n) NETWORK_PARAMS_FILE=${OPTARG};;
+    p) BUILDER_PROPOSALS=true;;
+    c) CI=true;;
+    k) KEEP_ENCLAVE=true;;
+    h)
+        echo "Start a local testnet with kurtosis."
+        echo
+        echo "usage: $0 <Options>"
+        echo
+        echo "Options:"
+        echo "   -e: enclave name                                default: $ENCLAVE_NAME"
+        echo "   -b: whether to build Lighthouse docker image    default: $BUILD_IMAGE"
+        echo "   -n: kurtosis network params file path           default: $NETWORK_PARAMS_FILE"
+        echo "   -p: enable builder proposals"
+        echo "   -c: CI mode, run without other additional services like Grafana and Dora explorer"
+        echo "   -a: run Assertoor tests"
+        echo "   -k: keeping enclave to allow starting the testnet without destroying the existing one"
+        echo "   -h: this help"
+        exit
+        ;;
+  esac
+done
+
+LH_IMAGE_NAME=$(yq eval ".participants[0].cl_image" $NETWORK_PARAMS_FILE)
+
+if ! command -v docker &> /dev/null; then
+    echo "Docker is not installed. Please install Docker and try again."
+    exit 1
+fi
+
+if ! command -v kurtosis &> /dev/null; then
+    echo "kurtosis command not found. Please install kurtosis and try again."
+    exit
+fi
+
+if ! command -v yq &> /dev/null; then
+    echo "yq not found. Please install yq and try again."
+fi
+
+if [ "$BUILDER_PROPOSALS" = true ]; then
+  yq eval '.participants[0].vc_extra_params = ["--builder-proposals"]' -i $NETWORK_PARAMS_FILE
+  echo "--builder-proposals VC flag added to network_params.yaml"
+fi
+
+if [ "$CI" = true ]; then
+  yq eval '.additional_services = []' -i $NETWORK_PARAMS_FILE
+  echo "Running without additional services (CI mode)."
+fi
+
+if [ "$RUN_ASSERTOOR_TESTS" = true ]; then
+  yq eval '.additional_services += ["assertoor"] | .additional_services |= unique' -i $NETWORK_PARAMS_FILE
+  # The available tests can be found in the `assertoor_params` section:
+  # https://github.com/ethpandaops/ethereum-package?tab=readme-ov-file#configuration
+  yq eval '.assertoor_params = {"run_stability_check": true, "run_block_proposal_check": true, "run_transaction_test": true, "run_blob_transaction_test": true}' -i $NETWORK_PARAMS_FILE
+  echo "Assertoor has been added to $NETWORK_PARAMS_FILE."
+fi
+
+if [ "$KEEP_ENCLAVE" = false ]; then
+  # Stop local testnet
+  kurtosis enclave rm -f $ENCLAVE_NAME 2>/dev/null || true
+fi
+
+if [ "$BUILD_IMAGE" = true ]; then
+    echo "Building Lighthouse Docker image."
+    ROOT_DIR="$SCRIPT_DIR/../.."
+    docker build --build-arg FEATURES=portable,spec-minimal -f $ROOT_DIR/Dockerfile -t $LH_IMAGE_NAME $ROOT_DIR
+else
+    echo "Not rebuilding Lighthouse Docker image."
+fi
+
+kurtosis run --enclave $ENCLAVE_NAME github.com/ethpandaops/ethereum-package@$ETHEREUM_PKG_VERSION --args-file $NETWORK_PARAMS_FILE
+
+echo "Started!"
