@@ -31,14 +31,11 @@ use tokio::{
     signal::unix::{SignalKind, signal},
 };
 use tracing::info;
+use zkboost_server_config::Config;
 
-use crate::{
-    app::{AppState, app},
-    config::Config,
-};
+use crate::app::{AppState, app};
 
 mod app;
-mod config;
 
 #[cfg(test)]
 mod mock;

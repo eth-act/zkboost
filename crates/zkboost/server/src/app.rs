@@ -12,13 +12,11 @@ use ere_zkvm_interface::zkVM;
 use reqwest::StatusCode;
 use tokio::sync::RwLock;
 use tower_http::trace::TraceLayer;
+use zkboost_server_config::{Config, zkVMConfig};
 use zkboost_types::ProgramID;
 
-use crate::{
-    app::{
-        execute::execute_program, info::get_server_info, prove::prove_program, verify::verify_proof,
-    },
-    config::{Config, zkVMConfig},
+use crate::app::{
+    execute::execute_program, info::get_server_info, prove::prove_program, verify::verify_proof,
 };
 
 mod execute;

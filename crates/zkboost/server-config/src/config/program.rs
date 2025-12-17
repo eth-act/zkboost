@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// - URL download e.g. `program = { url = "https://github.com/eth-act/zkevm-benchmark-workload/releases/v0.1.0/reth-zisk" }`
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum ProgramConfig {
+pub enum ProgramConfig {
     /// Simple string path to a local program file.
     Path(PathBuf),
 
@@ -25,7 +25,7 @@ pub(crate) enum ProgramConfig {
 
 impl ProgramConfig {
     /// Load the program from either a local path or remote URL.
-    pub(crate) fn load(&self) -> anyhow::Result<SerializedProgram> {
+    pub fn load(&self) -> anyhow::Result<SerializedProgram> {
         let bytes = match self {
             ProgramConfig::Path(path) | ProgramConfig::ExplicitPath(PathConfig { path }) => {
                 fs::read(path).with_context(|| {
@@ -54,22 +54,24 @@ impl ProgramConfig {
 /// Path configuration for explicit path object.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PathConfig {
-    pub(crate) path: PathBuf,
+pub struct PathConfig {
+    /// Path to the file
+    pub path: PathBuf,
 }
 
 /// URL configuration for program download.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct UrlConfig {
-    pub(crate) url: String,
+pub struct UrlConfig {
+    /// Url to the file
+    pub url: String,
 }
 
 #[cfg(test)]
 mod tests {
     use serde::Deserialize;
 
-    use crate::config::program::{PathConfig, ProgramConfig, UrlConfig};
+    use crate::{PathConfig, ProgramConfig, UrlConfig};
 
     #[derive(Deserialize)]
     struct TestConfig {

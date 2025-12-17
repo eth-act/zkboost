@@ -13,11 +13,8 @@ anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
 reqwest = { workspace = true, features = ["blocking"] }
-serde = { workspace = true, features = ["derive"] }
-serde_yaml.workspace = true
 sysinfo.workspace = true
 tokio = { workspace = true, features = ["full"] }
-toml.workspace = true
 tower-http = { workspace = true, features = ["trace", "limit"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
@@ -25,7 +22,9 @@ wgpu.workspace = true
 
 ere-dockerized.workspace = true
 ere-zkvm-interface.workspace = true
+
 zkboost-types.workspace = true
+zkboost-server-config.workspace = true
 
 [dev-dependencies]
 cargo_metadata.workspace = true
