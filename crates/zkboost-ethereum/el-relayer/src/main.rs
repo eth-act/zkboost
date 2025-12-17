@@ -3,7 +3,7 @@
 //! This relayer orchestrates the complete workflow for generating proofs of
 //! EL stateless validation:
 //!
-//! 1. Listen to new block from CL
+//! 1. Listen to new block from EL
 //! 2. Fetch execution witness from EL
 //! 3. Generate input for EL stateless validator guest program
 //! 4. Request zkboost-server for proof
@@ -14,7 +14,7 @@
 //! ```text
 //!   CL          Relayer               EL           zkboost-server
 //!   |              |                  |                  |
-//!   |--new block-->|                  |                  |
+//!   |              |<----new block----|                  |
 //!   |              |                  |                  |
 //!   |              |--fetch witness-->|                  |
 //!   |              |<----witness------|                  |
