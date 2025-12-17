@@ -1,0 +1,13 @@
+[package]
+name = "zkboost-ethereum-el-witness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+reth-stateless.workspace = true
+
+zkboost-ethereum-el-types.workspace = true

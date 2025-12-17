@@ -7,6 +7,7 @@ members = [
     "crates/zkboost-ethereum/el-config",
     "crates/zkboost-ethereum/el-relayer",
     "crates/zkboost-ethereum/el-types",
+    "crates/zkboost-ethereum/el-witness",
 ]
 resolver = "2"
 
@@ -54,6 +55,8 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 wgpu = "27"
 
+reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
+
 ere-common = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
 ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
 ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
@@ -67,3 +70,4 @@ zkboost-types = { path = "crates/zkboost/types" }
 zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
 zkboost-ethereum-el-relayer = { path = "crates/zkboost-ethereum/el-relayer" }
 zkboost-ethereum-el-types = { path = "crates/zkboost-ethereum/el-types" }
+zkboost-ethereum-el-witness = { path = "crates/zkboost-ethereum/el-witness" }

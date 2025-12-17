@@ -12047,13 +12047,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkboost-ethereum-el-witness"
+version = "0.1.0"
+dependencies = [
+ "reth-stateless",
+ "zkboost-ethereum-el-types",
+]
+
+[[package]]
 name = "zkboost-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "benchmark-runner",
- "cargo_metadata",
  "clap",
  "ere-dockerized 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
  "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
@@ -12063,12 +12070,15 @@ dependencies = [
  "sysinfo 0.37.2",
  "tempfile",
  "tokio",
+ "toml 0.9.8",
  "tower-http",
  "tracing",
  "tracing-subscriber 0.3.22",
  "wgpu",
  "witness-generator",
  "zkboost-client",
+ "zkboost-ethereum-el-config",
+ "zkboost-ethereum-el-types",
  "zkboost-server-config",
  "zkboost-types",
 ]
