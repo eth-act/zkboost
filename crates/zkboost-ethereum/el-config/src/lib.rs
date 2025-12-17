@@ -5,4 +5,4 @@
 //! zkboost-server, enabling it to serve Ethereum Execution Layer (EL)
 //! stateless validator guest programs.
 
-#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+pub mod program;

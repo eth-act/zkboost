@@ -12018,10 +12018,33 @@ dependencies = [
 [[package]]
 name = "zkboost-ethereum-el-config"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ere-common 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "reqwest",
+ "serde",
+ "tokio",
+ "toml 0.9.8",
+ "tracing",
+ "tracing-subscriber 0.3.22",
+ "zkboost-ethereum-el-types",
+ "zkboost-server-config",
+]
 
 [[package]]
 name = "zkboost-ethereum-el-relayer"
 version = "0.1.0"
+
+[[package]]
+name = "zkboost-ethereum-el-types"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata",
+ "serde",
+ "strum 0.27.2",
+]
 
 [[package]]
 name = "zkboost-server"
@@ -12034,20 +12057,33 @@ dependencies = [
  "clap",
  "ere-dockerized 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
  "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "futures",
  "nix",
  "reqwest",
- "serde",
- "serde_yaml",
  "sysinfo 0.37.2",
  "tempfile",
  "tokio",
- "toml 0.9.8",
  "tower-http",
  "tracing",
  "tracing-subscriber 0.3.22",
  "wgpu",
  "witness-generator",
  "zkboost-client",
+ "zkboost-server-config",
+ "zkboost-types",
+]
+
+[[package]]
+name = "zkboost-server-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ere-dockerized 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "reqwest",
+ "serde",
+ "serde_yaml",
+ "toml 0.9.8",
  "zkboost-types",
 ]
 
