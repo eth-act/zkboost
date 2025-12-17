@@ -57,9 +57,9 @@ wgpu = "27"
 
 reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 
-ere-common = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
-ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
+ere-common = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
+ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
 benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
 witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
 
@@ -71,3 +71,4 @@ zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
 zkboost-ethereum-el-relayer = { path = "crates/zkboost-ethereum/el-relayer" }
 zkboost-ethereum-el-types = { path = "crates/zkboost-ethereum/el-types" }
 zkboost-ethereum-el-witness = { path = "crates/zkboost-ethereum/el-witness" }
+
