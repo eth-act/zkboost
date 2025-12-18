@@ -9,5 +9,7 @@ workspace = true
 
 [dependencies]
 reth-stateless.workspace = true
-
 zkboost-ethereum-el-types.workspace = true
+benchmark-runner.workspace = true
+witness-generator.workspace = true
+anyhow.workspace = true

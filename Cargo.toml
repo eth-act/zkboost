@@ -60,8 +60,8 @@ reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde95197
 ere-common = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
 ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
 ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
-benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
-witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
+benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "5b95a053bdade4f07e25327fc1737ebce1be4d6b" }
+witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "5b95a053bdade4f07e25327fc1737ebce1be4d6b" }
 
 zkboost-client = { path = "crates/zkboost/client" }
 zkboost-server = { path = "crates/zkboost/server" }
