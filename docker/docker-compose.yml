@@ -14,11 +14,11 @@ services:
     #   test: ["CMD", "curl", "-f", "http://localhost:3000/info"]
 
   prometheus:
-    image: prom/prometheus:latest
+    build:
+      context: ./prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -27,12 +27,11 @@ services:
       - zkboost
 
   grafana:
-    image: grafana/grafana:latest
+    build:
+      context: ./grafana
     ports:
       - "3001:3000"
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_USER=admin
