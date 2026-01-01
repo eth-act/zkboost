@@ -36,6 +36,7 @@ use zkboost_server_config::Config;
 use crate::app::{AppState, app};
 
 mod app;
+mod metrics;
 
 #[cfg(test)]
 mod mock;
