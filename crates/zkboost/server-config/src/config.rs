@@ -10,21 +10,21 @@ use ere_zkvm_interface::ProverResourceType;
 use serde::{Deserialize, Serialize};
 use zkboost_types::ProgramID;
 
-use crate::config::program::ProgramConfig;
+pub use crate::config::program::{PathConfig, ProgramConfig, UrlConfig};
 
 mod program;
 
 /// Server configuration loaded from a TOML/YAML file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Config {
+pub struct Config {
     /// List of zkVM programs to load on server startup.
     #[serde(default)]
-    pub(crate) zkvm: Vec<zkVMConfig>,
+    pub zkvm: Vec<zkVMConfig>,
 }
 
 impl Config {
     /// Load config from file (auto-detects format from extension).
-    pub(crate) fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
         let string = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config at {path:?}"))?;
@@ -38,12 +38,12 @@ impl Config {
     }
 
     /// Parse config from TOML string.
-    pub(crate) fn from_toml_str(s: &str) -> anyhow::Result<Self> {
+    pub fn from_toml_str(s: &str) -> anyhow::Result<Self> {
         toml::from_str(s).with_context(|| format!("Failed to deserialize TOML config:\n{s}"))
     }
 
     /// Parse config from YAML string.
-    pub(crate) fn from_yaml_str(s: &str) -> anyhow::Result<Self> {
+    pub fn from_yaml_str(s: &str) -> anyhow::Result<Self> {
         serde_yaml::from_str(s).with_context(|| format!("Failed to deserialize YAML config:\n{s}"))
     }
 }
@@ -52,15 +52,15 @@ impl Config {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[allow(non_camel_case_types)]
-pub(crate) struct zkVMConfig {
+pub struct zkVMConfig {
     /// The kind of zkVM backend to use.
-    pub(crate) kind: zkVMKind,
+    pub kind: zkVMKind,
     /// The compute resource type for proving (CPU, GPU, or network).
-    pub(crate) resource: ProverResourceType,
+    pub resource: ProverResourceType,
     /// Unique identifier for this program.
-    pub(crate) program_id: ProgramID,
+    pub program_id: ProgramID,
     /// Path to the compiled program binary.
-    pub(crate) program: ProgramConfig,
+    pub program: ProgramConfig,
 }
 
 #[cfg(test)]
@@ -68,11 +68,7 @@ mod test {
     use ere_dockerized::zkVMKind;
     use ere_zkvm_interface::{NetworkProverConfig, ProverResourceType};
 
-    use crate::config::{
-        Config,
-        program::{PathConfig, ProgramConfig, UrlConfig},
-        zkVMConfig,
-    };
+    use crate::{Config, PathConfig, ProgramConfig, UrlConfig, zkVMConfig};
 
     #[test]
     fn test_from_toml_str() {
@@ -100,6 +96,8 @@ mod test {
 
     #[test]
     fn test_from_yaml_str() {
+        // FIXME: After Ere add `#[serde(untagged)]` for `ProverResourceType`,
+        //        remove the `!network` tagging.
         let yaml = r#"
             zkvm:
             - kind: openvm

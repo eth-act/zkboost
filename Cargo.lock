@@ -1476,7 +1476,7 @@ checksum = "0e050f626429857a27ddccb31e0aca21356bfa709c04041aefddac081a8f068a"
 [[package]]
 name = "benchmark-runner"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -1640,7 +1640,7 @@ dependencies = [
 [[package]]
 name = "block-encoding-length-guest"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "ere-io",
  "ere-platform-trait",
@@ -2948,7 +2948,7 @@ dependencies = [
 [[package]]
 name = "ere-build-utils"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
+source = "git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430#46672d08b72f149c3e939758ed1d69efaf1d0430"
 dependencies = [
  "cargo_metadata",
 ]
@@ -2964,10 +2964,11 @@ dependencies = [
 [[package]]
 name = "ere-common"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
+source = "git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430#46672d08b72f149c3e939758ed1d69efaf1d0430"
 dependencies = [
- "ere-build-utils 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-build-utils 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
  "serde",
+ "strum 0.27.2",
 ]
 
 [[package]]
@@ -2982,12 +2983,12 @@ dependencies = [
 [[package]]
 name = "ere-dockerized"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
+source = "git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430#46672d08b72f149c3e939758ed1d69efaf1d0430"
 dependencies = [
  "anyhow",
- "ere-common 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
- "ere-server 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
- "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-common 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "ere-server 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
  "parking_lot",
  "serde",
  "tempfile",
@@ -3034,11 +3035,11 @@ dependencies = [
 [[package]]
 name = "ere-server"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
+source = "git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430#46672d08b72f149c3e939758ed1d69efaf1d0430"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
- "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
  "prost 0.13.5",
  "serde",
  "thiserror 2.0.17",
@@ -3064,7 +3065,7 @@ dependencies = [
 [[package]]
 name = "ere-zkvm-interface"
 version = "0.0.15"
-source = "git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745#d15d36aa0a5d552a5159087884e7bea9ea74c745"
+source = "git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430#46672d08b72f149c3e939758ed1d69efaf1d0430"
 dependencies = [
  "anyhow",
  "auto_impl",
@@ -3240,7 +3241,7 @@ dependencies = [
 [[package]]
 name = "ethrex-guest"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "ere-io",
  "ere-platform-trait",
@@ -4037,7 +4038,7 @@ dependencies = [
 [[package]]
 name = "guest-libs"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -7893,7 +7894,7 @@ dependencies = [
 [[package]]
 name = "reth-guest"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "alloy-primitives",
  "ere-io",
@@ -12023,7 +12024,7 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 [[package]]
 name = "witness-generator"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -12221,20 +12222,60 @@ dependencies = [
 ]
 
 [[package]]
+name = "zkboost-ethereum-el-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ere-common 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "reqwest",
+ "serde",
+ "tokio",
+ "toml 0.9.8",
+ "tracing",
+ "tracing-subscriber 0.3.22",
+ "zkboost-ethereum-el-types",
+ "zkboost-server-config",
+]
+
+[[package]]
+name = "zkboost-ethereum-el-relayer"
+version = "0.1.0"
+
+[[package]]
+name = "zkboost-ethereum-el-types"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata",
+ "serde",
+ "strum 0.27.2",
+]
+
+[[package]]
+name = "zkboost-ethereum-el-witness"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "benchmark-runner",
+ "reth-stateless",
+ "witness-generator",
+ "zkboost-ethereum-el-types",
+]
+
+[[package]]
 name = "zkboost-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "benchmark-runner",
- "cargo_metadata",
  "clap",
- "ere-dockerized 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
- "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-dockerized 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "futures",
  "nix",
  "reqwest",
- "serde",
- "serde_yaml",
  "sysinfo 0.37.2",
  "tempfile",
  "tokio",
@@ -12245,6 +12286,23 @@ dependencies = [
  "wgpu",
  "witness-generator",
  "zkboost-client",
+ "zkboost-ethereum-el-config",
+ "zkboost-ethereum-el-types",
+ "zkboost-server-config",
+ "zkboost-types",
+]
+
+[[package]]
+name = "zkboost-server-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ere-dockerized 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
+ "reqwest",
+ "serde",
+ "serde_yaml",
+ "toml 0.9.8",
  "zkboost-types",
 ]
 
@@ -12252,7 +12310,7 @@ dependencies = [
 name = "zkboost-types"
 version = "0.1.0"
 dependencies = [
- "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=d15d36aa0a5d552a5159087884e7bea9ea74c745)",
+ "ere-zkvm-interface 0.0.15 (git+https://github.com/eth-act/ere?rev=46672d08b72f149c3e939758ed1d69efaf1d0430)",
  "indexmap 2.12.1",
  "serde",
  "serde_with",
@@ -12261,7 +12319,7 @@ dependencies = [
 [[package]]
 name = "zkevm-metrics"
 version = "0.1.0"
-source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=e3ac2ded0678377ec09d781f1331159e3c36633d#e3ac2ded0678377ec09d781f1331159e3c36633d"
+source = "git+https://github.com/eth-act/zkevm-benchmark-workload?rev=5b95a053bdade4f07e25327fc1737ebce1be4d6b#5b95a053bdade4f07e25327fc1737ebce1be4d6b"
 dependencies = [
  "chrono",
  "serde",

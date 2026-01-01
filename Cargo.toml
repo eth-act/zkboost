@@ -2,8 +2,14 @@
 members = [
     "crates/client",
     "crates/execution-witness-sentry",
-    "crates/server",
-    "crates/types",
+    "crates/zkboost/client",
+    "crates/zkboost/server",
+    "crates/zkboost/server-config",
+    "crates/zkboost/types",
+    "crates/zkboost-ethereum/el-config",
+    "crates/zkboost-ethereum/el-relayer",
+    "crates/zkboost-ethereum/el-types",
+    "crates/zkboost-ethereum/el-witness",
 ]
 resolver = "2"
 
@@ -33,15 +39,17 @@ anyhow = "1.0"
 axum = "0.8"
 cargo_metadata = "0.19.0"
 clap = "4.5"
+futures = "0.3"
 indexmap = "2.12"
 nix = "0.29"
 reqwest = "0.12"
 serde = "1.0"
 serde_with = "3.16"
 serde_yaml = "0.9"
+strum = "0.27.2"
 sysinfo = "0.37"
-thiserror = "2"
 tempfile = "3.20.0"
+thiserror = "2"
 tokio = "1.48"
 toml = "0.9"
 tower-http = "0.6"
@@ -49,11 +57,20 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 wgpu = "27"
 
-ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "d15d36aa0a5d552a5159087884e7bea9ea74c745" }
-benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
-witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
+reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 
-zkboost-client = { path = "crates/client" }
-zkboost-server = { path = "crates/server" }
-zkboost-types = { path = "crates/types" }
+ere-common = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
+ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
+benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "5b95a053bdade4f07e25327fc1737ebce1be4d6b" }
+witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "5b95a053bdade4f07e25327fc1737ebce1be4d6b" }
+
+zkboost-client = { path = "crates/zkboost/client" }
+zkboost-server = { path = "crates/zkboost/server" }
+zkboost-server-config = { path = "crates/zkboost/server-config" }
+zkboost-types = { path = "crates/zkboost/types" }
+zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
+zkboost-ethereum-el-relayer = { path = "crates/zkboost-ethereum/el-relayer" }
+zkboost-ethereum-el-types = { path = "crates/zkboost-ethereum/el-types" }
+zkboost-ethereum-el-witness = { path = "crates/zkboost-ethereum/el-witness" }
+

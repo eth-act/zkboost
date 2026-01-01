@@ -11,18 +11,20 @@ use std::{
 
 use anyhow::bail;
 use benchmark_runner::guest_programs::{GuestFixture, OutputVerifierResult};
-use clap::{Parser, builder::PossibleValuesParser};
+use clap::Parser;
 use ere_dockerized::{CRATE_VERSION, zkVMKind};
+use ere_zkvm_interface::ProverResourceType;
 use nix::sys::{prctl, signal::Signal};
 use tempfile::tempdir;
 use tokio::{process::Command, time::sleep};
 use tracing::info;
 use zkboost_client::zkboostClient;
+use zkboost_ethereum_el_config::program::download_program;
+use zkboost_ethereum_el_types::ElKind;
+use zkboost_server_config::{Config, zkVMConfig};
 
-use crate::{config::generate_config, witness::generate_stateless_validator_fixture};
+use crate::witness::generate_stateless_validator_fixture;
 
-mod config;
-mod util;
 mod witness;
 
 #[derive(Parser)]
@@ -32,13 +34,13 @@ struct Args {
     #[arg(long)]
     zkboost_server_bin: Option<PathBuf>,
     /// Execution layer client implementation (reth or ethrex)
-    #[arg(long, default_value = "reth", ignore_case = true, value_parser = PossibleValuesParser::new(["reth", "ethrex"]))]
-    el: String,
+    #[arg(long, default_value = "reth")]
+    el: ElKind,
     /// zkVM to use
     #[arg(long)]
     zkvm: zkVMKind,
     /// Resource type for proving (cpu or gpu)
-    #[arg(long, default_value = "cpu", ignore_case = true, value_parser = PossibleValuesParser::new(["cpu", "gpu"]))]
+    #[arg(long, ignore_case = true, default_value = "cpu", value_parser = ["cpu", "gpu"])]
     resource: String,
     /// RPC URL for generating test fixtures from a live blockchain.
     /// If not provided, an empty block fixture will be used.
@@ -71,12 +73,49 @@ impl Args {
     }
 
     fn program_id(&self) -> String {
-        format!("{}-{}", self.el, self.zkvm)
+        format!("{}-{}", self.el.as_str(), self.zkvm)
     }
 }
 
+/// Download program and generate config file.
+async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String> {
+    info!("Generating config...");
+
+    let program_dir = workspace.join("program");
+    let program = download_program(
+        args.zkvm,
+        args.el,
+        args.github_token.as_deref(),
+        &program_dir,
+    )
+    .await?;
+
+    let resource = match args.resource.to_lowercase().as_str() {
+        "cpu" => ProverResourceType::Cpu,
+        "gpu" => ProverResourceType::Gpu,
+        _ => bail!("Unsupported resource type: {}", args.resource),
+    };
+
+    let config = Config {
+        zkvm: vec![zkVMConfig {
+            kind: args.zkvm,
+            resource,
+            program_id: args.program_id().into(),
+            program,
+        }],
+    };
+
+    let config_path = workspace.join("config.toml");
+    let config_str = toml::to_string(&config)?;
+    tokio::fs::write(&config_path, config_str).await?;
+
+    info!("Successfully generated config");
+
+    Ok(config_path.to_string_lossy().to_string())
+}
+
 /// Start `zkboost-server` with stateless validator program.
-async fn start_zkboost_server(args: &Args, workspace: &Path) -> anyhow::Result<zkboostClient> {
+async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<zkboostClient> {
     // Pull server image if using CPU resource
     let server_image = args.server_image();
     if args.resource == "cpu" {
@@ -90,9 +129,6 @@ async fn start_zkboost_server(args: &Args, workspace: &Path) -> anyhow::Result<z
             bail!("Failed to pull Docker image: {server_image}");
         }
     }
-
-    // Create the config
-    let config_path = generate_config(args, workspace).await?;
 
     info!("Starting server...");
 
@@ -152,7 +188,9 @@ async fn main() -> anyhow::Result<()> {
         workspace.path().to_path_buf()
     };
 
-    let client = start_zkboost_server(&args, &workspace).await?;
+    let config_path = generate_config(&args, &workspace).await?;
+
+    let client = start_zkboost_server(&args, &config_path).await?;
 
     let fixture = generate_stateless_validator_fixture(&args, &workspace).await?;
 

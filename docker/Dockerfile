@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     libssl-dev \
     pkg-config \
+    clang \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY . .

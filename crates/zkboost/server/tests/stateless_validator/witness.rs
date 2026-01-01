@@ -11,11 +11,9 @@ use witness_generator::{
     eest_generator::EESTFixtureGeneratorBuilder,
     rpc_generator::{RpcBlocksAndWitnessesBuilder, RpcFlatHeaderKeyValues},
 };
+use zkboost_ethereum_el_types::{WORKLOAD_REPO, WORKLOAD_VERSION};
 
-use crate::{
-    Args,
-    util::{WORKLOAD_PKG_VERSION, WORKLOAD_REPO},
-};
+use crate::Args;
 
 pub(crate) async fn generate_stateless_validator_fixture(
     args: &Args,
@@ -51,9 +49,8 @@ pub(crate) async fn generate_stateless_validator_fixture(
         let eest_fixtures_dir = workspace.join("fixtures").join("blockchain_tests");
         fs::create_dir_all(&eest_fixtures_dir).await?;
         let fixture_url = format!(
-            "https://raw.githubusercontent.com/{}/{}/tests/assets/eest-empty-block/fixtures/blockchain_tests/empty_block.json",
-            &*WORKLOAD_REPO,
-            WORKLOAD_PKG_VERSION.as_str(),
+            "https://raw.githubusercontent.com/{WORKLOAD_REPO}/{}/tests/assets/eest-empty-block/fixtures/blockchain_tests/empty_block.json",
+            WORKLOAD_VERSION.as_str(),
         );
         let response = reqwest::get(fixture_url).await?;
         let content = response.bytes().await?;

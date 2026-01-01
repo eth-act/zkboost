@@ -1,0 +1,13 @@
+[package]
+name = "zkboost-ethereum-el-relayer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ethereum relayer bridging Consensus Layer and Execution Layer for zkboost proof generation"
+keywords = ["ethereum", "zkboost", "relayer", "consensus-layer", "execution-layer"]
+categories = ["cryptography::cryptocurrencies", "network-programming"]
+
+[lints]
+workspace = true
+
+[dependencies]
