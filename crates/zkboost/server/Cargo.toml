@@ -20,6 +20,8 @@ tower-http = { workspace = true, features = ["trace", "limit"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 wgpu.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
 
 ere-dockerized.workspace = true
 ere-zkvm-interface.workspace = true
