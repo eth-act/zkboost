@@ -43,6 +43,10 @@ pub enum Error {
     /// TOML parsing error.
     #[error("TOML parse error: {0}")]
     Toml(#[from] toml::de::Error),
+
+    /// SSE connection error.
+    #[error("SSE error: {0}")]
+    Sse(String),
 }
 
 /// Result type alias using our Error type.

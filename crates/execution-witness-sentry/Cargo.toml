@@ -9,6 +9,8 @@ alloy-provider = { version = "1", features = ["ws"] }
 alloy-rpc-types-eth = "1"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+discv5 = { workspace = true }
+eventsource-client = "0.13"
 flate2 = "1.1"
 futures = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }

@@ -137,17 +137,48 @@ impl ElClient {
 /// Execution proof to submit to CL nodes.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExecutionProof {
-    pub proof_id: u32,
-    pub slot: String,
+    pub proof_id: u8,
+    pub slot: u64,
     pub block_hash: String,
     pub block_root: String,
     pub proof_data: Vec<u8>,
 }
 
 /// Consensus layer HTTP API client.
+#[derive(Clone)]
 pub struct ClClient {
     url: Url,
     http_client: reqwest::Client,
+}
+
+/// Block response with execution payload.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockResponse {
+    pub data: BlockData,
+}
+
+/// Block data.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockData {
+    pub message: BlockMessage,
+}
+
+/// Block message.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockMessage {
+    pub body: BlockBody,
+}
+
+/// Block body.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockBody {
+    pub execution_payload: Option<ExecutionPayload>,
+}
+
+/// Execution payload (minimal fields).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecutionPayload {
+    pub block_hash: String,
 }
 
 /// Syncing status response.
@@ -174,6 +205,18 @@ pub struct BlockHeaderResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlockHeaderData {
     pub root: String,
+}
+
+/// Node identity response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IdentityResponse {
+    pub data: IdentityData,
+}
+
+/// Node identity data.
+#[derive(Debug, Clone, Deserialize)]
+pub struct IdentityData {
+    pub enr: String,
 }
 
 impl ClClient {
@@ -220,6 +263,116 @@ impl ClClient {
         }
 
         Ok(())
+    }
+
+    /// Get node identity (including ENR).
+    pub async fn get_identity(&self) -> Result<IdentityResponse> {
+        let url = self.url.join("eth/v1/node/identity")?;
+        let response = self.http_client.get(url).send().await?;
+        Ok(response.json().await?)
+    }
+
+    /// Check if the node has zkvm enabled by inspecting its ENR.
+    pub async fn is_zkvm_enabled(&self) -> Result<bool> {
+        let identity = self.get_identity().await?;
+        Ok(enr_has_zkvm(&identity.data.enr))
+    }
+
+    /// Get the execution block hash for a beacon block.
+    pub async fn get_block_execution_hash(&self, block_root: &str) -> Result<Option<String>> {
+        let url = self
+            .url
+            .join(&format!("eth/v2/beacon/blocks/{}", block_root))?;
+        let response = self.http_client.get(url).send().await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let block_response: BlockResponse = response.json().await?;
+        Ok(block_response
+            .data
+            .message
+            .body
+            .execution_payload
+            .map(|p| p.block_hash))
+    }
+
+    /// Get the current head slot.
+    pub async fn get_head_slot(&self) -> Result<u64> {
+        let syncing = self.get_syncing().await?;
+        syncing
+            .data
+            .head_slot
+            .parse()
+            .map_err(|e| Error::Config(format!("Invalid head slot: {}", e)))
+    }
+
+    /// Get block info (slot, block_root, execution_block_hash) for a given slot.
+    /// Returns None if the slot is empty (no block).
+    pub async fn get_block_info(&self, slot: u64) -> Result<Option<BlockInfo>> {
+        let url = self.url.join(&format!("eth/v2/beacon/blocks/{}", slot))?;
+        let response = self.http_client.get(url).send().await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !response.status().is_success() {
+            return Err(Error::Rpc {
+                code: response.status().as_u16() as i64,
+                message: response.text().await.unwrap_or_default(),
+            });
+        }
+
+        let block_response: BlockResponse = response.json().await?;
+        let execution_block_hash = block_response
+            .data
+            .message
+            .body
+            .execution_payload
+            .map(|p| p.block_hash);
+
+        // Get the block root from headers endpoint
+        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{}", slot))?;
+        let header_response = self.http_client.get(header_url).send().await?;
+
+        if header_response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let header: BlockHeaderResponse = header_response.json().await?;
+
+        Ok(Some(BlockInfo {
+            slot,
+            block_root: header.data.root,
+            execution_block_hash,
+        }))
+    }
+}
+
+/// Block info for backfill.
+#[derive(Debug, Clone)]
+pub struct BlockInfo {
+    pub slot: u64,
+    pub block_root: String,
+    pub execution_block_hash: Option<String>,
+}
+
+/// The ENR field specifying whether zkVM execution proofs are enabled.
+const ZKVM_ENABLED_ENR_KEY: &str = "zkvm";
+
+/// Check if an ENR string contains the zkvm flag.
+fn enr_has_zkvm(enr_str: &str) -> bool {
+    use discv5::enr::{CombinedKey, Enr};
+    use std::str::FromStr;
+
+    match Enr::<CombinedKey>::from_str(enr_str) {
+        Ok(enr) => enr
+            .get_decodable::<bool>(ZKVM_ENABLED_ENR_KEY)
+            .and_then(|result| result.ok())
+            .unwrap_or(false),
+        Err(_) => false,
     }
 }
 
