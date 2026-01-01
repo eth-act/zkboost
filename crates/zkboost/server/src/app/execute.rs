@@ -1,9 +1,12 @@
+use std::time::Instant;
+
 use axum::{Json, extract::State, http::StatusCode};
 use ere_zkvm_interface::{Input, zkVM};
 use tracing::instrument;
 use zkboost_types::{ExecuteRequest, ExecuteResponse};
 
 use crate::app::AppState;
+use crate::metrics::record_execute;
 
 /// HTTP handler for the `/execute` endpoint.
 ///
@@ -13,21 +16,26 @@ pub(crate) async fn execute_program(
     State(state): State<AppState>,
     Json(req): Json<ExecuteRequest>,
 ) -> Result<Json<ExecuteResponse>, (StatusCode, String)> {
+    let start = Instant::now();
     let program_id = req.program_id.clone();
     let programs = state.programs.read().await;
 
-    let program = programs
-        .get(&program_id)
-        .ok_or((StatusCode::NOT_FOUND, "Program not found".to_string()))?;
+    let program = programs.get(&program_id).ok_or_else(|| {
+        record_execute(&program_id.0, false, start.elapsed(), 0);
+        (StatusCode::NOT_FOUND, "Program not found".to_string())
+    })?;
 
     let input = Input::new().with_stdin(req.input);
 
     let (public_values, report) = program.vm.execute(&input).map_err(|e| {
+        record_execute(&program_id.0, false, start.elapsed(), 0);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to execute program: {e}"),
         )
     })?;
+
+    record_execute(&program_id.0, true, start.elapsed(), report.total_num_cycles);
 
     Ok(Json(ExecuteResponse {
         program_id,
