@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/client",
+    "crates/execution-witness-sentry",
     "crates/zkboost/client",
     "crates/zkboost/server",
     "crates/zkboost/server-config",
