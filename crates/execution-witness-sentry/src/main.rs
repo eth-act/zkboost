@@ -3,8 +3,8 @@
 //! Monitors execution layer nodes for new blocks and fetches their execution witnesses.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::pin::pin;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -13,7 +13,10 @@ use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-use execution_witness_sentry::{subscribe_blocks, BlockStorage, Config, ElClient};
+use execution_witness_sentry::{
+    subscribe_blocks, BlockStorage, ClClient, Config, ElClient, ExecutionProof,
+    generate_random_proof,
+};
 
 /// Execution witness sentry - monitors EL nodes and fetches witnesses.
 #[derive(Parser, Debug)]
@@ -65,86 +68,103 @@ async fn main() -> anyhow::Result<()> {
         info!(
             name = %endpoint.name,
             el_url = %endpoint.el_url,
-            ws_url = %endpoint.el_ws_url,
-            "Configured endpoint"
+            el_ws_url = %endpoint.el_ws_url,
+            "EL endpoint configured"
         );
     }
 
-    run(config).await
-}
+    // Set up CL clients for proof submission
+    let cl_clients: Vec<(String, ClClient)> = config
+        .cl_endpoints
+        .as_ref()
+        .map(|endpoints| {
+            endpoints
+                .iter()
+                .filter_map(|e| {
+                    Url::parse(&e.url)
+                        .ok()
+                        .map(|url| (e.name.clone(), ClClient::new(url)))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
-async fn run(config: Config) -> anyhow::Result<()> {
-    let seen_blocks = Arc::new(Mutex::new(SeenBlocks::default()));
-    let (tx, rx) = mpsc::channel::<BlockEvent>(100);
-
-    // Spawn subscription tasks for each endpoint.
-    for endpoint in &config.endpoints {
-        spawn_subscription_task(endpoint.name.clone(), endpoint.el_ws_url.clone(), tx.clone());
+    info!(cl_endpoints = cl_clients.len(), "CL endpoints configured");
+    for (name, _) in &cl_clients {
+        info!(name = %name, "CL endpoint configured");
     }
 
-    // Drop our sender so the channel closes when all subscription tasks end.
-    drop(tx);
+    let num_proofs = config.num_proofs.unwrap_or(2);
 
-    // Process incoming block events.
-    process_blocks(config, seen_blocks, rx).await;
+    // Set up block storage
+    let storage = config.output_dir.as_ref().map(|dir| {
+        BlockStorage::new(
+            dir,
+            config.chain.as_deref().unwrap_or("unknown"),
+            config.retain,
+        )
+    });
 
-    Ok(())
-}
+    let seen_blocks = Arc::new(Mutex::new(SeenBlocks::default()));
+    let (tx, mut rx) = mpsc::channel::<BlockEvent>(100);
 
-/// Spawn a task that subscribes to new block headers and forwards them to the channel.
-fn spawn_subscription_task(name: String, ws_url: String, tx: mpsc::Sender<BlockEvent>) {
-    tokio::spawn(async move {
-        info!(name = %name, "Connecting to WebSocket");
+    // Spawn subscription tasks for each endpoint
+    for endpoint in config.endpoints.clone() {
+        let tx = tx.clone();
+        let name = endpoint.name.clone();
+        let ws_url = endpoint.el_ws_url.clone();
 
-        let stream = match subscribe_blocks(&ws_url).await {
-            Ok(s) => s,
-            Err(e) => {
-                error!(name = %name, error = %e, "Failed to subscribe");
-                return;
-            }
-        };
+        tokio::spawn(async move {
+            info!(name = %name, "Connecting to EL WebSocket");
 
-        info!(name = %name, "Subscribed to newHeads");
-
-        let mut stream = pin!(stream);
-        while let Some(header) = stream.next().await {
-            let event = BlockEvent {
-                endpoint_name: name.clone(),
-                number: header.number,
-                hash: format!("{:?}", header.hash),
+            let stream = match subscribe_blocks(&ws_url).await {
+                Ok(s) => s,
+                Err(e) => {
+                    error!(name = %name, error = %e, "Failed to subscribe");
+                    return;
+                }
             };
 
-            if tx.send(event).await.is_err() {
-                break;
+            info!(name = %name, "Subscribed to newHeads");
+
+            let mut stream = pin!(stream);
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(header) => {
+                        let event = BlockEvent {
+                            endpoint_name: name.clone(),
+                            number: header.number,
+                            hash: format!("{:?}", header.hash),
+                        };
+                        if tx.send(event).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!(name = %name, error = %e, "Stream error");
+                    }
+                }
             }
-        }
+            warn!(name = %name, "WebSocket stream ended");
+        });
+    }
 
-        warn!(name = %name, "WebSocket stream ended");
-    });
-}
+    drop(tx);
 
-/// Process incoming block events: fetch data and save to storage.
-async fn process_blocks(
-    config: Config,
-    seen_blocks: Arc<Mutex<SeenBlocks>>,
-    mut rx: mpsc::Receiver<BlockEvent>,
-) {
-    // Set up storage if configured.
-    let storage = config.output_dir.as_ref().map(|dir| {
-        BlockStorage::new(dir, config.chain.as_deref().unwrap_or("unknown"), config.retain)
-    });
+    info!("Waiting for events");
 
-    info!("Waiting for blocks");
-
+    // Process incoming block events
     while let Some(event) = rx.recv().await {
-        // Check if we've already seen this block.
-        let is_new = seen_blocks.lock().await.is_new(&event.hash);
+        let mut seen = seen_blocks.lock().await;
+        let is_new = seen.is_new(&event.hash);
+        drop(seen);
 
         if !is_new {
             debug!(
                 name = %event.endpoint_name,
                 number = event.number,
-                "Block already seen"
+                "Already seen"
             );
             continue;
         }
@@ -156,56 +176,122 @@ async fn process_blocks(
             "New block"
         );
 
-        // Find the endpoint configuration.
-        let Some(endpoint) = config.endpoints.iter().find(|e| e.name == event.endpoint_name) else {
-            error!(name = %event.endpoint_name, "Endpoint not found in config");
-            continue;
+        // Find the endpoint that reported this block
+        let endpoint = match config.endpoints.iter().find(|e| e.name == event.endpoint_name) {
+            Some(e) => e,
+            None => continue,
         };
 
-        // Process the block.
-        if let Err(e) = process_block(endpoint, &event, storage.as_ref()).await {
-            error!(
-                name = %event.endpoint_name,
-                number = event.number,
-                error = %e,
-                "Failed to process block"
-            );
+        let el_url = match Url::parse(&endpoint.el_url) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+        let el_client = ElClient::new(el_url);
+
+        // Fetch block and witness
+        let (block, gzipped_block) = match el_client.get_block_by_hash(&event.hash).await {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                warn!(number = event.number, "Block not found");
+                continue;
+            }
+            Err(e) => {
+                error!(number = event.number, error = %e, "Failed to fetch block");
+                continue;
+            }
+        };
+
+        let (witness, gzipped_witness) = match el_client.get_execution_witness(event.number).await {
+            Ok(Some(data)) => data,
+            Ok(None) => {
+                warn!(number = event.number, "Witness not found");
+                continue;
+            }
+            Err(e) => {
+                error!(number = event.number, error = %e, "Failed to fetch witness");
+                continue;
+            }
+        };
+
+        info!(
+            number = event.number,
+            block_gzipped = gzipped_block.len(),
+            witness_gzipped = gzipped_witness.len(),
+            "Fetched block and witness"
+        );
+
+        // Save to disk if storage is configured
+        if let Some(ref storage) = storage {
+            let combined = serde_json::json!({
+                "block": block,
+                "witness": witness,
+            });
+            let combined_bytes = serde_json::to_vec(&combined)?;
+            let gzipped_combined = execution_witness_sentry::compress_gzip(&combined_bytes)?;
+
+            if let Err(e) = storage.save_block(&block, &gzipped_combined) {
+                error!(error = %e, "Failed to save block");
+            } else {
+                info!(
+                    number = event.number,
+                    separate = gzipped_block.len() + gzipped_witness.len(),
+                    combined = gzipped_combined.len(),
+                    "Saved"
+                );
+            }
         }
-    }
-}
 
-/// Fetch block and witness data, then save to storage.
-async fn process_block(
-    endpoint: &execution_witness_sentry::Endpoint,
-    event: &BlockEvent,
-    storage: Option<&BlockStorage>,
-) -> anyhow::Result<()> {
-    let el_url: Url = endpoint.el_url.parse()?;
-    let client = ElClient::new(el_url);
+        // Submit proofs to CL endpoints
+        for (cl_name, cl_client) in &cl_clients {
+            let sync_status = match cl_client.get_syncing().await {
+                Ok(s) => s,
+                Err(e) => {
+                    error!(cl = %cl_name, error = %e, "Failed to get sync status");
+                    continue;
+                }
+            };
 
-    // Fetch the block.
-    let Some(block) = client.get_block_by_hash(&event.hash).await? else {
-        warn!(number = event.number, "Block not found");
-        return Ok(());
-    };
+            let head_slot: u64 = sync_status.data.head_slot.parse().unwrap_or(0);
 
-    debug!(
-        number = event.number,
-        txs = block.transactions.len(),
-        "Fetched block"
-    );
+            let block_root = match cl_client.get_block_header(head_slot).await {
+                Ok(Some(header)) => header.data.root,
+                Ok(None) => continue,
+                Err(e) => {
+                    debug!(cl = %cl_name, error = %e, "Failed to get block header");
+                    continue;
+                }
+            };
 
-    // Fetch the execution witness.
-    let Some(witness) = client.get_execution_witness(event.number).await? else {
-        warn!(number = event.number, "Witness not found");
-        return Ok(());
-    };
+            for proof_id in 0..num_proofs {
+                let proof = ExecutionProof {
+                    proof_id,
+                    slot: head_slot.to_string(),
+                    block_hash: event.hash.clone(),
+                    block_root: block_root.clone(),
+                    proof_data: generate_random_proof(proof_id),
+                };
 
-    info!(number = event.number, "Fetched witness");
-
-    // Save to storage if configured.
-    if let Some(storage) = storage {
-        storage.save(event.number, &event.hash, &block, &witness)?;
+                match cl_client.submit_execution_proof(&proof).await {
+                    Ok(()) => {
+                        info!(
+                            cl = %cl_name,
+                            slot = head_slot,
+                            proof_id = proof_id,
+                            "Proof submitted"
+                        );
+                    }
+                    Err(e) => {
+                        debug!(
+                            cl = %cl_name,
+                            slot = head_slot,
+                            proof_id = proof_id,
+                            error = %e,
+                            "Proof submission failed"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     Ok(())

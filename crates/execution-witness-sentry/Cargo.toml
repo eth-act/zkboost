@@ -1,27 +1,22 @@
 [package]
 name = "execution-witness-sentry"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = { workspace = true }
 description = "Monitors execution layer nodes and fetches execution witnesses"
 
 [dependencies]
 alloy-provider = { version = "1", features = ["ws"] }
 alloy-rpc-types-eth = "1"
-anyhow.workspace = true
-clap = { workspace = true, features = ["derive"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 flate2 = "1.1"
-futures = "0.3"
+futures = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
-serde_json = "1"
-thiserror.workspace = true
+serde_json = { workspace = true }
+thiserror = "1"
 tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros"] }
-toml.workspace = true
-tracing.workspace = true
+toml = "0.8"
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-url = "2"
-
-[lints]
-workspace = true
+url = { workspace = true }

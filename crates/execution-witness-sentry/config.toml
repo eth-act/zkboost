@@ -1,13 +1,21 @@
 output_dir = "."
 chain = "local"
 retain = 10
+num_proofs = 2
 
 [[endpoints]]
 name = "node-1"
-el_url = "http://127.0.0.1:32003"
-el_ws_url = "ws://127.0.0.1:32004"
+el_url = "http://127.0.0.1:33100"
+el_ws_url = "ws://127.0.0.1:33101"
 
-[[endpoints]]
-name = "node-2"
-el_url = "http://127.0.0.1:32010"
-el_ws_url = "ws://127.0.0.1:32011"
+[[cl_endpoints]]
+name = "cl-4-zkvm"
+url = "http://127.0.0.1:33142/"
+
+[[cl_endpoints]]
+name = "cl-5-zkvm"
+url = "http://127.0.0.1:33145/"
+
+[[cl_endpoints]]
+name = "cl-6-zkvm"
+url = "http://127.0.0.1:33133/"

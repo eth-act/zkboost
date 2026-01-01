@@ -5,6 +5,7 @@
 //! - Subscribe to new block headers via WebSocket
 //! - Fetch blocks and execution witnesses via JSON-RPC
 //! - Store block data and witnesses to disk
+//! - Submit execution proofs to consensus layer nodes
 //!
 //! ## Example
 //!
@@ -23,14 +24,6 @@
 //! }
 //! ```
 
-#![cfg_attr(not(test), warn(unused_crate_dependencies))]
-
-// Used in main.rs binary only.
-use anyhow as _;
-use clap as _;
-use tokio as _;
-use tracing_subscriber as _;
-
 pub mod config;
 pub mod error;
 pub mod rpc;
@@ -38,9 +31,9 @@ pub mod storage;
 pub mod subscription;
 
 // Re-export main types at crate root for convenience.
-pub use config::{Config, Endpoint};
+pub use config::{ClEndpoint, Config, Endpoint};
 pub use error::{Error, Result};
-pub use rpc::ElClient;
+pub use rpc::{ClClient, ElClient, ExecutionProof, generate_random_proof};
 pub use storage::{compress_gzip, decompress_gzip, load_block_data, BlockStorage};
 pub use subscription::subscribe_blocks;
 
