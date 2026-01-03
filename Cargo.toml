@@ -59,9 +59,9 @@ metrics-exporter-prometheus = "0.16"
 
 reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 
-ere-common = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
-ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
+ere-common = { git = "https://github.com/eth-act/ere", rev = "43ae66f321cb1ff1cef2fe44d9c581467698bc21" }
+ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "43ae66f321cb1ff1cef2fe44d9c581467698bc21" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "43ae66f321cb1ff1cef2fe44d9c581467698bc21" }
 benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "5b95a053bdade4f07e25327fc1737ebce1be4d6b" }
 witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "5b95a053bdade4f07e25327fc1737ebce1be4d6b" }
 
@@ -73,4 +73,3 @@ zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
 zkboost-ethereum-el-relayer = { path = "crates/zkboost-ethereum/el-relayer" }
 zkboost-ethereum-el-types = { path = "crates/zkboost-ethereum/el-types" }
 zkboost-ethereum-el-witness = { path = "crates/zkboost-ethereum/el-witness" }
-

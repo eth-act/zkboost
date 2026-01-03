@@ -1,3 +1,7 @@
+networks:
+  zkboost_network:
+    name: zkboost_network
+    driver: bridge
 services:
   zkboost:
     build:
@@ -5,12 +9,17 @@ services:
       dockerfile: docker/Dockerfile # Path to Dockerfile _from_ the context
     ports:
       - "3001:3001"
+    networks:
+      - zkboost_network
     volumes:
       # Needed for ere-dockerized to create container
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config.toml:/app/config.toml:ro
+      # - /tmp:/tmp # Optional, if integration tests are run with --dockerized flag.
     environment:
       - RUST_LOG=info,zkboost=debug # Example: Set log level for the app
+      - ERE_DOCKER_NETWORK=zkboost_network
+      - ERE_IMAGE_REGISTRY=ghcr.io/eth-act/ere
     # healthcheck:
     #   test: ["CMD", "curl", "-f", "http://localhost:3000/info"]
 
@@ -18,6 +27,8 @@ services:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
+    networks:
+      - zkboost_network
     volumes:
       - prometheus_data:/prometheus
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -31,6 +42,8 @@ services:
     image: grafana/grafana:latest
     ports:
       - "3002:3000"
+    networks:
+      - zkboost_network
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

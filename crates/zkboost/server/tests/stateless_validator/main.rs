@@ -18,13 +18,15 @@ use nix::sys::{prctl, signal::Signal};
 use tempfile::tempdir;
 use tokio::{process::Command, time::sleep};
 use tracing::info;
+use utils::{ClientSession, ServerResources};
 use zkboost_client::zkboostClient;
 use zkboost_ethereum_el_config::program::download_program;
 use zkboost_ethereum_el_types::ElKind;
 use zkboost_server_config::{Config, zkVMConfig};
 
-use crate::witness::generate_stateless_validator_fixture;
+use crate::{utils::DockerComposeGuard, witness::generate_stateless_validator_fixture};
 
+mod utils;
 mod witness;
 
 #[derive(Parser)]
@@ -62,6 +64,9 @@ struct Args {
     /// Required when `benchmark-runner` dependency uses a git revision instead of a released tag.
     #[arg(env = "GITHUB_TOKEN")]
     github_token: Option<String>,
+    /// Run the server using docker compose
+    #[arg(long)]
+    dockerized: bool,
 }
 
 impl Args {
@@ -115,7 +120,62 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
 }
 
 /// Start `zkboost-server` with stateless validator program.
-async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<zkboostClient> {
+async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<ClientSession> {
+    let port = 3001;
+
+    if args.dockerized {
+        start_zkboost_server_dockerized(config_path, port).await
+    } else {
+        start_zkboost_server_raw(args, config_path, port).await
+    }
+}
+
+/// Start `zkboost-server` using docker compose.
+async fn start_zkboost_server_dockerized(
+    config_path: &str,
+    port: u16,
+) -> anyhow::Result<ClientSession> {
+    info!("Starting server via docker compose...");
+
+    let docker_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("docker");
+
+    let guard = DockerComposeGuard {
+        docker_dir: docker_dir.clone(),
+    };
+
+    let docker_config_path = docker_dir.join("config.toml");
+    tokio::fs::copy(config_path, &docker_config_path).await?;
+
+    let status = Command::new("docker")
+        .args(["compose", "up", "-d", "zkboost"])
+        .current_dir(&docker_dir)
+        .status()
+        .await?;
+
+    if !status.success() {
+        bail!("Failed to start docker compose");
+    }
+
+    let client = wait_for_server_ready(port).await?;
+    Ok(ClientSession {
+        client,
+        _resources: ServerResources::Docker(guard),
+    })
+}
+
+/// Start `zkboost-server` directly using the binary or cargo.
+async fn start_zkboost_server_raw(
+    args: &Args,
+    config_path: &str,
+    port: u16,
+) -> anyhow::Result<ClientSession> {
     // Pull server image if using CPU resource
     let server_image = args.server_image();
     if args.resource == "cpu" {
@@ -133,7 +193,6 @@ async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<
     info!("Starting server...");
 
     // Start the zkboost server
-    let port = 3001;
     let mut cmd;
     match args.zkboost_server_bin.as_deref() {
         Some(bin) => cmd = Command::new(bin),
@@ -147,10 +206,18 @@ async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<
     unsafe { cmd.pre_exec(|| prctl::set_pdeathsig(Signal::SIGTERM).map_err(io::Error::other)) };
 
     cmd.env("ERE_IMAGE_REGISTRY", &args.ere_image_registry)
-        .args(["--config", &config_path, "--port", &port.to_string()])
+        .args(["--config", config_path, "--port", &port.to_string()])
         .spawn()?;
 
-    // Wait for the server to be ready
+    let client = wait_for_server_ready(port).await?;
+    Ok(ClientSession {
+        client,
+        _resources: ServerResources::Raw,
+    })
+}
+
+/// Wait for the server to be ready by polling the health endpoint.
+async fn wait_for_server_ready(port: u16) -> anyhow::Result<zkboostClient> {
     let client = zkboostClient::new(format!("http://localhost:{port}"))?;
     let start = Instant::now();
     loop {
