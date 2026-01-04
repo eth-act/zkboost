@@ -2941,7 +2941,7 @@ dependencies = [
 [[package]]
 name = "ere-build-utils"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=43ae66f321cb1ff1cef2fe44d9c581467698bc21#43ae66f321cb1ff1cef2fe44d9c581467698bc21"
+source = "git+https://github.com/eth-act/ere?rev=05e07cc4490cbf1eedddd9f71c90830a617ca468#05e07cc4490cbf1eedddd9f71c90830a617ca468"
 dependencies = [
  "cargo_metadata",
 ]
@@ -2958,7 +2958,7 @@ dependencies = [
 [[package]]
 name = "ere-common"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=43ae66f321cb1ff1cef2fe44d9c581467698bc21#43ae66f321cb1ff1cef2fe44d9c581467698bc21"
+source = "git+https://github.com/eth-act/ere?rev=05e07cc4490cbf1eedddd9f71c90830a617ca468#05e07cc4490cbf1eedddd9f71c90830a617ca468"
 dependencies = [
  "ere-build-utils 0.0.16",
  "serde",
@@ -2985,7 +2985,7 @@ dependencies = [
 [[package]]
 name = "ere-dockerized"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=43ae66f321cb1ff1cef2fe44d9c581467698bc21#43ae66f321cb1ff1cef2fe44d9c581467698bc21"
+source = "git+https://github.com/eth-act/ere?rev=05e07cc4490cbf1eedddd9f71c90830a617ca468#05e07cc4490cbf1eedddd9f71c90830a617ca468"
 dependencies = [
  "anyhow",
  "ere-common 0.0.16",
@@ -3035,7 +3035,7 @@ dependencies = [
 [[package]]
 name = "ere-server"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=43ae66f321cb1ff1cef2fe44d9c581467698bc21#43ae66f321cb1ff1cef2fe44d9c581467698bc21"
+source = "git+https://github.com/eth-act/ere?rev=05e07cc4490cbf1eedddd9f71c90830a617ca468#05e07cc4490cbf1eedddd9f71c90830a617ca468"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
@@ -3065,7 +3065,7 @@ dependencies = [
 [[package]]
 name = "ere-zkvm-interface"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=43ae66f321cb1ff1cef2fe44d9c581467698bc21#43ae66f321cb1ff1cef2fe44d9c581467698bc21"
+source = "git+https://github.com/eth-act/ere?rev=05e07cc4490cbf1eedddd9f71c90830a617ca468#05e07cc4490cbf1eedddd9f71c90830a617ca468"
 dependencies = [
  "anyhow",
  "auto_impl",

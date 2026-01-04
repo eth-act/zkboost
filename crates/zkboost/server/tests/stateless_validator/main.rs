@@ -123,6 +123,20 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
 async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<ClientSession> {
     let port = 3001;
 
+    // Pull server image if using CPU resource
+    let server_image = args.server_image();
+    if args.resource == "cpu" {
+        info!("Pulling image {server_image}...");
+
+        let status = Command::new("docker")
+            .args(["pull", &server_image])
+            .status()
+            .await?;
+        if !status.success() {
+            bail!("Failed to pull Docker image: {server_image}");
+        }
+    }
+
     if args.dockerized {
         start_zkboost_server_dockerized(config_path, port).await
     } else {
@@ -176,20 +190,6 @@ async fn start_zkboost_server_raw(
     config_path: &str,
     port: u16,
 ) -> anyhow::Result<ClientSession> {
-    // Pull server image if using CPU resource
-    let server_image = args.server_image();
-    if args.resource == "cpu" {
-        info!("Pulling image {server_image}...");
-
-        let status = Command::new("docker")
-            .args(["pull", &server_image])
-            .status()
-            .await?;
-        if !status.success() {
-            bail!("Failed to pull Docker image: {server_image}");
-        }
-    }
-
     info!("Starting server...");
 
     // Start the zkboost server
