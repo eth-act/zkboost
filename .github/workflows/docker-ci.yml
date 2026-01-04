@@ -17,7 +17,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 3. Build images and start all services from docker-compose.yml
       - name: Build & start containers
         run: |
           docker compose \
