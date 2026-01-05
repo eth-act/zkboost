@@ -23,11 +23,9 @@ use zkboost_ethereum_el_input::ElInput;
 use zkboost_ethereum_el_types::ElKind;
 use zkboost_server_config::{Config, zkVMConfig};
 
-use crate::utils::{ClientSession, DockerComposeGuard, ServerResources};
+use crate::utils::{ClientSession, DockerComposeGuard, ServerResources, fetch_empty_block};
 
 mod utils;
-
-const EMPTY_BLOCK: &[u8] = include_bytes!("./fixtures/empty_block.json");
 
 #[derive(Parser)]
 struct Args {
@@ -260,7 +258,7 @@ async fn main() -> anyhow::Result<()> {
 
     let program_id = args.program_id();
 
-    let el_input = ElInput::new(serde_json::from_slice(EMPTY_BLOCK)?);
+    let el_input = ElInput::new(fetch_empty_block(&workspace).await?);
     let stdin = el_input.to_zkvm_input(args.el)?.stdin;
 
     // Execution
@@ -271,7 +269,7 @@ async fn main() -> anyhow::Result<()> {
 
     assert_eq!(response.program_id.0, program_id);
     assert_eq!(
-        el_input.output_sha256(args.el, true)?.as_slice(),
+        el_input.expected_public_values(args.el, true)?.as_slice(),
         response.public_values.as_slice(),
     );
     info!(
@@ -292,7 +290,7 @@ async fn main() -> anyhow::Result<()> {
 
     assert_eq!(response.program_id.0, program_id);
     assert_eq!(
-        el_input.output_sha256(args.el, true)?.as_slice(),
+        el_input.expected_public_values(args.el, true)?.as_slice(),
         response.public_values.as_slice(),
     );
     info!(
@@ -311,7 +309,7 @@ async fn main() -> anyhow::Result<()> {
     assert_eq!(response.program_id.0, program_id);
     assert!(response.verified);
     assert_eq!(
-        el_input.output_sha256(args.el, true)?.as_slice(),
+        el_input.expected_public_values(args.el, true)?.as_slice(),
         response.public_values.as_slice(),
     );
     info!("Successfully verified");

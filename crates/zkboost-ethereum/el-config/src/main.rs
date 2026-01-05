@@ -10,7 +10,6 @@ use clap::Parser;
 use ere_common::zkVMKind;
 use ere_zkvm_interface::ProverResourceType;
 use tokio::fs;
-use toml_edit::{ArrayOfTables, Item, Table, Value, ser::to_document};
 use zkboost_ethereum_el_config::program::download_program;
 use zkboost_ethereum_el_types::ElKind;
 use zkboost_server_config::{Config, zkVMConfig};
@@ -68,19 +67,7 @@ async fn main() -> anyhow::Result<()> {
         }],
     };
 
-    // Format array into array of tables.
-    let mut config_toml = to_document(&config)?;
-    if let Some(item) = config_toml.get_mut("zkvm")
-        && let Item::Value(Value::Array(array)) = item
-    {
-        *item = array
-            .iter()
-            .map(|v| Table::from_iter(v.as_inline_table().unwrap()))
-            .collect::<ArrayOfTables>()
-            .into();
-    }
-
-    fs::write(args.output_dir.join("config.toml"), config_toml.to_string()).await?;
+    fs::write(args.output_dir.join("config.toml"), config.to_toml()?).await?;
 
     Ok(())
 }

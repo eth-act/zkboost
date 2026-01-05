@@ -47,9 +47,9 @@ impl ElInput {
         })
     }
 
-    /// Returns sh256 hash of expected output given the EL and whether the
+    /// Returns expected sh256 hash of output given the EL and whether the
     /// stateless validation is successful or not.
-    pub fn output_sha256(&self, el: ElKind, success: bool) -> anyhow::Result<[u8; 32]> {
+    pub fn expected_public_values(&self, el: ElKind, success: bool) -> anyhow::Result<[u8; 32]> {
         let output = (
             self.stateless_input.block.hash_slow().0,
             self.stateless_input.block.parent_hash.0,

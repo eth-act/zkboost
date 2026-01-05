@@ -31,8 +31,10 @@ zkboost-types.workspace = true
 
 [dev-dependencies]
 clap = { workspace = true, features = ["derive"] }
+flate2.workspace = true
 nix = { workspace = true, features = ["signal", "process"] }
 serde_json.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 toml_edit.workspace = true
 
