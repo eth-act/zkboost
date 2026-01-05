@@ -10,6 +10,7 @@ use clap::Parser;
 use ere_common::zkVMKind;
 use ere_zkvm_interface::ProverResourceType;
 use tokio::fs;
+use toml_edit::{ArrayOfTables, Item, Table, Value, ser::to_document};
 use zkboost_ethereum_el_config::program::download_program;
 use zkboost_ethereum_el_types::ElKind;
 use zkboost_server_config::{Config, zkVMConfig};
@@ -28,8 +29,11 @@ struct Args {
     /// Output path to save the `config.toml` and the program.
     #[arg(long)]
     output_dir: PathBuf,
+    /// Always download the artifact even a release url is available
+    #[arg(long)]
+    always_download: bool,
     /// GitHub token for downloading artifacts from GitHub Actions.
-    /// Required when `benchmark-runner` dependency uses a git revision instead of a released tag.
+    /// Required when `ere-guests` dependency uses a git revision instead of a released tag.
     #[arg(env = "GITHUB_TOKEN")]
     github_token: Option<String>,
 }
@@ -43,10 +47,11 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let program = download_program(
-        args.zkvm,
         args.el,
+        args.zkvm,
         args.github_token.as_deref(),
         &args.output_dir,
+        args.always_download,
     )
     .await?;
 
@@ -62,11 +67,20 @@ async fn main() -> anyhow::Result<()> {
             program,
         }],
     };
-    fs::write(
-        args.output_dir.join("config.toml"),
-        toml::to_string(&config)?,
-    )
-    .await?;
+
+    // Format array into array of tables.
+    let mut config_toml = to_document(&config)?;
+    if let Some(item) = config_toml.get_mut("zkvm")
+        && let Item::Value(Value::Array(array)) = item
+    {
+        *item = array
+            .iter()
+            .map(|v| Table::from_iter(v.as_inline_table().unwrap()))
+            .collect::<ArrayOfTables>()
+            .into();
+    }
+
+    fs::write(args.output_dir.join("config.toml"), config_toml.to_string()).await?;
 
     Ok(())
 }

@@ -48,25 +48,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - el: reth
+        el:
+          - ethrex
+          - reth
+        zkvm:
+          - airbender
+          - openvm
+          - pico
+          - risc0
+          - sp1
+          - zisk
+        exclude:
+          - el: ethrex
             zkvm: airbender
-          - el: reth
+          - el: ethrex
             zkvm: openvm
-          - el: reth
+          - el: ethrex
             zkvm: pico
-          - el: reth
-            zkvm: risc0
-          - el: reth
-            zkvm: sp1
-          - el: reth
-            zkvm: zisk
-          - el: ethrex
-            zkvm: risc0
-          - el: ethrex
-            zkvm: sp1
-          - el: ethrex
-            zkvm: zisk
     steps:
       - uses: actions/checkout@v4
 
