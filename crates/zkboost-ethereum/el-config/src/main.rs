@@ -28,9 +28,9 @@ struct Args {
     /// Output path to save the `config.toml` and the program.
     #[arg(long)]
     output_dir: PathBuf,
-    /// Always download the artifact even a release url is available
+    /// Download the artifact even if a release url is available
     #[arg(long)]
-    always_download: bool,
+    download_guest: bool,
     /// GitHub token for downloading artifacts from GitHub Actions.
     /// Required when `ere-guests` dependency uses a git revision instead of a released tag.
     #[arg(env = "GITHUB_TOKEN")]
@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
         args.zkvm,
         args.github_token.as_deref(),
         &args.output_dir,
-        args.always_download,
+        args.download_guest,
     )
     .await?;
 

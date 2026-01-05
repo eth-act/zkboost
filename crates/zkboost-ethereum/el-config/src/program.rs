@@ -28,7 +28,7 @@ pub async fn download_program(
     zkvm: zkVMKind,
     github_token: Option<&str>,
     output_dir: impl AsRef<Path>,
-    always_download: bool,
+    download_guest: bool,
 ) -> anyhow::Result<ProgramConfig> {
     let output_dir = output_dir.as_ref();
     fs::create_dir_all(output_dir).await?;
@@ -39,7 +39,7 @@ pub async fn download_program(
     match ERE_GUESTS_VERSION {
         // Download from GitHub releases (no authentication needed)
         PackageVersion::Tag(tag) => {
-            if always_download {
+            if download_guest {
                 download_release_artifact(tag, &artifact_name, &artifact_path).await?;
             } else {
                 return Ok(ProgramConfig::Url(UrlConfig {
