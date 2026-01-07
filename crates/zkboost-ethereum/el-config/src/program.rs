@@ -30,20 +30,36 @@ pub async fn download_program(
     output_dir: impl AsRef<Path>,
     download_guest: bool,
 ) -> anyhow::Result<ProgramConfig> {
+    let artifact_name = format!("stateless-validator-{el}-{zkvm}");
+    download_guest_program(&artifact_name, github_token, output_dir, download_guest).await
+}
+
+/// Downloads the compiled guest program.
+///
+/// Programs are retrieved from GitHub, either from release artifacts (for
+/// tagged versions) or GitHub Actions artifacts (for git revisions).
+///
+/// When downloading from Actions artifacts, a GitHub token is required via the
+/// `github_token` parameter.
+pub async fn download_guest_program(
+    artifact_name: &str,
+    github_token: Option<&str>,
+    output_dir: impl AsRef<Path>,
+    download_guest: bool,
+) -> anyhow::Result<ProgramConfig> {
     let output_dir = output_dir.as_ref();
     fs::create_dir_all(output_dir).await?;
 
-    let artifact_name = format!("stateless-validator-{el}-{zkvm}");
-    let artifact_path = output_dir.join(&artifact_name);
+    let artifact_path = output_dir.join(artifact_name);
 
     match ERE_GUESTS_VERSION {
         // Download from GitHub releases (no authentication needed)
         PackageVersion::Tag(tag) => {
             if download_guest {
-                download_release_artifact(tag, &artifact_name, &artifact_path).await?;
+                download_release_artifact(tag, artifact_name, &artifact_path).await?;
             } else {
                 return Ok(ProgramConfig::Url(UrlConfig {
-                    url: release_artifact_url(tag, &artifact_name),
+                    url: release_artifact_url(tag, artifact_name),
                 }));
             }
         }
@@ -59,8 +75,8 @@ pub async fn download_program(
             let gh_client = gh_client(github_token)?;
 
             let action_id = get_release_action_id(&gh_client, rev).await?;
-            let artifact_url = get_artifact_url(&gh_client, &artifact_name, action_id).await?;
-            download_action_artifact(&gh_client, &artifact_name, &artifact_url, &artifact_path)
+            let artifact_url = get_artifact_url(&gh_client, artifact_name, action_id).await?;
+            download_action_artifact(&gh_client, artifact_name, &artifact_url, &artifact_path)
                 .await?;
         }
     }
