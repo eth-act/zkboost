@@ -31,7 +31,14 @@ pub async fn download_program(
     download_guest: bool,
 ) -> anyhow::Result<ProgramConfig> {
     let artifact_name = format!("stateless-validator-{el}-{zkvm}");
-    download_guest_program(&artifact_name, github_token, output_dir, download_guest).await
+    download_guest_program(
+        &artifact_name,
+        ERE_GUESTS_VERSION,
+        github_token,
+        output_dir,
+        download_guest,
+    )
+    .await
 }
 
 /// Downloads the compiled guest program.
@@ -43,6 +50,7 @@ pub async fn download_program(
 /// `github_token` parameter.
 pub async fn download_guest_program(
     artifact_name: &str,
+    package_version: PackageVersion,
     github_token: Option<&str>,
     output_dir: impl AsRef<Path>,
     download_guest: bool,
@@ -52,7 +60,7 @@ pub async fn download_guest_program(
 
     let artifact_path = output_dir.join(artifact_name);
 
-    match ERE_GUESTS_VERSION {
+    match package_version {
         // Download from GitHub releases (no authentication needed)
         PackageVersion::Tag(tag) => {
             if download_guest {
