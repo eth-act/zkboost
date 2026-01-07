@@ -29,6 +29,9 @@ mod utils;
 
 #[derive(Parser)]
 struct Args {
+    /// Url to running `zkboost-server`.
+    #[arg(long, conflicts_with = "zkboost_server_bin")]
+    zkboost_server_url: Option<String>,
     /// Path to `zkboost-server` binary.
     /// If not provided, `cargo run --release --bin zkboost-server` will be used.
     #[arg(long)]
@@ -254,7 +257,14 @@ async fn main() -> anyhow::Result<()> {
 
     let config_path = generate_config(&args, &workspace).await?;
 
-    let client = start_zkboost_server(&args, &config_path).await?;
+    let client = if let Some(zkboost_server_url) = &args.zkboost_server_url {
+        ClientSession {
+            client: zkboostClient::new(zkboost_server_url)?,
+            _resources: ServerResources::Raw,
+        }
+    } else {
+        start_zkboost_server(&args, &config_path).await?
+    };
 
     let program_id = args.program_id();
 

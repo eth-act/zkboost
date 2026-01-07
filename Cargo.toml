@@ -67,10 +67,10 @@ metrics-exporter-prometheus = "0.16"
 reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 
 # ere
-ere-common = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
-ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
-ere-io = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
+ere-common = { git = "https://github.com/eth-act/ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-io = { git = "https://github.com/eth-act/ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
 
 # ere-guests
 guest = { git = "https://github.com/eth-act/ere-guests", tag = "v0.1.0" }
@@ -87,3 +87,10 @@ zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
 zkboost-ethereum-el-input = { path = "crates/zkboost-ethereum/el-input" }
 zkboost-ethereum-el-relayer = { path = "crates/zkboost-ethereum/el-relayer" }
 zkboost-ethereum-el-types = { path = "crates/zkboost-ethereum/el-types" }
+
+[patch."https://github.com/eth-act/ere"]
+ere-build-utils = { git = "https://github.com/eth-act//ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-common = { git = "https://github.com/eth-act//ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-dockerized = { git = "https://github.com/eth-act//ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-io = { git = "https://github.com/eth-act//ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }
+ere-zkvm-interface = { git = "https://github.com/eth-act//ere", rev = "b6112c3981b73d305a25020d1a02333454b958ba" }

@@ -1,0 +1,98 @@
+services:
+  zkboost:
+    build:
+      context: ../../
+      dockerfile: ./docker/Dockerfile
+    ports:
+      - "3001:3001"
+    networks:
+      - zkboost_zisk_cluster
+    volumes:
+      # Needed for ere-dockerized to create container
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - RUST_LOG=info,zkboost=debug
+      - ERE_DOCKER_NETWORK=zkboost_zisk_cluster
+      - ERE_IMAGE_REGISTRY=ghcr.io/eth-act/ere
+    depends_on:
+      - zisk-coordinator
+      - zisk-worker-0
+
+  zisk-coordinator:
+    image: zisk-distributed:v0.15.0-gpu
+    expose:
+      - 50051
+    networks:
+      - zkboost_zisk_cluster
+    # volumes:
+      # Uncomment to override config
+      # - ./coordinator-config:/app/config/coordinator
+      # Uncomment to persist log
+      # - ./logs:/var/log/distributed
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    command: 
+      - "zisk-coordinator"
+      - "--config"
+      - "/app/config/coordinator/prod.toml"
+
+  zisk-worker-0: &zisk-worker
+    image: zisk-distributed:v0.15.0-gpu
+    networks:
+      - zkboost_zisk_cluster
+    volumes:
+      # Mount ELF (Note that ./elf/stateless-validator-reth-zisk contains only ELF bytes instead of serialized program of Ere)
+      - ./elf/stateless-validator-reth-zisk:/app/elf:ro
+      # Uncomment to override config
+      # - ./worker-config:/app/config/worker
+      # Uncomment to persist log
+      # - ./logs:/var/log/distributed
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    command: 
+      - "zisk-worker"
+      - "--config"
+      - "/app/config/worker/prod.toml"
+      - "--coordinator-url"
+      - "http://zisk-coordinator:50051"
+      - "--elf"
+      - "/app/elf"
+    depends_on:
+      - zisk-coordinator
+    shm_size: 32G
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "zisk-worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+
+  # Uncomment to add more worker
+  # zisk-worker-x:
+  #     <<: *zisk-worker
+  #     deploy:
+  #       resources:
+  #         reservations:
+  #           devices:
+  #             - driver: nvidia
+  #               device_ids: ['x']
+  #               capabilities: [gpu]
+
+networks:
+  zkboost_zisk_cluster:
+    name: zkboost_zisk_cluster
+    driver: bridge

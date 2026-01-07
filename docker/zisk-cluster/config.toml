@@ -1,0 +1,5 @@
+[[zkvm]]
+kind = "zisk"
+resource = { network = { endpoint = "http://zisk-coordinator:50051" } } 
+program-id = "reth-zisk"
+program = { url = "https://github.com/eth-act/ere-guests/releases/download/v0.1.0/stateless-validator-reth-zisk" }

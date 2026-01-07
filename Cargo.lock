@@ -2000,7 +2000,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 [[package]]
 name = "ere-build-utils"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27#ec75f8a26657ddbf7efc44cdb3167fff4f55fe27"
+source = "git+https://github.com/eth-act//ere?rev=b6112c3981b73d305a25020d1a02333454b958ba#b6112c3981b73d305a25020d1a02333454b958ba"
 dependencies = [
  "cargo_metadata",
 ]
@@ -2008,7 +2008,7 @@ dependencies = [
 [[package]]
 name = "ere-common"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27#ec75f8a26657ddbf7efc44cdb3167fff4f55fe27"
+source = "git+https://github.com/eth-act//ere?rev=b6112c3981b73d305a25020d1a02333454b958ba#b6112c3981b73d305a25020d1a02333454b958ba"
 dependencies = [
  "ere-build-utils",
  "serde",
@@ -2018,7 +2018,7 @@ dependencies = [
 [[package]]
 name = "ere-dockerized"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27#ec75f8a26657ddbf7efc44cdb3167fff4f55fe27"
+source = "git+https://github.com/eth-act//ere?rev=b6112c3981b73d305a25020d1a02333454b958ba#b6112c3981b73d305a25020d1a02333454b958ba"
 dependencies = [
  "anyhow",
  "ere-common",
@@ -2035,7 +2035,7 @@ dependencies = [
 [[package]]
 name = "ere-io"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27#ec75f8a26657ddbf7efc44cdb3167fff4f55fe27"
+source = "git+https://github.com/eth-act//ere?rev=b6112c3981b73d305a25020d1a02333454b958ba#b6112c3981b73d305a25020d1a02333454b958ba"
 dependencies = [
  "bincode 2.0.1",
  "rkyv",
@@ -2053,7 +2053,7 @@ dependencies = [
 [[package]]
 name = "ere-server"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27#ec75f8a26657ddbf7efc44cdb3167fff4f55fe27"
+source = "git+https://github.com/eth-act//ere?rev=b6112c3981b73d305a25020d1a02333454b958ba#b6112c3981b73d305a25020d1a02333454b958ba"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
@@ -2068,7 +2068,7 @@ dependencies = [
 [[package]]
 name = "ere-zkvm-interface"
 version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27#ec75f8a26657ddbf7efc44cdb3167fff4f55fe27"
+source = "git+https://github.com/eth-act//ere?rev=b6112c3981b73d305a25020d1a02333454b958ba#b6112c3981b73d305a25020d1a02333454b958ba"
 dependencies = [
  "anyhow",
  "auto_impl",
