@@ -10,6 +10,8 @@ members = [
     "crates/zkboost-ethereum/el-input",
     "crates/zkboost-ethereum/el-relayer",
     "crates/zkboost-ethereum/el-types",
+
+    "crates/execution-witness-sentry",
 ]
 resolver = "2"
 
@@ -62,6 +64,8 @@ tracing-subscriber = "0.3"
 wgpu = "27"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
+discv5 = "0.10"
+url = "2.5.7"
 
 # reth
 reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
