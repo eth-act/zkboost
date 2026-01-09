@@ -46,8 +46,11 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/execution-witness-sentry:latest-${{ matrix.arch }}
 
   merge-manifests:
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     needs: build-ews
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' # FIXME: && github.ref == 'refs/heads/master'
     steps:
       - name: Set up Docker Buildx
