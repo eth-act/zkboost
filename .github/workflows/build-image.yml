@@ -10,7 +10,15 @@ on:
 
 jobs:
   build-ews:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch: amd64
+          runner: ubuntu-latest
+        - arch: arm64
+          runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,5 +39,26 @@ jobs:
           context: .
           file: docker/Dockerfile.ews
           push: github.event_name == 'push' # FIXME: && github.ref == 'refs/heads/master'
-          platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/${{ github.repository }}/execution-witness-sentry:latest
+          platforms: linux/${{ matrix.arch }}
+          tags: ghcr.io/${{ github.repository }}/execution-witness-sentry:latest-${{ matrix.arch }}
+
+  merge-manifests:
+    runs-on: ubuntu-latest
+    needs: build-ews
+    if: github.event_name == 'push' # FIXME: && github.ref == 'refs/heads/master'
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/execution-witness-sentry:latest \
+            ghcr.io/${{ github.repository }}/execution-witness-sentry:latest-amd64 \
+            ghcr.io/${{ github.repository }}/execution-witness-sentry:latest-arm64
