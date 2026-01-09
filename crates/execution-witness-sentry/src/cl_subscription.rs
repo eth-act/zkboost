@@ -79,7 +79,7 @@ impl Stream for ClEventStream {
                 Poll::Ready(Some(Ok(SSE::Comment(_)))) => continue,
                 Poll::Ready(Some(Ok(SSE::Connected(_)))) => continue,
                 Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Some(Err(Error::Sse(format!("{:?}", e)))));
+                    return Poll::Ready(Some(Err(Error::Sse(format!("{e:?}")))));
                 }
                 Poll::Ready(None) => return Poll::Ready(None),
                 Poll::Pending => return Poll::Pending,
@@ -93,7 +93,7 @@ pub fn subscribe_cl_events(base_url: &str) -> Result<ClEventStream> {
     let url = build_events_url(base_url)?;
 
     let client = eventsource_client::ClientBuilder::for_url(url.as_str())
-        .map_err(|e| Error::Config(format!("Invalid SSE URL: {}", e)))?
+        .map_err(|e| Error::Config(format!("Invalid SSE URL: {e}")))?
         .build();
 
     Ok(ClEventStream {

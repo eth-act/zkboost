@@ -94,7 +94,7 @@ impl ElClient {
         &self,
         block_number: u64,
     ) -> Result<Option<(serde_json::Value, Vec<u8>)>> {
-        let block_num_hex = format!("0x{:x}", block_number);
+        let block_num_hex = format!("0x{block_number:x}");
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
             method: "debug_executionWitness",
@@ -239,7 +239,7 @@ impl ClClient {
 
     /// Get block header for a slot.
     pub async fn get_block_header(&self, slot: u64) -> Result<Option<BlockHeaderResponse>> {
-        let url = self.url.join(&format!("eth/v1/beacon/headers/{}", slot))?;
+        let url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
         let response = self.http_client.get(url).send().await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
@@ -284,7 +284,7 @@ impl ClClient {
     pub async fn get_block_execution_hash(&self, block_root: &str) -> Result<Option<String>> {
         let url = self
             .url
-            .join(&format!("eth/v2/beacon/blocks/{}", block_root))?;
+            .join(&format!("eth/v2/beacon/blocks/{block_root}"))?;
         let response = self.http_client.get(url).send().await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
@@ -307,13 +307,13 @@ impl ClClient {
             .data
             .head_slot
             .parse()
-            .map_err(|e| Error::Config(format!("Invalid head slot: {}", e)))
+            .map_err(|e| Error::Config(format!("Invalid head slot: {e}")))
     }
 
     /// Get block info (slot, block_root, execution_block_hash) for a given slot.
     /// Returns None if the slot is empty (no block).
     pub async fn get_block_info(&self, slot: u64) -> Result<Option<BlockInfo>> {
-        let url = self.url.join(&format!("eth/v2/beacon/blocks/{}", slot))?;
+        let url = self.url.join(&format!("eth/v2/beacon/blocks/{slot}"))?;
         let response = self.http_client.get(url).send().await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
@@ -336,7 +336,7 @@ impl ClClient {
             .map(|p| p.block_hash);
 
         // Get the block root from headers endpoint
-        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{}", slot))?;
+        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
         let header_response = self.http_client.get(header_url).send().await?;
 
         if header_response.status() == reqwest::StatusCode::NOT_FOUND {

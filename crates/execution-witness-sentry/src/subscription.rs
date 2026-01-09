@@ -34,12 +34,12 @@ pub async fn subscribe_blocks(ws_url: &str) -> Result<impl Stream<Item = Result<
     let provider = ProviderBuilder::new()
         .connect_ws(ws)
         .await
-        .map_err(|e| Error::WebSocket(format!("WebSocket connection failed: {}", e)))?;
+        .map_err(|e| Error::WebSocket(format!("WebSocket connection failed: {e}")))?;
 
     let subscription = provider
         .subscribe_blocks()
         .await
-        .map_err(|e| Error::WebSocket(format!("Block subscription failed: {}", e)))?;
+        .map_err(|e| Error::WebSocket(format!("Block subscription failed: {e}")))?;
 
     let stream = Box::pin(subscription.into_stream());
 
