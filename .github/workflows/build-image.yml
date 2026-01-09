@@ -38,7 +38,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.ews
-          push: github.event_name == 'push' # FIXME: && github.ref == 'refs/heads/master'
+          push: ${{ github.event_name == 'push' }} # FIXME: && github.ref == 'refs/heads/master'
           platforms: linux/${{ matrix.arch }}
           tags: ghcr.io/${{ github.repository }}/execution-witness-sentry:latest-${{ matrix.arch }}
 
