@@ -103,7 +103,7 @@ struct ZkvmClStatus {
 /// Monitor zkvm CL nodes and report their sync status.
 async fn monitor_zkvm_status(
     source_client: &ClClient,
-    zkvm_clients: &[(String, ClClient)],
+    zkvm_enabled_clients: &[ClClient],
 ) -> Vec<ZkvmClStatus> {
     let source_head = match source_client.get_head_slot().await {
         Ok(slot) => slot,
@@ -114,18 +114,18 @@ async fn monitor_zkvm_status(
     };
 
     let mut statuses = Vec::new();
-    for (name, client) in zkvm_clients {
+    for client in zkvm_enabled_clients {
         match client.get_head_slot().await {
             Ok(head_slot) => {
                 let gap = head_slot as i64 - source_head as i64;
                 statuses.push(ZkvmClStatus {
-                    name: name.clone(),
+                    name: client.name().to_string(),
                     head_slot,
                     gap,
                 });
             }
             Err(e) => {
-                warn!(name = %name, error = %e, "Failed to get zkvm CL head");
+                warn!(name = %client.name(), error = %e, "Failed to get zkvm CL head");
             }
         }
     }
@@ -138,17 +138,16 @@ async fn monitor_zkvm_status(
 /// Returns the number of proofs submitted.
 async fn backfill_proofs(
     source_client: &ClClient,
-    zkvm_client: &ClClient,
-    zkvm_name: &str,
+    zkvm_enabled_client: &ClClient,
     num_proofs: usize,
     max_slots: u64,
     storage: Option<&BlockStorage>,
 ) -> usize {
     // Get the zkvm CL's current head
-    let zkvm_head = match zkvm_client.get_head_slot().await {
+    let zkvm_head = match zkvm_enabled_client.get_head_slot().await {
         Ok(slot) => slot,
         Err(e) => {
-            warn!(name = %zkvm_name, error = %e, "Failed to get zkvm CL head for backfill");
+            warn!(name = %zkvm_enabled_client.name(), error = %e, "Failed to get zkvm CL head for backfill");
             return 0;
         }
     };
@@ -170,7 +169,7 @@ async fn backfill_proofs(
     let slots_to_check = gap.min(max_slots);
 
     info!(
-        name = %zkvm_name,
+        name = %zkvm_enabled_client.name(),
         zkvm_head = zkvm_head,
         source_head = source_head,
         gap = gap,
@@ -202,10 +201,10 @@ async fn backfill_proofs(
                     proof_data: saved_proof.proof_data.clone(),
                 };
 
-                match zkvm_client.submit_execution_proof(&proof).await {
+                match zkvm_enabled_client.submit_execution_proof(&proof).await {
                     Ok(()) => {
                         debug!(
-                            name = %zkvm_name,
+                            name = %zkvm_enabled_client.name(),
                             slot = slot,
                             proof_id = saved_proof.proof_id,
                             "Backfill proof submitted (from disk)"
@@ -216,7 +215,7 @@ async fn backfill_proofs(
                         let msg = e.to_string();
                         if !msg.contains("already known") {
                             debug!(
-                                name = %zkvm_name,
+                                name = %zkvm_enabled_client.name(),
                                 slot = slot,
                                 proof_id = saved_proof.proof_id,
                                 error = %e,
@@ -258,10 +257,10 @@ async fn backfill_proofs(
                 proof_data: generate_random_proof(proof_id as u32),
             };
 
-            match zkvm_client.submit_execution_proof(&proof).await {
+            match zkvm_enabled_client.submit_execution_proof(&proof).await {
                 Ok(()) => {
                     debug!(
-                        name = %zkvm_name,
+                        name = %zkvm_enabled_client.name(),
                         slot = slot,
                         proof_id = proof_id,
                         "Backfill proof submitted (generated)"
@@ -272,7 +271,7 @@ async fn backfill_proofs(
                     let msg = e.to_string();
                     if !msg.contains("already known") {
                         debug!(
-                            name = %zkvm_name,
+                            name = %zkvm_enabled_client.name(),
                             slot = slot,
                             proof_id = proof_id,
                             error = %e,
@@ -286,7 +285,7 @@ async fn backfill_proofs(
 
     if proofs_submitted > 0 {
         info!(
-            name = %zkvm_name,
+            name = %zkvm_enabled_client.name(),
             proofs_submitted = proofs_submitted,
             "Backfill complete"
         );
@@ -321,8 +320,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Set up CL clients - separate zkvm targets from event sources
-    let mut zkvm_clients: Vec<(String, ClClient)> = Vec::new(); // zkvm-enabled nodes for proof submission
-    let mut event_source_client: Option<(String, String, ClClient)> = None; // First available CL for events
+    let mut zkvm_enabled_clients: Vec<ClClient> = Vec::new(); // zkvm-enabled nodes for proof submission
+    let mut event_source_client: Option<ClClient> = None; // First available CL for events
 
     for endpoint in config.cl_endpoints {
         let url = match Url::parse(&endpoint.url) {
@@ -332,20 +331,19 @@ async fn main() -> anyhow::Result<()> {
                 continue;
             }
         };
-        let client = ClClient::new(url);
+        let client = ClClient::new(endpoint.name.clone(), url);
 
         match client.is_zkvm_enabled().await {
             Ok(true) => {
                 info!(name = %endpoint.name, "CL endpoint has zkvm enabled (proof target)");
-                zkvm_clients.push((endpoint.name.clone(), client));
+                zkvm_enabled_clients.push(client);
             }
             Ok(false) => {
                 info!(name = %endpoint.name, "CL endpoint does not have zkvm enabled");
                 // Use first non-zkvm CL as event source
                 if event_source_client.is_none() {
                     info!(name = %endpoint.name, "Using as event source");
-                    event_source_client =
-                        Some((endpoint.name.clone(), endpoint.url.clone(), client));
+                    event_source_client = Some(client);
                 }
             }
             Err(e) => {
@@ -355,7 +353,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     info!(
-        zkvm_targets = zkvm_clients.len(),
+        zkvm_enabled_clients = zkvm_enabled_clients.len(),
         "zkvm-enabled CL endpoints configured"
     );
 
@@ -363,7 +361,7 @@ async fn main() -> anyhow::Result<()> {
         error!("No non-zkvm CL endpoint available for event source");
         return Ok(());
     };
-    info!(name = %event_source.0, "CL event source configured");
+    info!(name = %event_source.name(), "CL event source configured");
 
     let num_proofs = config.num_proofs.unwrap_or(2) as usize;
 
@@ -424,7 +422,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let (es_name, es_url, es_client) = event_source;
+    let es_client = event_source;
     let source_client_for_monitor = es_client.clone();
 
     // Spawn CL subscription task for the event source (non-zkvm CL)
@@ -432,17 +430,17 @@ async fn main() -> anyhow::Result<()> {
         let tx = cl_tx.clone();
 
         tokio::spawn(async move {
-            info!(name = %es_name, "Connecting to CL SSE");
+            info!(name = %es_client.name(), "Connecting to CL SSE");
 
-            let stream = match subscribe_cl_events(&es_url) {
+            let stream = match subscribe_cl_events(es_client.url()) {
                 Ok(s) => s,
                 Err(e) => {
-                    error!(name = %es_name, error = %e, "Failed to subscribe to CL events");
+                    error!(name = %es_client.name(), error = %e, "Failed to subscribe to CL events");
                     return;
                 }
             };
 
-            info!(name = %es_name, "Subscribed to CL head events");
+            info!(name = %es_client.name(), "Subscribed to CL head events");
             let mut stream = pin!(stream);
 
             while let Some(result) = stream.next().await {
@@ -452,7 +450,7 @@ async fn main() -> anyhow::Result<()> {
                             Ok(slot) => slot,
                             Err(e) => {
                                 warn!(
-                                    name = %es_name,
+                                    name = %es_client.name(),
                                     error = %e,
                                     slot = %head.slot,
                                     "Invalid head slot value"
@@ -467,17 +465,17 @@ async fn main() -> anyhow::Result<()> {
                         {
                             Ok(Some(hash)) => hash,
                             Ok(None) => {
-                                debug!(name = %es_name, slot = slot, "No execution hash for block");
+                                debug!(name = %es_client.name(), slot = slot, "No execution hash for block");
                                 continue;
                             }
                             Err(e) => {
-                                debug!(name = %es_name, error = %e, "Failed to get execution hash");
+                                debug!(name = %es_client.name(), error = %e, "Failed to get execution hash");
                                 continue;
                             }
                         };
 
                         let event = ClBlockEvent {
-                            cl_name: es_name.clone(),
+                            cl_name: es_client.name().to_string(),
                             slot,
                             block_root,
                             execution_block_hash: exec_hash,
@@ -490,11 +488,11 @@ async fn main() -> anyhow::Result<()> {
                         // We use head events primarily
                     }
                     Err(e) => {
-                        error!(name = %es_name, error = %e, "CL stream error");
+                        error!(name = %es_client.name(), error = %e, "CL stream error");
                     }
                 }
             }
-            warn!(name = %es_name, "CL SSE stream ended");
+            warn!(name = %es_client.name(), "CL SSE stream ended");
         });
     }
 
@@ -513,7 +511,7 @@ async fn main() -> anyhow::Result<()> {
             // Periodic monitoring and backfill
             _ = monitor_interval.tick() => {
                 // Monitor zkvm CL status
-                let statuses = monitor_zkvm_status(&source_client_for_monitor, &zkvm_clients).await;
+                let statuses = monitor_zkvm_status(&source_client_for_monitor, &zkvm_enabled_clients).await;
 
                 for status in &statuses {
                     if status.gap < -5 {
@@ -526,11 +524,10 @@ async fn main() -> anyhow::Result<()> {
                         );
 
                         // Find the client and backfill
-                        if let Some((_, client)) = zkvm_clients.iter().find(|(n, _)| n == &status.name) {
+                        if let Some(client) = zkvm_enabled_clients.iter().find(|client| client.name() == status.name) {
                             backfill_proofs(
                                 &source_client_for_monitor,
                                 client,
-                                &status.name,
                                 num_proofs,
                                 20, // Max 20 slots per backfill cycle
                                 storage.as_ref(),
@@ -572,7 +569,7 @@ async fn main() -> anyhow::Result<()> {
                 let Ok(url) = Url::parse(&endpoint.url) else {
                     continue;
                 };
-                let el_client = ElClient::new(url);
+                let el_client = ElClient::new(endpoint.name.clone(), url);
 
                 // Fetch block and witness
                 let (block, gzipped_block) = match el_client.get_block_by_hash(&el_event.block_hash).await {
@@ -632,7 +629,7 @@ async fn main() -> anyhow::Result<()> {
                 cache.insert(
                     el_event.block_hash.clone(),
                     el_event.block_number,
-                    el_event.endpoint_name.clone(),
+                    el_event.endpoint_name,
                 );
             }
 
@@ -688,7 +685,7 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 // Submit proofs to ALL zkvm-enabled CL clients
-                for (cl_name, cl_client) in &zkvm_clients {
+                for cl_client in &zkvm_enabled_clients {
                     for saved_proof in &generated_proofs {
                         let proof = ExecutionProof {
                             proof_id: saved_proof.proof_id,
@@ -701,7 +698,7 @@ async fn main() -> anyhow::Result<()> {
                         match cl_client.submit_execution_proof(&proof).await {
                             Ok(()) => {
                                 info!(
-                                    cl = %cl_name,
+                                    cl = %cl_client.name(),
                                     slot = cl_event.slot,
                                     proof_id = saved_proof.proof_id,
                                     "Proof submitted"
@@ -709,7 +706,7 @@ async fn main() -> anyhow::Result<()> {
                             }
                             Err(e) => {
                                 debug!(
-                                    cl = %cl_name,
+                                    cl = %cl_client.name(),
                                     slot = cl_event.slot,
                                     proof_id = saved_proof.proof_id,
                                     error = %e,

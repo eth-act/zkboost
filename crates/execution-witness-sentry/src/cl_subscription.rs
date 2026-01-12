@@ -89,7 +89,7 @@ impl Stream for ClEventStream {
 }
 
 /// Subscribe to CL head events via SSE.
-pub fn subscribe_cl_events(base_url: &str) -> Result<ClEventStream> {
+pub fn subscribe_cl_events(base_url: impl AsRef<str>) -> Result<ClEventStream> {
     let url = build_events_url(base_url)?;
 
     let client = eventsource_client::ClientBuilder::for_url(url.as_str())
@@ -101,8 +101,8 @@ pub fn subscribe_cl_events(base_url: &str) -> Result<ClEventStream> {
     })
 }
 
-fn build_events_url(base_url: &str) -> Result<Url> {
-    let base = Url::parse(base_url)?;
+fn build_events_url(base_url: impl AsRef<str>) -> Result<Url> {
+    let base = Url::parse(base_url.as_ref())?;
     Ok(base.join("/eth/v1/events?topics=head,block")?)
 }
 

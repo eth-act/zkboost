@@ -34,17 +34,24 @@ pub struct JsonRpcError {
 
 /// Execution layer JSON-RPC client.
 pub struct ElClient {
+    name: String,
     url: Url,
     http_client: reqwest::Client,
 }
 
 impl ElClient {
     /// Create a new EL client.
-    pub fn new(url: Url) -> Self {
+    pub fn new(name: String, url: Url) -> Self {
         Self {
+            name,
             url,
             http_client: reqwest::Client::new(),
         }
+    }
+
+    /// Return name of the EL client.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Fetch a block by hash. Returns the block and its gzipped JSON.
@@ -149,6 +156,7 @@ pub struct ExecutionProof {
 /// Consensus layer HTTP API client.
 #[derive(Clone)]
 pub struct ClClient {
+    name: String,
     url: Url,
     http_client: reqwest::Client,
 }
@@ -223,11 +231,22 @@ pub struct IdentityData {
 
 impl ClClient {
     /// Create a new CL client.
-    pub fn new(url: Url) -> Self {
+    pub fn new(name: String, url: Url) -> Self {
         Self {
             url,
+            name,
             http_client: reqwest::Client::new(),
         }
+    }
+
+    /// Return name of the CL client.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Return url of the CL client.
+    pub fn url(&self) -> &Url {
+        &self.url
     }
 
     /// Get node syncing status.
