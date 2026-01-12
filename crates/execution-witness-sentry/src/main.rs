@@ -198,7 +198,7 @@ async fn backfill_proofs(
                     proof_id: saved_proof.proof_id,
                     slot: saved_proof.slot,
                     block_hash: saved_proof.block_hash.clone(),
-                    block_root: saved_proof.block_root.clone(),
+                    block_root: saved_proof.beacon_block_root.clone(),
                     proof_data: saved_proof.proof_data.clone(),
                 };
 
@@ -667,7 +667,7 @@ async fn main() -> anyhow::Result<()> {
                         proof_id: proof_id as u8,
                         slot: cl_event.slot,
                         block_hash: cl_event.execution_block_hash.clone(),
-                        block_root: cl_event.block_root.clone(),
+                        beacon_block_root: cl_event.block_root.clone(),
                         proof_data: generate_random_proof(proof_id as u32),
                     });
                 }
@@ -694,7 +694,7 @@ async fn main() -> anyhow::Result<()> {
                             proof_id: saved_proof.proof_id,
                             slot: saved_proof.slot,
                             block_hash: saved_proof.block_hash.clone(),
-                            block_root: saved_proof.block_root.clone(),
+                            block_root: saved_proof.beacon_block_root.clone(),
                             proof_data: saved_proof.proof_data.clone(),
                         };
 

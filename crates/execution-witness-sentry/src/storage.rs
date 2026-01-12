@@ -25,7 +25,7 @@ pub struct BlockMetadata {
     pub slot: Option<u64>,
     /// CL beacon block root (if known)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub block_root: Option<String>,
+    pub beacon_block_root: Option<String>,
     /// Number of proofs stored
     #[serde(default)]
     pub num_proofs: usize,
@@ -37,7 +37,7 @@ pub struct SavedProof {
     pub proof_id: u8,
     pub slot: u64,
     pub block_hash: String,
-    pub block_root: String,
+    pub beacon_block_root: String,
     pub proof_data: Vec<u8>,
 }
 
@@ -106,7 +106,7 @@ impl BlockStorage {
             block_number,
             gas_used,
             slot: None,
-            block_root: None,
+            beacon_block_root: None,
             num_proofs: 0,
         };
         let metadata_path = block_dir.join("metadata.json");
@@ -132,7 +132,7 @@ impl BlockStorage {
         &self,
         block_number: u64,
         slot: u64,
-        block_root: &str,
+        beacon_block_root: &str,
         block_hash: &str,
         proofs: &[SavedProof],
     ) -> Result<()> {
@@ -152,14 +152,14 @@ impl BlockStorage {
                 block_number,
                 gas_used: 0,
                 slot: None,
-                block_root: None,
+                beacon_block_root: None,
                 num_proofs: 0,
             }
         };
 
         // Update with CL info
         metadata.slot = Some(slot);
-        metadata.block_root = Some(block_root.to_string());
+        metadata.beacon_block_root = Some(beacon_block_root.to_string());
         metadata.num_proofs = proofs.len();
 
         // Save updated metadata
