@@ -51,7 +51,7 @@ impl ElBlockCache {
         }
     }
 
-    fn insert(&mut self, block_hash: String, block_number: u64, _endpoint_name: String) {
+    fn insert(&mut self, block_hash: String, block_number: u64) {
         self.blocks.insert(
             block_hash,
             CachedElBlock {
@@ -626,7 +626,6 @@ async fn main() -> anyhow::Result<()> {
                 cache.insert(
                     el_event.block_hash.clone(),
                     el_event.block_number,
-                    el_event.endpoint_name,
                 );
             }
 
