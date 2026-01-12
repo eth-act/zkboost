@@ -363,7 +363,7 @@ async fn main() -> anyhow::Result<()> {
     let num_proofs = config.num_proofs.unwrap_or(2) as usize;
 
     // Set up block storage
-    let storage = config.output_dir.as_ref().map(|dir| {
+    let mut storage = config.output_dir.as_ref().map(|dir| {
         BlockStorage::new(
             dir,
             config.chain.as_deref().unwrap_or("unknown"),
@@ -601,7 +601,7 @@ async fn main() -> anyhow::Result<()> {
                 );
 
                 // Save to disk if storage is configured
-                if let Some(ref storage) = storage {
+                if let Some(ref mut storage) = storage {
                     let combined = serde_json::json!({
                         "block": block,
                         "witness": witness,

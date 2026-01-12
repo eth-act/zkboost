@@ -1,6 +1,7 @@
 //! Block data storage utilities.
 
 use std::{
+    collections::VecDeque,
     io::{Read, Write},
     path::{Path, PathBuf},
 };
@@ -67,7 +68,7 @@ pub fn load_block_data<T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -
 pub struct BlockStorage {
     output_dir: PathBuf,
     chain: String,
-    retain: Option<u64>,
+    saved: Option<VecDeque<u64>>,
 }
 
 impl BlockStorage {
@@ -80,7 +81,7 @@ impl BlockStorage {
         Self {
             output_dir: output_dir.into(),
             chain: chain.into(),
-            retain,
+            saved: retain.map(|retain| VecDeque::with_capacity(retain as usize)),
         }
     }
 
@@ -92,7 +93,7 @@ impl BlockStorage {
     }
 
     /// Save block data to disk (without CL info - will be updated later).
-    pub fn save_block(&self, block: &Block, gzipped_combined_data: &[u8]) -> Result<()> {
+    pub fn save_block(&mut self, block: &Block, gzipped_combined_data: &[u8]) -> Result<()> {
         let block_number = block.header.number;
         let block_hash = format!("{:?}", block.header.hash);
         let gas_used = block.header.gas_used;
@@ -116,11 +117,15 @@ impl BlockStorage {
         let data_path = block_dir.join("data.json.gz");
         std::fs::write(data_path, gzipped_combined_data)?;
 
-        // Clean up old blocks if retention is configured
-        if let Some(retain) = self.retain
-            && block_number > retain
-        {
-            self.delete_old_block(block_number - retain)?;
+        if let Some(block_to_delete) = self.saved.as_mut().and_then(|saved| {
+            let mut block_to_delete = None;
+            if saved.len() == saved.capacity() {
+                block_to_delete = saved.pop_front();
+            }
+            saved.push_back(block_number);
+            block_to_delete
+        }) {
+            self.delete_old_block(block_to_delete)?;
         }
 
         Ok(())
