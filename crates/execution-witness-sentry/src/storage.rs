@@ -92,7 +92,7 @@ impl BlockStorage {
     }
 
     /// Save block data to disk (without CL info - will be updated later).
-    pub fn save_block(&self, block: &Block, combined_data: &[u8]) -> Result<()> {
+    pub fn save_block(&self, block: &Block, gzipped_combined_data: &[u8]) -> Result<()> {
         let block_number = block.header.number;
         let block_hash = format!("{:?}", block.header.hash);
         let gas_used = block.header.gas_used;
@@ -114,7 +114,7 @@ impl BlockStorage {
 
         // Write combined block + witness data
         let data_path = block_dir.join("data.json.gz");
-        std::fs::write(data_path, combined_data)?;
+        std::fs::write(data_path, gzipped_combined_data)?;
 
         // Clean up old blocks if retention is configured
         if let Some(retain) = self.retain
