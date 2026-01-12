@@ -10,9 +10,11 @@ use crate::error::{Error, Result};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     /// Execution layer endpoints to monitor.
-    pub endpoints: Vec<Endpoint>,
+    #[serde(default)]
+    pub el_endpoints: Vec<ElEndpoint>,
     /// Consensus layer endpoints to submit proofs to.
-    pub cl_endpoints: Option<Vec<ClEndpoint>>,
+    #[serde(default)]
+    pub cl_endpoints: Vec<ClEndpoint>,
     /// Directory to save block and witness data.
     pub output_dir: Option<String>,
     /// Chain identifier (used in output path).
@@ -25,13 +27,13 @@ pub struct Config {
 
 /// Execution layer endpoint configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Endpoint {
+pub struct ElEndpoint {
     /// Human-readable name for this endpoint.
     pub name: String,
     /// HTTP JSON-RPC URL.
-    pub el_url: String,
+    pub url: String,
     /// WebSocket URL for subscriptions.
-    pub el_ws_url: String,
+    pub ws_url: String,
 }
 
 /// Consensus layer endpoint configuration.

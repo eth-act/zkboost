@@ -3,10 +3,10 @@ chain = "local"
 retain = 10
 num_proofs = 2
 
-[[endpoints]]
+[[el_endpoints]]
 name = "el-1-reth-lighthouse"
-el_url = "http://127.0.0.1:32003"
-el_ws_url = "ws://127.0.0.1:32004"
+url = "http://127.0.0.1:32003"
+ws_url = "ws://127.0.0.1:32004"
 
 # Non-zkvm CL for head event subscription (to know when new blocks arrive)
 [[cl_endpoints]]

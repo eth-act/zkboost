@@ -307,12 +307,15 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = Config::load(&cli.config)?;
 
-    info!(endpoints = config.endpoints.len(), "Loaded configuration");
-    for endpoint in &config.endpoints {
+    info!(
+        el_endpoints = config.el_endpoints.len(),
+        "Loaded configuration"
+    );
+    for endpoint in &config.el_endpoints {
         info!(
             name = %endpoint.name,
-            el_url = %endpoint.el_url,
-            el_ws_url = %endpoint.el_ws_url,
+            url = %endpoint.url,
+            ws_url = %endpoint.ws_url,
             "EL endpoint configured"
         );
     }
@@ -321,34 +324,32 @@ async fn main() -> anyhow::Result<()> {
     let mut zkvm_clients: Vec<(String, ClClient)> = Vec::new(); // zkvm-enabled nodes for proof submission
     let mut event_source_client: Option<(String, String, ClClient)> = None; // First available CL for events
 
-    if let Some(endpoints) = config.cl_endpoints.as_ref() {
-        for endpoint in endpoints {
-            let url = match Url::parse(&endpoint.url) {
-                Ok(u) => u,
-                Err(e) => {
-                    warn!(name = %endpoint.name, error = %e, "Invalid CL endpoint URL");
-                    continue;
-                }
-            };
-            let client = ClClient::new(url);
+    for endpoint in config.cl_endpoints {
+        let url = match Url::parse(&endpoint.url) {
+            Ok(u) => u,
+            Err(e) => {
+                warn!(name = %endpoint.name, error = %e, "Invalid CL endpoint URL");
+                continue;
+            }
+        };
+        let client = ClClient::new(url);
 
-            match client.is_zkvm_enabled().await {
-                Ok(true) => {
-                    info!(name = %endpoint.name, "CL endpoint has zkvm enabled (proof target)");
-                    zkvm_clients.push((endpoint.name.clone(), client));
+        match client.is_zkvm_enabled().await {
+            Ok(true) => {
+                info!(name = %endpoint.name, "CL endpoint has zkvm enabled (proof target)");
+                zkvm_clients.push((endpoint.name.clone(), client));
+            }
+            Ok(false) => {
+                info!(name = %endpoint.name, "CL endpoint does not have zkvm enabled");
+                // Use first non-zkvm CL as event source
+                if event_source_client.is_none() {
+                    info!(name = %endpoint.name, "Using as event source");
+                    event_source_client =
+                        Some((endpoint.name.clone(), endpoint.url.clone(), client));
                 }
-                Ok(false) => {
-                    info!(name = %endpoint.name, "CL endpoint does not have zkvm enabled");
-                    // Use first non-zkvm CL as event source
-                    if event_source_client.is_none() {
-                        info!(name = %endpoint.name, "Using as event source");
-                        event_source_client =
-                            Some((endpoint.name.clone(), endpoint.url.clone(), client));
-                    }
-                }
-                Err(e) => {
-                    warn!(name = %endpoint.name, error = %e, "Failed to check zkvm status");
-                }
+            }
+            Err(e) => {
+                warn!(name = %endpoint.name, error = %e, "Failed to check zkvm status");
             }
         }
     }
@@ -383,10 +384,10 @@ async fn main() -> anyhow::Result<()> {
     let (cl_tx, mut cl_rx) = tokio::sync::mpsc::channel::<ClBlockEvent>(100);
 
     // Spawn EL subscription tasks
-    for endpoint in config.endpoints.clone() {
+    for endpoint in config.el_endpoints.clone() {
         let tx = el_tx.clone();
         let name = endpoint.name.clone();
-        let ws_url = endpoint.el_ws_url.clone();
+        let ws_url = endpoint.ws_url.clone();
 
         tokio::spawn(async move {
             info!(name = %name, "Connecting to EL WebSocket");
@@ -564,14 +565,14 @@ async fn main() -> anyhow::Result<()> {
                 );
 
                 // Find the endpoint and fetch block + witness
-                let Some(endpoint) = config.endpoints.iter().find(|e| e.name == el_event.endpoint_name) else {
+                let Some(endpoint) = config.el_endpoints.iter().find(|e| e.name == el_event.endpoint_name) else {
                     continue;
                 };
 
-                let Ok(el_url) = Url::parse(&endpoint.el_url) else {
+                let Ok(url) = Url::parse(&endpoint.url) else {
                     continue;
                 };
-                let el_client = ElClient::new(el_url);
+                let el_client = ElClient::new(url);
 
                 // Fetch block and witness
                 let (block, gzipped_block) = match el_client.get_block_by_hash(&el_event.block_hash).await {
