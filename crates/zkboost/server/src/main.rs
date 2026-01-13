@@ -36,6 +36,7 @@ use zkboost_server_config::Config;
 use crate::app::{AppState, app};
 
 mod app;
+mod metrics;
 
 #[cfg(test)]
 mod mock;
@@ -67,10 +68,18 @@ async fn main() -> anyhow::Result<()> {
         .with_ansi(true)
         .init();
 
+    // Initialize Prometheus metrics exporter
+    let metrics_handle = metrics::init_metrics();
+
     let cli = Cli::parse();
     let config = Config::load(&cli.config)?;
 
-    let state = AppState::new(&config).await?;
+    let state = AppState::new(&config, metrics_handle).await?;
+
+    // Record application metrics
+    metrics::set_programs_loaded(state.programs.read().await.len());
+    metrics::set_build_info(env!("CARGO_PKG_VERSION"));
+
     let router = app(state);
 
     let addr: SocketAddr = format!("0.0.0.0:{}", cli.port).parse()?;

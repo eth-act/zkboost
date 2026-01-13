@@ -10,7 +10,6 @@ use std::{
 };
 
 use anyhow::bail;
-use benchmark_runner::guest_programs::{GuestFixture, OutputVerifierResult};
 use clap::Parser;
 use ere_dockerized::{CRATE_VERSION, zkVMKind};
 use ere_zkvm_interface::ProverResourceType;
@@ -20,12 +19,13 @@ use tokio::{process::Command, time::sleep};
 use tracing::info;
 use zkboost_client::zkboostClient;
 use zkboost_ethereum_el_config::program::download_program;
+use zkboost_ethereum_el_input::ElInput;
 use zkboost_ethereum_el_types::ElKind;
 use zkboost_server_config::{Config, zkVMConfig};
 
-use crate::witness::generate_stateless_validator_fixture;
+use crate::utils::{ClientSession, DockerComposeGuard, ServerResources, fetch_empty_block};
 
-mod witness;
+mod utils;
 
 #[derive(Parser)]
 struct Args {
@@ -59,9 +59,12 @@ struct Args {
     #[arg(env = "ERE_IMAGE_REGISTRY", default_value = "ghcr.io/eth-act/ere")]
     ere_image_registry: String,
     /// GitHub token for downloading artifacts from GitHub Actions.
-    /// Required when `benchmark-runner` dependency uses a git revision instead of a released tag.
+    /// Required when `ere-guests` dependency uses a git revision instead of a released tag.
     #[arg(env = "GITHUB_TOKEN")]
     github_token: Option<String>,
+    /// Run the server using docker compose
+    #[arg(long)]
+    dockerized: bool,
 }
 
 impl Args {
@@ -81,12 +84,12 @@ impl Args {
 async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String> {
     info!("Generating config...");
 
-    let program_dir = workspace.join("program");
     let program = download_program(
-        args.zkvm,
         args.el,
+        args.zkvm,
         args.github_token.as_deref(),
-        &program_dir,
+        workspace.join("program"),
+        args.keep_workspace,
     )
     .await?;
 
@@ -106,8 +109,7 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
     };
 
     let config_path = workspace.join("config.toml");
-    let config_str = toml::to_string(&config)?;
-    tokio::fs::write(&config_path, config_str).await?;
+    tokio::fs::write(&config_path, config.to_toml()?).await?;
 
     info!("Successfully generated config");
 
@@ -115,7 +117,9 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
 }
 
 /// Start `zkboost-server` with stateless validator program.
-async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<zkboostClient> {
+async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<ClientSession> {
+    let port = 3001;
+
     // Pull server image if using CPU resource
     let server_image = args.server_image();
     if args.resource == "cpu" {
@@ -130,10 +134,62 @@ async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<
         }
     }
 
+    if args.dockerized {
+        start_zkboost_server_dockerized(config_path, port).await
+    } else {
+        start_zkboost_server_raw(args, config_path, port).await
+    }
+}
+
+/// Start `zkboost-server` using docker compose.
+async fn start_zkboost_server_dockerized(
+    config_path: &str,
+    port: u16,
+) -> anyhow::Result<ClientSession> {
+    info!("Starting server via docker compose...");
+
+    let docker_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("docker");
+
+    let guard = DockerComposeGuard {
+        docker_dir: docker_dir.clone(),
+    };
+
+    let docker_config_path = docker_dir.join("config.toml");
+    tokio::fs::copy(config_path, &docker_config_path).await?;
+
+    let status = Command::new("docker")
+        .args(["compose", "up", "-d", "zkboost"])
+        .current_dir(&docker_dir)
+        .status()
+        .await?;
+
+    if !status.success() {
+        bail!("Failed to start docker compose");
+    }
+
+    let client = wait_for_server_ready(port).await?;
+    Ok(ClientSession {
+        client,
+        _resources: ServerResources::Docker(guard),
+    })
+}
+
+/// Start `zkboost-server` directly using the binary or cargo.
+async fn start_zkboost_server_raw(
+    args: &Args,
+    config_path: &str,
+    port: u16,
+) -> anyhow::Result<ClientSession> {
     info!("Starting server...");
 
     // Start the zkboost server
-    let port = 3001;
     let mut cmd;
     match args.zkboost_server_bin.as_deref() {
         Some(bin) => cmd = Command::new(bin),
@@ -147,10 +203,18 @@ async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<
     unsafe { cmd.pre_exec(|| prctl::set_pdeathsig(Signal::SIGTERM).map_err(io::Error::other)) };
 
     cmd.env("ERE_IMAGE_REGISTRY", &args.ere_image_registry)
-        .args(["--config", &config_path, "--port", &port.to_string()])
+        .args(["--config", config_path, "--port", &port.to_string()])
         .spawn()?;
 
-    // Wait for the server to be ready
+    let client = wait_for_server_ready(port).await?;
+    Ok(ClientSession {
+        client,
+        _resources: ServerResources::Raw,
+    })
+}
+
+/// Wait for the server to be ready by polling the health endpoint.
+async fn wait_for_server_ready(port: u16) -> anyhow::Result<zkboostClient> {
     let client = zkboostClient::new(format!("http://localhost:{port}"))?;
     let start = Instant::now();
     loop {
@@ -192,10 +256,10 @@ async fn main() -> anyhow::Result<()> {
 
     let client = start_zkboost_server(&args, &config_path).await?;
 
-    let fixture = generate_stateless_validator_fixture(&args, &workspace).await?;
-
     let program_id = args.program_id();
-    let stdin = fixture.input()?.stdin;
+
+    let el_input = ElInput::new(fetch_empty_block(&workspace).await?);
+    let stdin = el_input.to_zkvm_input(args.el)?.stdin;
 
     // Execution
 
@@ -204,10 +268,10 @@ async fn main() -> anyhow::Result<()> {
     let response = client.execute(&program_id, stdin.clone()).await?;
 
     assert_eq!(response.program_id.0, program_id);
-    assert!(matches!(
-        fixture.verify_public_values(&response.public_values)?,
-        OutputVerifierResult::Match
-    ));
+    assert_eq!(
+        el_input.expected_public_values(args.el, true)?.as_slice(),
+        response.public_values.as_slice(),
+    );
     info!(
         "Execution time: {:?}",
         Duration::from_millis(response.execution_time_ms as u64)
@@ -225,10 +289,10 @@ async fn main() -> anyhow::Result<()> {
     let response = client.prove(&program_id, stdin).await?;
 
     assert_eq!(response.program_id.0, program_id);
-    assert!(matches!(
-        fixture.verify_public_values(&response.public_values),
-        Ok(OutputVerifierResult::Match)
-    ));
+    assert_eq!(
+        el_input.expected_public_values(args.el, true)?.as_slice(),
+        response.public_values.as_slice(),
+    );
     info!(
         "Proving time: {:?}, proof size: {} KiB",
         Duration::from_millis(response.proving_time_ms as u64),
@@ -244,10 +308,10 @@ async fn main() -> anyhow::Result<()> {
 
     assert_eq!(response.program_id.0, program_id);
     assert!(response.verified);
-    assert!(matches!(
-        fixture.verify_public_values(&response.public_values),
-        Ok(OutputVerifierResult::Match)
-    ));
+    assert_eq!(
+        el_input.expected_public_values(args.el, true)?.as_slice(),
+        response.public_values.as_slice(),
+    );
     info!("Successfully verified");
 
     // Verifying (invalid proof)

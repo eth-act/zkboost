@@ -1,0 +1,27 @@
+[package]
+name = "zkboost-ethereum-el-input"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+sha2.workspace = true
+
+# reth
+reth-stateless.workspace = true
+
+# ere
+ere-io.workspace = true
+ere-zkvm-interface.workspace = true
+
+# ere-guests
+guest.workspace = true
+stateless-validator-ethrex.workspace = true
+stateless-validator-reth.workspace = true
+
+# local
+zkboost-ethereum-el-types.workspace = true

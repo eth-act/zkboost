@@ -5,6 +5,7 @@ use std::{sync::Arc, time::Duration};
 use ere_zkvm_interface::{
     Input, ProgramExecutionReport, ProgramProvingReport, Proof, ProofKind, PublicValues, zkVM,
 };
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::sync::RwLock;
 use zkboost_types::ProgramID;
 
@@ -57,10 +58,14 @@ impl zkVM for MockzkVM {
     }
 }
 
-pub(crate) fn mock_app_state(program_id: &ProgramID) -> AppState {
-    let programs =
-        FromIterator::from_iter([(program_id.clone(), zkVMInstance::new(Arc::new(MockzkVM)))]);
+/// Create an AppState with an optional mock program for testing.
+pub(crate) fn mock_app_state(program_id: Option<&ProgramID>) -> AppState {
+    let programs = program_id
+        .map(|id| FromIterator::from_iter([(id.clone(), zkVMInstance::new(Arc::new(MockzkVM)))]))
+        .unwrap_or_default();
+    let recorder = PrometheusBuilder::new().build_recorder();
     AppState {
         programs: Arc::new(RwLock::new(programs)),
+        metrics: recorder.handle(),
     }
 }

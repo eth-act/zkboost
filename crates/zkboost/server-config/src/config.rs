@@ -39,7 +39,26 @@ impl Config {
 
     /// Parse config from TOML string.
     pub fn from_toml_str(s: &str) -> anyhow::Result<Self> {
-        toml::from_str(s).with_context(|| format!("Failed to deserialize TOML config:\n{s}"))
+        toml_edit::de::from_str(s)
+            .with_context(|| format!("Failed to deserialize TOML config:\n{s}"))
+    }
+
+    /// Converts to TOML string.
+    pub fn to_toml(&self) -> anyhow::Result<String> {
+        let mut config_toml = toml_edit::ser::to_document(&self)?;
+
+        // Format array into array of tables.
+        if let Some(item) = config_toml.get_mut("zkvm")
+            && let toml_edit::Item::Value(toml_edit::Value::Array(array)) = item
+        {
+            *item = array
+                .iter()
+                .map(|v| toml_edit::Table::from_iter(v.as_inline_table().unwrap()))
+                .collect::<toml_edit::ArrayOfTables>()
+                .into();
+        }
+
+        Ok(config_toml.to_string())
     }
 
     /// Parse config from YAML string.

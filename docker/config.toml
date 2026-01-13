@@ -1,0 +1,9 @@
+# zkboost server configuration
+# See crates/zkboost/server-config/src/config.rs for schema
+
+# Add zkVM programs here. Example:
+# [[zkvm]]
+# kind = "sp1"
+# resource = "cpu"
+# program-id = "my-program"
+# program = "/path/to/elf"

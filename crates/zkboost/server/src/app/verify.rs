@@ -1,9 +1,11 @@
+use std::time::Instant;
+
 use axum::{Json, extract::State, http::StatusCode};
 use ere_zkvm_interface::Proof;
 use tracing::instrument;
 use zkboost_types::{VerifyRequest, VerifyResponse};
 
-use crate::app::AppState;
+use crate::{app::AppState, metrics::record_verify};
 
 /// HTTP handler for the `/verify` endpoint.
 ///
@@ -13,12 +15,17 @@ pub(crate) async fn verify_proof(
     State(state): State<AppState>,
     Json(req): Json<VerifyRequest>,
 ) -> Result<Json<VerifyResponse>, (StatusCode, String)> {
+    let start = Instant::now();
+    let program_id = req.program_id.clone();
+
     // Check if the program_id is correct
     let programs = state.programs.read().await;
 
-    let program = programs
-        .get(&req.program_id)
-        .ok_or((StatusCode::NOT_FOUND, "Program not found".to_string()))?;
+    let program = programs.get(&program_id).ok_or_else(|| {
+        // Record as failed verification for program not found
+        record_verify(&program_id.0, false, start.elapsed());
+        (StatusCode::NOT_FOUND, "Program not found".to_string())
+    })?;
 
     // Verify the proof
     let (verified, public_values, failure_reason) =
@@ -35,8 +42,10 @@ pub(crate) async fn verify_proof(
             }
         };
 
+    record_verify(&program_id.0, verified, start.elapsed());
+
     Ok(Json(VerifyResponse {
-        program_id: req.program_id,
+        program_id,
         verified,
         public_values,
         failure_reason,
@@ -49,14 +58,14 @@ mod tests {
     use zkboost_types::{ProgramID, ProveRequest, VerifyRequest};
 
     use crate::{
-        app::{AppState, prove::prove_program, verify::verify_proof},
+        app::{prove::prove_program, verify::verify_proof},
         mock::mock_app_state,
     };
 
     #[tokio::test]
     async fn test_verify_valid_proof() {
         let program_id = ProgramID::from("mock_program_id");
-        let state = mock_app_state(&program_id);
+        let state = mock_app_state(Some(&program_id));
 
         let request = ProveRequest {
             program_id: program_id.clone(),
@@ -84,7 +93,7 @@ mod tests {
     #[tokio::test]
     async fn test_verify_invalid_proof() {
         let program_id = ProgramID::from("mock_program_id");
-        let state = mock_app_state(&program_id);
+        let state = mock_app_state(Some(&program_id));
 
         let request = VerifyRequest {
             program_id: program_id.clone(),
@@ -101,7 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_program_not_found() {
-        let state = AppState::default();
+        let state = mock_app_state(None);
 
         let request = VerifyRequest {
             program_id: ProgramID::from("non_existent"),

@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn test_parse_simple_path() {
         let toml = r#"program = "./elf/reth-zisk""#;
-        let config: TestConfig = toml::from_str(toml).unwrap();
+        let config: TestConfig = toml_edit::de::from_str(toml).unwrap();
         assert_eq!(
             config.program,
             ProgramConfig::Path("./elf/reth-zisk".into())
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn test_parse_explicit_path() {
         let toml = r#"program = { path = "./elf/reth-zisk" }"#;
-        let config: TestConfig = toml::from_str(toml).unwrap();
+        let config: TestConfig = toml_edit::de::from_str(toml).unwrap();
         assert_eq!(
             config.program,
             ProgramConfig::ExplicitPath(PathConfig {
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn test_parse_url() {
         let toml = r#"program = { url = "https://example.com/program" }"#;
-        let config: TestConfig = toml::from_str(toml).unwrap();
+        let config: TestConfig = toml_edit::de::from_str(toml).unwrap();
         assert_eq!(
             config.program,
             ProgramConfig::Url(UrlConfig {
@@ -117,12 +117,12 @@ mod tests {
     #[test]
     fn test_reject_both_path_and_url() {
         let toml = r#"program = { path = "./elf/program", url = "https://example.com/program" }"#;
-        assert!(toml::from_str::<TestConfig>(toml).is_err());
+        assert!(toml_edit::de::from_str::<TestConfig>(toml).is_err());
     }
 
     #[test]
     fn test_reject_neither_path_nor_url() {
         let toml = r#"program = {}"#;
-        assert!(toml::from_str::<TestConfig>(toml).is_err());
+        assert!(toml_edit::de::from_str::<TestConfig>(toml).is_err());
     }
 }

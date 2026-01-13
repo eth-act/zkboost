@@ -1,0 +1,27 @@
+output_dir = "."
+chain = "local"
+retain = 10
+num_proofs = 2
+
+[[el_endpoints]]
+name = "el-1-reth-lighthouse"
+url = "http://127.0.0.1:32003"
+ws_url = "ws://127.0.0.1:32004"
+
+# Non-zkvm CL for head event subscription (to know when new blocks arrive)
+[[cl_endpoints]]
+name = "cl-1-lighthouse-reth"
+url = "http://127.0.0.1:33001/"
+
+# zkvm-enabled CLs for proof submission
+[[cl_endpoints]]
+name = "cl-4-lighthouse-geth"
+url = "http://127.0.0.1:33022/"
+
+[[cl_endpoints]]
+name = "cl-5-lighthouse-geth"
+url = "http://127.0.0.1:33029/"
+
+[[cl_endpoints]]
+name = "cl-6-lighthouse-geth"
+url = "http://127.0.0.1:33036/"

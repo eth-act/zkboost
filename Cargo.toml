@@ -1,13 +1,17 @@
 [workspace]
 members = [
+    # zkboost
     "crates/zkboost/client",
     "crates/zkboost/server",
     "crates/zkboost/server-config",
     "crates/zkboost/types",
+    # zkboost-ethereum
     "crates/zkboost-ethereum/el-config",
+    "crates/zkboost-ethereum/el-input",
     "crates/zkboost-ethereum/el-relayer",
     "crates/zkboost-ethereum/el-types",
-    "crates/zkboost-ethereum/el-witness",
+
+    "crates/execution-witness-sentry",
 ]
 resolver = "2"
 
@@ -37,38 +41,53 @@ anyhow = "1.0"
 axum = "0.8"
 cargo_metadata = "0.19.0"
 clap = "4.5"
+flate2 = "1.1.5"
 futures = "0.3"
 indexmap = "2.12"
 nix = "0.29"
 reqwest = "0.12"
 serde = "1.0"
+serde_json = "1"
 serde_with = "3.16"
 serde_yaml = "0.9"
+sha2 = "0.10.9"
 strum = "0.27.2"
 sysinfo = "0.37"
+tar = "0.4.44"
 tempfile = "3.20.0"
 thiserror = "2"
 tokio = "1.48"
-toml = "0.9"
+toml_edit = "0.24"
 tower-http = "0.6"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 wgpu = "27"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+discv5 = "0.10"
+url = "2.5.7"
 
+# reth
 reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 
-ere-common = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
-ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "46672d08b72f149c3e939758ed1d69efaf1d0430" }
-benchmark-runner = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
-witness-generator = { git = "https://github.com/eth-act/zkevm-benchmark-workload", rev = "e3ac2ded0678377ec09d781f1331159e3c36633d" }
+# ere
+ere-common = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
+ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
+ere-io = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "ec75f8a26657ddbf7efc44cdb3167fff4f55fe27" }
 
+# ere-guests
+guest = { git = "https://github.com/eth-act/ere-guests", tag = "v0.1.0" }
+stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.1.0", features = ["host"] }
+stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.1.0", features = ["host"] }
+
+# local
 zkboost-client = { path = "crates/zkboost/client" }
 zkboost-server = { path = "crates/zkboost/server" }
 zkboost-server-config = { path = "crates/zkboost/server-config" }
 zkboost-types = { path = "crates/zkboost/types" }
+
 zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
+zkboost-ethereum-el-input = { path = "crates/zkboost-ethereum/el-input" }
 zkboost-ethereum-el-relayer = { path = "crates/zkboost-ethereum/el-relayer" }
 zkboost-ethereum-el-types = { path = "crates/zkboost-ethereum/el-types" }
-zkboost-ethereum-el-witness = { path = "crates/zkboost-ethereum/el-witness" }
-

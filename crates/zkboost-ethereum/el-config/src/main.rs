@@ -28,8 +28,11 @@ struct Args {
     /// Output path to save the `config.toml` and the program.
     #[arg(long)]
     output_dir: PathBuf,
+    /// Download the artifact even if a release url is available
+    #[arg(long)]
+    download_guest: bool,
     /// GitHub token for downloading artifacts from GitHub Actions.
-    /// Required when `benchmark-runner` dependency uses a git revision instead of a released tag.
+    /// Required when `ere-guests` dependency uses a git revision instead of a released tag.
     #[arg(env = "GITHUB_TOKEN")]
     github_token: Option<String>,
 }
@@ -43,10 +46,11 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let program = download_program(
-        args.zkvm,
         args.el,
+        args.zkvm,
         args.github_token.as_deref(),
         &args.output_dir,
+        args.download_guest,
     )
     .await?;
 
@@ -62,11 +66,8 @@ async fn main() -> anyhow::Result<()> {
             program,
         }],
     };
-    fs::write(
-        args.output_dir.join("config.toml"),
-        toml::to_string(&config)?,
-    )
-    .await?;
+
+    fs::write(args.output_dir.join("config.toml"), config.to_toml()?).await?;
 
     Ok(())
 }
