@@ -558,6 +558,41 @@ async fn main() -> anyhow::Result<()> {
                     "EL block received"
                 );
 
+                // Check if we have seen this block before (in memory cache)
+                // it is certain that we have seen it if it is in the cache
+                {
+                    let cache = el_cache.lock().await;
+                    if cache.get(&el_event.block_hash).is_some() {
+                        debug!(
+                            hash = %el_event.block_hash,
+                            "EL block already cached, skipping"
+                        );
+                        continue;
+                    }
+                }
+
+                // Check if we have seen this block before (on disk)
+                // If so, populate cache and skip fetching
+                if let Some(ref storage) = storage {
+                    if let Ok(Some(metadata)) = storage.load_metadata(el_event.block_number) {
+                        if metadata.block_hash == el_event.block_hash {
+                            info!(
+                                number = el_event.block_number,
+                                hash = %el_event.block_hash,
+                                "EL block already in storage, skipping fetch"
+                            );
+
+                            // Add to cache so CL events can find it
+                            let mut cache = el_cache.lock().await;
+                            cache.insert(
+                                el_event.block_hash.clone(),
+                                el_event.block_number,
+                            );
+                            continue;
+                        }
+                    }
+                }
+
                 // Find the endpoint and fetch block + witness
                 let Some(endpoint) = config.el_endpoints.iter().find(|e| e.name == el_event.endpoint_name) else {
                     continue;
