@@ -3,17 +3,11 @@
 //! Monitors execution layer nodes for new blocks and fetches their execution witnesses.
 //! Subscribes to CL head events to correlate EL blocks with beacon slots.
 
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    pin::pin,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{path::PathBuf, pin::pin, sync::Arc, time::Duration};
 
 use clap::Parser;
 use execution_witness_sentry::{
-    BlockStorage, ClClient, ClEvent, Config, ElClient, ExecutionProof, SavedProof,
+    BlockStorage, ClClient, ClEvent, Config, ElClient, ExecutionProof, ExpiringHashMap, SavedProof,
     generate_random_proof, subscribe_blocks, subscribe_cl_events,
 };
 use futures::StreamExt;
@@ -34,47 +28,6 @@ struct Cli {
 /// Cached EL block data waiting for CL correlation.
 struct CachedElBlock {
     block_number: u64,
-    timestamp: Instant,
-}
-
-/// Cache for EL blocks keyed by block_hash.
-struct ElBlockCache {
-    blocks: HashMap<String, CachedElBlock>,
-    max_age: Duration,
-}
-
-impl ElBlockCache {
-    fn new(max_age: Duration) -> Self {
-        Self {
-            blocks: HashMap::new(),
-            max_age,
-        }
-    }
-
-    fn insert(&mut self, block_hash: String, block_number: u64) {
-        self.blocks.insert(
-            block_hash,
-            CachedElBlock {
-                block_number,
-                timestamp: Instant::now(),
-            },
-        );
-        self.cleanup();
-    }
-
-    fn get(&self, block_hash: &str) -> Option<&CachedElBlock> {
-        self.blocks.get(block_hash)
-    }
-
-    fn remove(&mut self, block_hash: &str) -> Option<CachedElBlock> {
-        self.blocks.remove(block_hash)
-    }
-
-    fn cleanup(&mut self) {
-        let now = Instant::now();
-        self.blocks
-            .retain(|_, v| now.duration_since(v.timestamp) < self.max_age);
-    }
 }
 
 /// EL event for the channel.
@@ -85,6 +38,7 @@ struct ElBlockEvent {
 }
 
 /// CL event for the channel.
+#[derive(Clone)]
 struct ClBlockEvent {
     cl_name: String,
     slot: u64,
@@ -294,6 +248,78 @@ async fn backfill_proofs(
     proofs_submitted
 }
 
+async fn generate_proof_and_submit(
+    num_proofs: usize,
+    block_number: u64,
+    cl_event: &ClBlockEvent,
+    zkvm_enabled_clients: &[ClClient],
+    storage: Option<&mut BlockStorage>,
+) {
+    // Generate proofs once (for all CLs and for saving)
+    let mut generated_proofs: Vec<SavedProof> = Vec::new();
+    for proof_id in 0..num_proofs {
+        generated_proofs.push(SavedProof {
+            proof_id: proof_id as u8,
+            slot: cl_event.slot,
+            block_hash: cl_event.execution_block_hash.clone(),
+            beacon_block_root: cl_event.block_root.clone(),
+            proof_data: generate_random_proof(proof_id as u32),
+        });
+    }
+
+    // Save proofs to disk for backfill
+    if let Some(ref storage) = storage {
+        if let Err(e) = storage.save_proofs(
+            block_number,
+            cl_event.slot,
+            &cl_event.block_root,
+            &cl_event.execution_block_hash,
+            &generated_proofs,
+        ) {
+            warn!(slot = cl_event.slot, error = %e, "Failed to save proofs to disk");
+        } else {
+            debug!(
+                slot = cl_event.slot,
+                block_number = block_number,
+                "Saved proofs to disk"
+            );
+        }
+    }
+
+    // Submit proofs to ALL zkvm-enabled CL clients
+    for cl_client in zkvm_enabled_clients {
+        for saved_proof in &generated_proofs {
+            let proof = ExecutionProof {
+                proof_id: saved_proof.proof_id,
+                slot: saved_proof.slot,
+                block_hash: saved_proof.block_hash.clone(),
+                block_root: saved_proof.beacon_block_root.clone(),
+                proof_data: saved_proof.proof_data.clone(),
+            };
+
+            match cl_client.submit_execution_proof(&proof).await {
+                Ok(()) => {
+                    info!(
+                        cl = %cl_client.name(),
+                        slot = cl_event.slot,
+                        proof_id = saved_proof.proof_id,
+                        "Proof submitted"
+                    );
+                }
+                Err(e) => {
+                    debug!(
+                        cl = %cl_client.name(),
+                        slot = cl_event.slot,
+                        proof_id = saved_proof.proof_id,
+                        error = %e,
+                        "Proof submission failed"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -372,7 +398,9 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Cache for EL blocks (keyed by block_hash)
-    let el_cache = Arc::new(Mutex::new(ElBlockCache::new(Duration::from_secs(60))));
+    let el_cache = Arc::new(Mutex::new(ExpiringHashMap::new(Duration::from_secs(60))));
+    // CL block pending for EL witness
+    let pending_cl_blocks = Arc::new(Mutex::new(ExpiringHashMap::new(Duration::from_secs(60))));
 
     // Channels for events
     let (el_tx, mut el_rx) = tokio::sync::mpsc::channel::<ElBlockEvent>(100);
@@ -623,10 +651,19 @@ async fn main() -> anyhow::Result<()> {
 
                 // Cache the EL block for correlation with CL events
                 let mut cache = el_cache.lock().await;
-                cache.insert(
-                    el_event.block_hash.clone(),
-                    el_event.block_number,
-                );
+                cache.insert(el_event.block_hash.clone(), CachedElBlock {
+                    block_number: el_event.block_number,
+                });
+
+                if let Some(cl_event) = pending_cl_blocks.lock().await.remove(&el_event.block_hash) {
+                    generate_proof_and_submit(
+                        num_proofs,
+                        el_event.block_number,
+                        &cl_event,
+                        &zkvm_enabled_clients,
+                        storage.as_mut(),
+                    ).await;
+                }
             }
 
             Some(cl_event) = cl_rx.recv() => {
@@ -649,69 +686,18 @@ async fn main() -> anyhow::Result<()> {
                         exec_hash = %cl_event.execution_block_hash,
                         "EL block not in cache, skipping proof submission"
                     );
+                    pending_cl_blocks.lock().await.insert(cl_event.execution_block_hash.clone(), cl_event.clone());
                     continue;
                 }
                 let block_number = cached_block_number.unwrap();
 
-                // Generate proofs once (for all CLs and for saving)
-                let mut generated_proofs: Vec<SavedProof> = Vec::new();
-                for proof_id in 0..num_proofs {
-                    generated_proofs.push(SavedProof {
-                        proof_id: proof_id as u8,
-                        slot: cl_event.slot,
-                        block_hash: cl_event.execution_block_hash.clone(),
-                        beacon_block_root: cl_event.block_root.clone(),
-                        proof_data: generate_random_proof(proof_id as u32),
-                    });
-                }
-
-                // Save proofs to disk for backfill
-                if let Some(ref storage) = storage {
-                    if let Err(e) = storage.save_proofs(
-                        block_number,
-                        cl_event.slot,
-                        &cl_event.block_root,
-                        &cl_event.execution_block_hash,
-                        &generated_proofs,
-                    ) {
-                        warn!(slot = cl_event.slot, error = %e, "Failed to save proofs to disk");
-                    } else {
-                        debug!(slot = cl_event.slot, block_number = block_number, "Saved proofs to disk");
-                    }
-                }
-
-                // Submit proofs to ALL zkvm-enabled CL clients
-                for cl_client in &zkvm_enabled_clients {
-                    for saved_proof in &generated_proofs {
-                        let proof = ExecutionProof {
-                            proof_id: saved_proof.proof_id,
-                            slot: saved_proof.slot,
-                            block_hash: saved_proof.block_hash.clone(),
-                            block_root: saved_proof.beacon_block_root.clone(),
-                            proof_data: saved_proof.proof_data.clone(),
-                        };
-
-                        match cl_client.submit_execution_proof(&proof).await {
-                            Ok(()) => {
-                                info!(
-                                    cl = %cl_client.name(),
-                                    slot = cl_event.slot,
-                                    proof_id = saved_proof.proof_id,
-                                    "Proof submitted"
-                                );
-                            }
-                            Err(e) => {
-                                debug!(
-                                    cl = %cl_client.name(),
-                                    slot = cl_event.slot,
-                                    proof_id = saved_proof.proof_id,
-                                    error = %e,
-                                    "Proof submission failed"
-                                );
-                            }
-                        }
-                    }
-                }
+                generate_proof_and_submit(
+                    num_proofs,
+                    block_number,
+                    &cl_event,
+                    &zkvm_enabled_clients,
+                    storage.as_mut(),
+                ).await;
 
                 // Remove from cache after submission
                 let mut cache = el_cache.lock().await;

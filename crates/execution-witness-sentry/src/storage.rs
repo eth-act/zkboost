@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 /// Metadata stored alongside block data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BlockMetadata {
     /// EL block hash
     pub block_hash: String,
     /// EL block number
-    pub block_number: u64,
+    pub block_number: Option<u64>,
     /// Gas used in the block
-    pub gas_used: u64,
+    pub gas_used: Option<u64>,
     /// CL slot number (if known)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slot: Option<u64>,
@@ -101,17 +101,24 @@ impl BlockStorage {
         let block_dir = self.block_dir(block_number);
         std::fs::create_dir_all(&block_dir)?;
 
-        // Write metadata (without CL info initially)
-        let metadata = BlockMetadata {
-            block_hash,
-            block_number,
-            gas_used,
-            slot: None,
-            beacon_block_root: None,
-            num_proofs: 0,
-        };
+        // Load existing metadata or create new
         let metadata_path = block_dir.join("metadata.json");
-        std::fs::write(metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+        let mut metadata = if metadata_path.exists() {
+            let content = std::fs::read_to_string(&metadata_path)?;
+            serde_json::from_str(&content)?
+        } else {
+            BlockMetadata {
+                block_hash: block_hash.to_string(),
+                ..Default::default()
+            }
+        };
+
+        // Update with EL info
+        metadata.block_number = Some(block_number);
+        metadata.gas_used = Some(gas_used);
+
+        // Save updated metadata
+        std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
 
         // Write combined block + witness data
         let data_path = block_dir.join("data.json.gz");
@@ -154,11 +161,7 @@ impl BlockStorage {
         } else {
             BlockMetadata {
                 block_hash: block_hash.to_string(),
-                block_number,
-                gas_used: 0,
-                slot: None,
-                beacon_block_root: None,
-                num_proofs: 0,
+                ..Default::default()
             }
         };
 
