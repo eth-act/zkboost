@@ -97,15 +97,14 @@ impl ElClient {
     }
 
     /// Fetch execution witness for a block. Returns the witness and its gzipped JSON.
-    pub async fn get_execution_witness(
+    pub async fn get_execution_witness_by_hash(
         &self,
-        block_number: u64,
+        block_hash: &str,
     ) -> Result<Option<(serde_json::Value, Vec<u8>)>> {
-        let block_num_hex = format!("0x{block_number:x}");
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
-            method: "debug_executionWitness",
-            params: (block_num_hex,),
+            method: "debug_executionWitnessByBlockHash",
+            params: (block_hash,),
             id: 1,
         };
 
