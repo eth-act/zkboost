@@ -68,7 +68,7 @@ pub fn load_block_data<T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -
 pub struct BlockStorage {
     output_dir: PathBuf,
     chain: String,
-    saved: Option<VecDeque<String>>,
+    retained: Option<VecDeque<String>>,
 }
 
 impl BlockStorage {
@@ -81,7 +81,7 @@ impl BlockStorage {
         Self {
             output_dir: output_dir.into(),
             chain: chain.into(),
-            saved: retain.map(|retain| VecDeque::with_capacity(retain as usize)),
+            retained: retain.map(|retain| VecDeque::with_capacity(retain as usize)),
         }
     }
 
@@ -122,15 +122,12 @@ impl BlockStorage {
         let data_path = block_dir.join("data.json.gz");
         std::fs::write(data_path, gzipped_combined_data)?;
 
-        if let Some(block_to_delete) = self.saved.as_mut().and_then(|saved| {
-            let mut block_to_delete = None;
-            if saved.len() == saved.capacity() {
-                block_to_delete = saved.pop_front();
-            }
-            saved.push_back(block_hash);
-            block_to_delete
+        if let Some(expired) = self.retained.as_mut().and_then(|retained| {
+            let expired = (retained.len() == retained.capacity()).then(|| retained.pop_front());
+            retained.push_back(block_hash);
+            expired.flatten()
         }) {
-            self.delete_old_block(&block_to_delete)?;
+            self.delete_old_block(&expired)?;
         }
 
         Ok(())
