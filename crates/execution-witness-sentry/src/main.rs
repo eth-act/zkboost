@@ -601,24 +601,25 @@ async fn main() -> anyhow::Result<()> {
 
                 // Check if we have seen this block before (on disk)
                 // If so, populate cache and skip fetching
-                if let Some(ref storage) = storage {
-                    if let Ok(Some(metadata)) = storage.load_metadata(el_event.block_number) {
-                        if metadata.block_hash == el_event.block_hash {
-                            info!(
-                                number = el_event.block_number,
-                                hash = %el_event.block_hash,
-                                "EL block already in storage, skipping fetch"
-                            );
+                if let Some(ref storage) = storage
+                    && let Ok(Some(metadata)) = storage.load_metadata(el_event.block_number)
+                    && metadata.block_hash == el_event.block_hash
+                {
+                    info!(
+                        number = el_event.block_number,
+                        hash = %el_event.block_hash,
+                        "EL block already in storage, skipping fetch"
+                    );
 
-                            // Add to cache so CL events can find it
-                            let mut cache = el_cache.lock().await;
-                            cache.insert(
-                                el_event.block_hash.clone(),
-                                el_event.block_number,
-                            );
-                            continue;
-                        }
-                    }
+                    // Add to cache so CL events can find it
+                    let mut cache = el_cache.lock().await;
+                    cache.insert(
+                        el_event.block_hash.clone(),
+                        CachedElBlock {
+                            block_number: el_event.block_number,
+                        },
+                    );
+                    continue;
                 }
 
                 // Find the endpoint and fetch block + witness
