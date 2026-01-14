@@ -270,7 +270,6 @@ async fn generate_proof_and_submit(
     // Save proofs to disk for backfill
     if let Some(ref storage) = storage {
         if let Err(e) = storage.save_proofs(
-            block_number,
             cl_event.slot,
             &cl_event.block_root,
             &cl_event.execution_block_hash,
@@ -602,7 +601,7 @@ async fn main() -> anyhow::Result<()> {
                 // Check if we have seen this block before (on disk)
                 // If so, populate cache and skip fetching
                 if let Some(ref storage) = storage
-                    && let Ok(Some(metadata)) = storage.load_metadata(el_event.block_number)
+                    && let Ok(Some(metadata)) = storage.load_metadata(&el_event.block_hash)
                     && metadata.block_hash == el_event.block_hash
                 {
                     info!(
@@ -645,7 +644,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                let (witness, gzipped_witness) = match el_client.get_execution_witness(el_event.block_number).await {
+                let (witness, gzipped_witness) = match el_client.get_execution_witness_by_hash(&el_event.block_hash).await {
                     Ok(Some(data)) => data,
                     Ok(None) => {
                         warn!(number = el_event.block_number, "Witness not found");

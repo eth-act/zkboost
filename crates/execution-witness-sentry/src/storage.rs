@@ -68,7 +68,7 @@ pub fn load_block_data<T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -
 pub struct BlockStorage {
     output_dir: PathBuf,
     chain: String,
-    saved: Option<VecDeque<u64>>,
+    retained: Option<VecDeque<String>>,
 }
 
 impl BlockStorage {
@@ -81,15 +81,13 @@ impl BlockStorage {
         Self {
             output_dir: output_dir.into(),
             chain: chain.into(),
-            saved: retain.map(|retain| VecDeque::with_capacity(retain as usize)),
+            retained: retain.map(|retain| VecDeque::with_capacity(retain as usize)),
         }
     }
 
-    /// Get the directory path for a block number.
-    pub fn block_dir(&self, block_number: u64) -> PathBuf {
-        self.output_dir
-            .join(&self.chain)
-            .join(block_number.to_string())
+    /// Get the directory path for a block hash.
+    pub fn block_dir(&self, block_hash: &str) -> PathBuf {
+        self.output_dir.join(&self.chain).join(block_hash)
     }
 
     /// Save block data to disk (without CL info - will be updated later).
@@ -98,7 +96,7 @@ impl BlockStorage {
         let block_hash = format!("{:?}", block.header.hash);
         let gas_used = block.header.gas_used;
 
-        let block_dir = self.block_dir(block_number);
+        let block_dir = self.block_dir(&block_hash);
         std::fs::create_dir_all(&block_dir)?;
 
         // Load existing metadata or create new
@@ -124,15 +122,12 @@ impl BlockStorage {
         let data_path = block_dir.join("data.json.gz");
         std::fs::write(data_path, gzipped_combined_data)?;
 
-        if let Some(block_to_delete) = self.saved.as_mut().and_then(|saved| {
-            let mut block_to_delete = None;
-            if saved.len() == saved.capacity() {
-                block_to_delete = saved.pop_front();
-            }
-            saved.push_back(block_number);
-            block_to_delete
+        if let Some(expired) = self.retained.as_mut().and_then(|retained| {
+            let expired = (retained.len() == retained.capacity()).then(|| retained.pop_front());
+            retained.push_back(block_hash);
+            expired.flatten()
         }) {
-            self.delete_old_block(block_to_delete)?;
+            self.delete_old_block(&expired)?;
         }
 
         Ok(())
@@ -142,13 +137,12 @@ impl BlockStorage {
     /// This is called when we receive CL head event with slot/block_root.
     pub fn save_proofs(
         &self,
-        block_number: u64,
         slot: u64,
         beacon_block_root: &str,
         block_hash: &str,
         proofs: &[SavedProof],
     ) -> Result<()> {
-        let block_dir = self.block_dir(block_number);
+        let block_dir = self.block_dir(block_hash);
 
         // Create dir if it doesn't exist (in case block wasn't saved yet)
         std::fs::create_dir_all(&block_dir)?;
@@ -227,9 +221,9 @@ impl BlockStorage {
         Ok(None)
     }
 
-    /// Load metadata for a given block number.
-    pub fn load_metadata(&self, block_number: u64) -> Result<Option<BlockMetadata>> {
-        let block_dir = self.block_dir(block_number);
+    /// Load metadata for a given block hash.
+    pub fn load_metadata(&self, block_hash: &str) -> Result<Option<BlockMetadata>> {
+        let block_dir = self.block_dir(block_hash);
         let metadata_path = block_dir.join("metadata.json");
 
         if !metadata_path.exists() {
@@ -241,8 +235,8 @@ impl BlockStorage {
     }
 
     /// Delete an old block directory.
-    fn delete_old_block(&self, block_number: u64) -> Result<()> {
-        let old_dir = self.block_dir(block_number);
+    fn delete_old_block(&self, block_hash: &str) -> Result<()> {
+        let old_dir = self.block_dir(block_hash);
         if old_dir.exists() {
             std::fs::remove_dir_all(old_dir)?;
         }
