@@ -69,17 +69,37 @@ impl Config {
 
 /// Configuration for a single zkVM program.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(untagged)]
 #[allow(non_camel_case_types)]
-pub struct zkVMConfig {
-    /// The kind of zkVM backend to use.
-    pub kind: zkVMKind,
-    /// The compute resource type for proving (CPU, GPU, or network).
-    pub resource: ProverResourceType,
-    /// Unique identifier for this program.
-    pub program_id: ProgramID,
-    /// Path to the compiled program binary.
-    pub program: ProgramConfig,
+pub enum zkVMConfig {
+    /// Configuration for `DockerizedzkVM` ran by zkboost.
+    Docker {
+        /// The kind of zkVM backend to use.
+        kind: zkVMKind,
+        /// The compute resource type for proving (CPU, GPU, or network).
+        resource: ProverResourceType,
+        /// Unique identifier for this program.
+        program_id: ProgramID,
+        /// Path to the compiled program binary.
+        program: ProgramConfig,
+    },
+    /// External Ere zkVM server configuration
+    External {
+        /// The endpoint URL of the remote Ere zkVM server.
+        endpoint: String,
+        /// Unique identifier for this program.
+        program_id: ProgramID,
+    },
+}
+
+impl zkVMConfig {
+    /// Returns [`ProgramID`].
+    pub fn program_id(&self) -> &ProgramID {
+        match self {
+            Self::Docker { program_id, .. } => program_id,
+            Self::External { program_id, .. } => program_id,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -95,46 +115,50 @@ mod test {
             [[zkvm]]
             kind = "openvm"
             resource = "cpu"
-            program-id = "openvm-test"
+            program_id = "openvm-test"
             program = "openvm-test-elf"
 
             [[zkvm]]
             kind = "sp1"
-            resource = { network = { endpoint = "http://localhost:3000", api-key = "secret" } } 
-            program-id = "sp1-test"
+            resource = { endpoint = "http://localhost:3000", api_key = "secret" }
+            program_id = "sp1-test"
             program = { path = "sp1-test-elf" }
 
             [[zkvm]]
             kind = "zisk"
             resource = "gpu"
-            program-id = "zisk-test"
+            program_id = "zisk-test"
             program = { url = "http://artifact" }
+
+            [[zkvm]]
+            endpoint = "http://remote:3000"
+            program_id = "external-test"
         "#;
         assert_eq!(Config::from_toml_str(toml).unwrap(), sample_config());
     }
 
     #[test]
     fn test_from_yaml_str() {
-        // FIXME: After Ere add `#[serde(untagged)]` for `ProverResourceType`,
-        //        remove the `!network` tagging.
         let yaml = r#"
             zkvm:
             - kind: openvm
               resource: cpu
-              program-id: openvm-test
+              program_id: openvm-test
               program: openvm-test-elf
             - kind: sp1
-              resource: !network
+              resource:
                 endpoint: http://localhost:3000
-                api-key: secret
-              program-id: sp1-test
+                api_key: secret
+              program_id: sp1-test
               program:
                 path: sp1-test-elf
             - kind: zisk
               resource: gpu
-              program-id: zisk-test
+              program_id: zisk-test
               program:
                 url: http://artifact
+            - endpoint: "http://remote:3000"
+              program_id: "external-test"
         "#;
         assert_eq!(Config::from_yaml_str(yaml).unwrap(), sample_config());
     }
@@ -142,13 +166,13 @@ mod test {
     fn sample_config() -> Config {
         Config {
             zkvm: vec![
-                zkVMConfig {
+                zkVMConfig::Docker {
                     kind: zkVMKind::OpenVM,
                     resource: ProverResourceType::Cpu,
                     program_id: "openvm-test".into(),
                     program: ProgramConfig::Path("openvm-test-elf".into()),
                 },
-                zkVMConfig {
+                zkVMConfig::Docker {
                     kind: zkVMKind::SP1,
                     resource: ProverResourceType::Network(NetworkProverConfig {
                         endpoint: "http://localhost:3000".to_string(),
@@ -159,13 +183,17 @@ mod test {
                         path: "sp1-test-elf".into(),
                     }),
                 },
-                zkVMConfig {
+                zkVMConfig::Docker {
                     kind: zkVMKind::Zisk,
                     resource: ProverResourceType::Gpu,
                     program_id: "zisk-test".into(),
                     program: ProgramConfig::Url(UrlConfig {
                         url: "http://artifact".to_string(),
                     }),
+                },
+                zkVMConfig::External {
+                    endpoint: "http://remote:3000".to_string(),
+                    program_id: "external-test".into(),
                 },
             ],
         }

@@ -19,9 +19,8 @@ pub(crate) async fn verify_proof(
     let program_id = req.program_id.clone();
 
     // Check if the program_id is correct
-    let programs = state.programs.read().await;
 
-    let program = programs.get(&program_id).ok_or_else(|| {
+    let zkvm = state.programs.get(&program_id).ok_or_else(|| {
         // Record as failed verification for program not found
         record_verify(&program_id.0, false, start.elapsed());
         (StatusCode::NOT_FOUND, "Program not found".to_string())
@@ -29,7 +28,7 @@ pub(crate) async fn verify_proof(
 
     // Verify the proof
     let (verified, public_values, failure_reason) =
-        match program.vm.verify(&Proof::Compressed(req.proof)) {
+        match zkvm.verify(Proof::Compressed(req.proof)).await {
             Ok(public_values) => (true, public_values, String::new()),
             Err(err) => {
                 let failure_reason = match err.downcast_ref::<ere_dockerized::zkvm::Error>() {

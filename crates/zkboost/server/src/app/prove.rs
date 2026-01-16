@@ -17,9 +17,8 @@ pub(crate) async fn prove_program(
 ) -> Result<Json<ProveResponse>, (StatusCode, String)> {
     let start = Instant::now();
     let program_id = req.program_id.clone();
-    let programs = state.programs.read().await;
 
-    let program = programs.get(&program_id).ok_or_else(|| {
+    let zkvm = state.programs.get(&program_id).ok_or_else(|| {
         record_prove(&program_id.0, false, start.elapsed(), 0);
         (StatusCode::NOT_FOUND, "Program not found".to_string())
     })?;
@@ -27,9 +26,8 @@ pub(crate) async fn prove_program(
     let input = Input::new().with_stdin(req.input);
 
     let (public_values, proof, report) =
-        program
-            .vm
-            .prove(&input, ProofKind::Compressed)
+        zkvm.prove(input, ProofKind::Compressed)
+            .await
             .map_err(|e| {
                 record_prove(&program_id.0, false, start.elapsed(), 0);
                 (

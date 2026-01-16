@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     let config = Config {
-        zkvm: vec![zkVMConfig {
+        zkvm: vec![zkVMConfig::Docker {
             kind: args.zkvm,
             resource: match args.resource.to_lowercase().as_str() {
                 "cpu" => ProverResourceType::Cpu,

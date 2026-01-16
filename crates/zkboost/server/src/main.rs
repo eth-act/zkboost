@@ -77,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(&config, metrics_handle).await?;
 
     // Record application metrics
-    metrics::set_programs_loaded(state.programs.read().await.len());
+    metrics::set_programs_loaded(state.programs.len());
     metrics::set_build_info(env!("CARGO_PKG_VERSION"));
 
     let router = app(state);

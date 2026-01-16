@@ -2,14 +2,14 @@
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
-use ere_io::Io;
 use ere_zkvm_interface::Input;
-use guest::GuestIo;
 use sha2::{Digest, Sha256};
 use stateless_validator_ethrex::guest::{
-    StatelessValidatorEthrexGuest, StatelessValidatorEthrexInput,
+    Io, StatelessValidatorEthrexInput, StatelessValidatorEthrexIo,
 };
-use stateless_validator_reth::guest::{StatelessValidatorRethGuest, StatelessValidatorRethInput};
+use stateless_validator_reth::guest::{
+    StatelessValidatorOutput, StatelessValidatorRethInput, StatelessValidatorRethIo,
+};
 use zkboost_ethereum_el_types::ElKind;
 
 #[rustfmt::skip]
@@ -37,27 +37,28 @@ impl ElInput {
     ///
     /// [`Input`] for the zkVM methods of the specified EL guest program.
     pub fn to_zkvm_input(&self, el: ElKind) -> anyhow::Result<Input> {
-        Ok(match el {
-            ElKind::Ethrex => {
-                StatelessValidatorEthrexInput::new(&self.stateless_input)?.to_zkvm_input()?
-            }
-            ElKind::Reth => {
-                StatelessValidatorRethInput::new(&self.stateless_input)?.to_zkvm_input()?
-            }
-        })
+        let stdin = match el {
+            ElKind::Ethrex => StatelessValidatorEthrexIo::serialize_input(
+                &StatelessValidatorEthrexInput::new(&self.stateless_input)?,
+            )?,
+            ElKind::Reth => StatelessValidatorRethIo::serialize_input(
+                &StatelessValidatorRethInput::new(&self.stateless_input)?,
+            )?,
+        };
+        Ok(Input::new().with_prefixed_stdin(stdin))
     }
 
-    /// Returns expected sh256 hash of output given the EL and whether the
+    /// Returns expected sha256 hash of output given the EL and whether the
     /// stateless validation is successful or not.
     pub fn expected_public_values(&self, el: ElKind, success: bool) -> anyhow::Result<[u8; 32]> {
-        let output = (
+        let output = StatelessValidatorOutput::new(
             self.stateless_input.block.hash_slow().0,
             self.stateless_input.block.parent_hash.0,
             success,
         );
         let serialized_output = match el {
-            ElKind::Ethrex => GuestIo::<StatelessValidatorEthrexGuest>::serialize_output(&output)?,
-            ElKind::Reth => GuestIo::<StatelessValidatorRethGuest>::serialize_output(&output)?,
+            ElKind::Ethrex => StatelessValidatorEthrexIo::serialize_output(&output)?,
+            ElKind::Reth => StatelessValidatorRethIo::serialize_output(&output)?,
         };
         Ok(Sha256::digest(serialized_output).into())
     }

@@ -100,7 +100,7 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
     };
 
     let config = Config {
-        zkvm: vec![zkVMConfig {
+        zkvm: vec![zkVMConfig::Docker {
             kind: args.zkvm,
             resource,
             program_id: args.program_id().into(),

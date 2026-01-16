@@ -15,11 +15,9 @@ sha2.workspace = true
 reth-stateless.workspace = true
 
 # ere
-ere-io.workspace = true
 ere-zkvm-interface.workspace = true
 
 # ere-guests
-guest.workspace = true
 stateless-validator-ethrex.workspace = true
 stateless-validator-reth.workspace = true
 

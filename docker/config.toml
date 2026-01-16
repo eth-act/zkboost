@@ -5,5 +5,5 @@
 # [[zkvm]]
 # kind = "sp1"
 # resource = "cpu"
-# program-id = "my-program"
+# program_id = "my-program"
 # program = "/path/to/elf"

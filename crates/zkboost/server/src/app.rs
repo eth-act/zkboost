@@ -10,11 +10,13 @@ use axum::{
     routing::{get, post},
 };
 use ere_dockerized::DockerizedzkVM;
-use ere_zkvm_interface::zkVM;
+use ere_server::client::zkVMClient;
+use ere_zkvm_interface::{
+    Input, ProgramExecutionReport, ProgramProvingReport, Proof, ProofKind, PublicValues,
+};
 use futures::future::try_join_all;
 use metrics_exporter_prometheus::PrometheusHandle;
-use reqwest::StatusCode;
-use tokio::sync::RwLock;
+use reqwest::{StatusCode, Url};
 use tower_http::trace::TraceLayer;
 use zkboost_server_config::{Config, zkVMConfig};
 use zkboost_types::ProgramID;
@@ -35,7 +37,7 @@ mod verify;
 #[derive(Clone)]
 pub(crate) struct AppState {
     /// Map of program IDs to their corresponding zkVM instances.
-    pub(crate) programs: Arc<RwLock<HashMap<ProgramID, zkVMInstance>>>,
+    pub(crate) programs: Arc<HashMap<ProgramID, zkVMInstance>>,
     /// Prometheus metrics handle for rendering metrics.
     pub(crate) metrics: PrometheusHandle,
 }
@@ -47,27 +49,86 @@ impl AppState {
     pub(crate) async fn new(config: &Config, metrics: PrometheusHandle) -> anyhow::Result<Self> {
         let zkvms = try_join_all(config.zkvm.iter().map(init_zkvm)).await?;
         let programs = zip(&config.zkvm, zkvms)
-            .map(|(config, zkvm)| (config.program_id.clone(), zkvm))
+            .map(|(config, zkvm)| (config.program_id().clone(), zkvm))
             .collect();
         Ok(Self {
-            programs: Arc::new(RwLock::new(programs)),
+            programs: Arc::new(programs),
             metrics,
         })
     }
 }
 
-/// Wrapper around a zkVM instance that can be shared across threads.
-#[derive(Clone)]
+/// zkVM instance, either dockerized zkVM or external Ere server.
 #[allow(non_camel_case_types)]
-pub(crate) struct zkVMInstance {
-    /// The underlying zkVM implementation.
-    pub(crate) vm: Arc<dyn zkVM + Send + Sync>,
+pub(crate) enum zkVMInstance {
+    /// Dockerized zkVM managed by zkboost.
+    Docker {
+        /// The underlying zkVM implementation.
+        vm: Arc<DockerizedzkVM>,
+    },
+    /// External Ere server that provides zkVM functionalities via http endpoints.
+    External {
+        /// Client of external Ere server.
+        client: Arc<zkVMClient>,
+    },
+    /// Mock zkVM
+    #[cfg(test)]
+    Mock(crate::mock::MockzkVM),
 }
 
 impl zkVMInstance {
-    /// Creates a new zkVM instance from any type implementing the zkVM trait.
-    pub(crate) fn new(vm: impl 'static + zkVM + Send + Sync) -> Self {
-        Self { vm: Arc::new(vm) }
+    /// Creates a dockerized zkVM instance.
+    pub(crate) fn docker(vm: DockerizedzkVM) -> Self {
+        Self::Docker { vm: Arc::new(vm) }
+    }
+
+    /// Creates an external zkVM instance.
+    pub(crate) async fn external(endpoint: String) -> anyhow::Result<Self> {
+        let endpoint = Url::parse(&endpoint)
+            .with_context(|| format!("Failed to parse endpoint URL: {endpoint}"))?;
+        let client = zkVMClient::from_endpoint(endpoint.clone())
+            .with_context(|| format!("Failed to create zkVM client for endpoint: {endpoint}"))?;
+        Ok(Self::External {
+            client: Arc::new(client),
+        })
+    }
+
+    /// Executes the program with the given input.
+    pub(crate) async fn execute(
+        &self,
+        input: Input,
+    ) -> anyhow::Result<(PublicValues, ProgramExecutionReport)> {
+        match self {
+            Self::Docker { vm } => vm.execute_async(input).await,
+            Self::External { client } => Ok(client.execute(input).await?),
+            #[cfg(test)]
+            Self::Mock(vm) => vm.execute(&input),
+        }
+    }
+
+    /// Creates a proof of the program execution with given input.
+    pub(crate) async fn prove(
+        &self,
+        input: Input,
+        proof_kind: ProofKind,
+    ) -> anyhow::Result<(PublicValues, Proof, ProgramProvingReport)> {
+        match self {
+            Self::Docker { vm } => vm.prove_async(input, proof_kind).await,
+            Self::External { client } => Ok(client.prove(input, proof_kind).await?),
+            #[cfg(test)]
+            Self::Mock(vm) => vm.prove(&input, proof_kind),
+        }
+    }
+
+    /// Verifies a proof of the program used to create this zkVM instance, then
+    /// returns the public values extracted from the proof.
+    pub(crate) async fn verify(&self, proof: Proof) -> anyhow::Result<PublicValues> {
+        match self {
+            Self::Docker { vm } => vm.verify_async(proof).await,
+            Self::External { client } => Ok(client.verify(proof).await?),
+            #[cfg(test)]
+            Self::Mock(vm) => vm.verify(&proof),
+        }
     }
 }
 
@@ -95,8 +156,18 @@ async fn get_metrics(State(state): State<AppState>) -> String {
 
 /// Initializes a single zkVM instance from configuration.
 async fn init_zkvm(config: &zkVMConfig) -> anyhow::Result<zkVMInstance> {
-    let program = config.program.load().await?;
-    let zkvm = DockerizedzkVM::new(config.kind, program, config.resource.clone())
-        .with_context(|| format!("Failed to initialize DockerizedzkVM, kind {}", config.kind))?;
-    Ok(zkVMInstance::new(zkvm))
+    match config {
+        zkVMConfig::Docker {
+            kind,
+            resource,
+            program,
+            ..
+        } => {
+            let program = program.load().await?;
+            let zkvm = DockerizedzkVM::new(*kind, program, resource.clone())
+                .with_context(|| format!("Failed to initialize DockerizedzkVM, kind {kind}"))?;
+            Ok(zkVMInstance::docker(zkvm))
+        }
+        zkVMConfig::External { endpoint, .. } => zkVMInstance::external(endpoint.clone()).await,
+    }
 }

@@ -24,6 +24,7 @@ metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 
 ere-dockerized.workspace = true
+ere-server.workspace = true
 ere-zkvm-interface.workspace = true
 
 zkboost-server-config.workspace = true
