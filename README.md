@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="assets/logo.png" width="240" alt="zkboost logo" />
+  <img src="assets/logo.png" width="auto" height="40" alt="zkboost logo" />
 </p>
 
 <p align="center"><b>Simple HTTP API for any Ere-compliant zkVM.</b></p>
