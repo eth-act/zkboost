@@ -3,6 +3,11 @@ chain = "local"
 retain = 10
 num_proofs = 2
 
+[proof_engine]
+url = "http://127.0.0.1:3001"
+proof_types = ["reth-zisk", "ethrex-zisk"]
+webhook_port = 3003
+
 [[el_endpoints]]
 name = "el-1-reth-lighthouse"
 url = "http://127.0.0.1:32003"

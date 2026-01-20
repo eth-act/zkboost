@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use zkboost_ethereum_el_types::ElProofType;
 
 use crate::error::{Error, Result};
 
@@ -23,6 +24,9 @@ pub struct Config {
     pub retain: Option<u64>,
     /// Number of proofs to submit per block.
     pub num_proofs: Option<u32>,
+    /// zkboost endpoints for proof generation.
+    #[serde(default)]
+    pub proof_engine: ProofEngineConfig,
 }
 
 /// Execution layer endpoint configuration.
@@ -45,6 +49,22 @@ pub struct ClEndpoint {
     pub url: String,
 }
 
+/// zkboost endpoint configuration.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ProofEngineConfig {
+    /// Proof engine URL.
+    pub url: String,
+    /// Proof types.
+    pub proof_types: Vec<ElProofType>,
+    /// Port for HTTP server to receive pushed proofs from proof engine.
+    #[serde(default = "default_proof_engine_webhook_port")]
+    pub webhook_port: u16,
+}
+
+fn default_proof_engine_webhook_port() -> u16 {
+    3003
+}
+
 impl Config {
     /// Load configuration from a TOML file.
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
@@ -55,6 +75,6 @@ impl Config {
                 e
             ))
         })?;
-        Ok(toml::from_str(&content)?)
+        Ok(toml_edit::de::from_str(&content)?)
     }
 }

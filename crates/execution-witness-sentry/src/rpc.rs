@@ -1,13 +1,15 @@
 //! JSON-RPC client for execution layer nodes.
 
-use alloy_rpc_types_eth::Block;
+use reth_ethereum_primitives::{Block, TransactionSigned};
+use reth_stateless::ExecutionWitness;
 use serde::{Deserialize, Serialize};
 use url::Url;
+use zkboost_client::zkboostClient;
+use zkboost_ethereum_el_input::ElInput;
+use zkboost_ethereum_el_types::ElProofType;
+use zkboost_types::ProofGenId;
 
-use crate::{
-    error::{Error, Result},
-    storage::compress_gzip,
-};
+use crate::error::{Error, Result};
 
 /// JSON-RPC request structure.
 #[derive(Debug, Clone, Serialize)]
@@ -55,7 +57,7 @@ impl ElClient {
     }
 
     /// Fetch a block by hash. Returns the block and its gzipped JSON.
-    pub async fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<(Block, Vec<u8>)>> {
+    pub async fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<Block>> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
             method: "eth_getBlockByHash",
@@ -77,7 +79,8 @@ impl ElClient {
             });
         }
 
-        let rpc_response: JsonRpcResponse<Block> = response.json().await?;
+        let rpc_response: JsonRpcResponse<alloy_rpc_types_eth::Block<TransactionSigned>> =
+            response.json().await?;
 
         if let Some(error) = rpc_response.error {
             return Err(Error::Rpc {
@@ -87,11 +90,7 @@ impl ElClient {
         }
 
         match rpc_response.result {
-            Some(block) => {
-                let json_bytes = serde_json::to_vec(&block)?;
-                let gzipped = compress_gzip(&json_bytes)?;
-                Ok(Some((block, gzipped)))
-            }
+            Some(block) => Ok(Some(block.into_consensus())),
             None => Ok(None),
         }
     }
@@ -100,7 +99,7 @@ impl ElClient {
     pub async fn get_execution_witness_by_hash(
         &self,
         block_hash: &str,
-    ) -> Result<Option<(serde_json::Value, Vec<u8>)>> {
+    ) -> Result<Option<ExecutionWitness>> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
             method: "debug_executionWitnessByBlockHash",
@@ -122,7 +121,7 @@ impl ElClient {
             });
         }
 
-        let rpc_response: JsonRpcResponse<serde_json::Value> = response.json().await?;
+        let rpc_response: JsonRpcResponse<ExecutionWitness> = response.json().await?;
 
         if let Some(error) = rpc_response.error {
             return Err(Error::Rpc {
@@ -132,11 +131,7 @@ impl ElClient {
         }
 
         match rpc_response.result {
-            Some(witness) => {
-                let json_bytes = serde_json::to_vec(&witness)?;
-                let gzipped = compress_gzip(&json_bytes)?;
-                Ok(Some((witness, gzipped)))
-            }
+            Some(witness) => Ok(Some(witness)),
             None => Ok(None),
         }
     }
@@ -397,18 +392,38 @@ fn enr_has_zkvm(enr_str: &str) -> bool {
     }
 }
 
-/// Generate random proof bytes.
-pub fn generate_random_proof(proof_id: u32) -> Vec<u8> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64;
+pub struct ProofEngineClient {
+    pub url: String,
+    pub proof_types: Vec<ElProofType>,
+    client: zkboostClient,
+}
 
-    let mut proof = vec![0u8; 32];
-    for (i, byte) in proof.iter_mut().enumerate() {
-        *byte = ((seed >> (i % 8)) ^ (i as u64)) as u8;
+impl ProofEngineClient {
+    pub fn new(url: String, proof_types: Vec<ElProofType>) -> anyhow::Result<Self> {
+        let client = zkboostClient::new(url.clone())?;
+        Ok(Self {
+            url,
+            proof_types,
+            client,
+        })
     }
-    proof[31] = proof_id as u8;
-    proof
+
+    pub fn proof_types(&self) -> &[ElProofType] {
+        &self.proof_types
+    }
+
+    pub async fn request_proof(
+        &self,
+        proof_type: &ElProofType,
+        el_input: &ElInput,
+    ) -> anyhow::Result<ProofGenId> {
+        Ok(self
+            .client
+            .prove(
+                proof_type.to_string(),
+                el_input.to_zkvm_input(proof_type.el())?.stdin,
+            )
+            .await?
+            .proof_gen_id)
+    }
 }

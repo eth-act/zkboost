@@ -3,12 +3,15 @@
 use std::{
     collections::VecDeque,
     io::{Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
-use alloy_rpc_types_eth::Block;
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
+use reth_ethereum_primitives::Block;
+use reth_stateless::ExecutionWitness;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use zkboost_ethereum_el_types::ElProofType;
 
 use crate::error::Result;
 
@@ -27,18 +30,24 @@ pub struct BlockMetadata {
     /// CL beacon block root (if known)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub beacon_block_root: Option<String>,
-    /// Number of proofs stored
-    #[serde(default)]
-    pub num_proofs: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ElBlockWitness {
+    /// EL block
+    pub block: Block,
+    /// EL block execution witness
+    pub witness: ExecutionWitness,
 }
 
 /// A saved proof that can be loaded for backfill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde_as]
 pub struct SavedProof {
-    pub proof_id: u8,
-    pub slot: u64,
-    pub block_hash: String,
-    pub beacon_block_root: String,
+    /// Proof type
+    pub proof_type: ElProofType,
+    #[serde_as(as = "Base64")]
+    /// Proof data
     pub proof_data: Vec<u8>,
 }
 
@@ -55,13 +64,6 @@ pub fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
     let mut decompressed = Vec::new();
     decoder.read_to_end(&mut decompressed)?;
     Ok(decompressed)
-}
-
-/// Load block data from a gzipped JSON file.
-pub fn load_block_data<T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -> Result<T> {
-    let compressed = std::fs::read(path)?;
-    let decompressed = decompress_gzip(&compressed)?;
-    Ok(serde_json::from_slice(&decompressed)?)
 }
 
 /// Manages block data storage on disk.
@@ -91,10 +93,10 @@ impl BlockStorage {
     }
 
     /// Save block data to disk (without CL info - will be updated later).
-    pub fn save_block(&mut self, block: &Block, gzipped_combined_data: &[u8]) -> Result<()> {
-        let block_number = block.header.number;
-        let block_hash = format!("{:?}", block.header.hash);
-        let gas_used = block.header.gas_used;
+    pub fn save_block(&mut self, el_data: &ElBlockWitness) -> Result<()> {
+        let block_number = el_data.block.header.number;
+        let block_hash = el_data.block.hash_slow().to_string();
+        let gas_used = el_data.block.header.gas_used;
 
         let block_dir = self.block_dir(&block_hash);
         std::fs::create_dir_all(&block_dir)?;
@@ -120,7 +122,7 @@ impl BlockStorage {
 
         // Write combined block + witness data
         let data_path = block_dir.join("data.json.gz");
-        std::fs::write(data_path, gzipped_combined_data)?;
+        std::fs::write(data_path, compress_gzip(&serde_json::to_vec(&el_data)?)?)?;
 
         if let Some(expired) = self.retained.as_mut().and_then(|retained| {
             let expired = (retained.len() == retained.capacity()).then(|| retained.pop_front());
@@ -133,21 +135,17 @@ impl BlockStorage {
         Ok(())
     }
 
-    /// Save proofs and update metadata with CL info.
-    /// This is called when we receive CL head event with slot/block_root.
-    pub fn save_proofs(
+    pub fn save_proof(
         &self,
         slot: u64,
         beacon_block_root: &str,
         block_hash: &str,
-        proofs: &[SavedProof],
+        proof_type: ElProofType,
+        proof_data: &[u8],
     ) -> Result<()> {
         let block_dir = self.block_dir(block_hash);
-
-        // Create dir if it doesn't exist (in case block wasn't saved yet)
         std::fs::create_dir_all(&block_dir)?;
 
-        // Load existing metadata or create new
         let metadata_path = block_dir.join("metadata.json");
         let mut metadata = if metadata_path.exists() {
             let content = std::fs::read_to_string(&metadata_path)?;
@@ -159,66 +157,66 @@ impl BlockStorage {
             }
         };
 
-        // Update with CL info
         metadata.slot = Some(slot);
         metadata.beacon_block_root = Some(beacon_block_root.to_string());
-        metadata.num_proofs = proofs.len();
 
-        // Save updated metadata
+        let proof_dir = block_dir.join("proof");
+        std::fs::create_dir_all(&proof_dir)?;
+
+        let proof_path = proof_dir.join(format!("{}.json", proof_type));
+        std::fs::write(
+            &proof_path,
+            serde_json::to_string(&SavedProof {
+                proof_type,
+                proof_data: proof_data.to_vec(),
+            })?,
+        )?;
+
         std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
-
-        // Save proofs
-        let proofs_path = block_dir.join("proofs.json");
-        std::fs::write(&proofs_path, serde_json::to_string_pretty(&proofs)?)?;
 
         Ok(())
     }
 
-    /// Load proofs for a given slot.
-    /// Searches for a block directory that has matching slot in metadata.
-    pub fn load_proofs_by_slot(
+    pub fn load_proofs(
         &self,
-        slot: u64,
+        block_hash: &str,
     ) -> Result<Option<(BlockMetadata, Vec<SavedProof>)>> {
-        let chain_dir = self.output_dir.join(&self.chain);
-        if !chain_dir.exists() {
+        let block_dir = self.block_dir(block_hash);
+
+        if !block_dir.exists() {
             return Ok(None);
         }
 
-        // Iterate through block directories to find one with matching slot
-        for entry in std::fs::read_dir(&chain_dir)? {
+        let metadata_path = block_dir.join("metadata.json");
+        if !metadata_path.exists() {
+            return Ok(None);
+        }
+
+        let content = std::fs::read_to_string(&metadata_path)?;
+        let metadata: BlockMetadata = serde_json::from_str(&content)?;
+
+        let proof_dir = block_dir.join("proof");
+        if !proof_dir.exists() {
+            return Ok(Some((metadata, Vec::new())));
+        }
+
+        let mut proofs = Vec::new();
+        for entry in std::fs::read_dir(proof_dir)? {
             let entry = entry?;
-            let block_dir = entry.path();
+            let path = entry.path();
 
-            if !block_dir.is_dir() {
+            if !path.is_file() {
                 continue;
             }
 
-            let metadata_path = block_dir.join("metadata.json");
-            if !metadata_path.exists() {
-                continue;
-            }
-
-            let content = std::fs::read_to_string(&metadata_path)?;
-            let metadata: BlockMetadata = match serde_json::from_str(&content) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-
-            if metadata.slot == Some(slot) {
-                // Found matching slot, load proofs
-                let proofs_path = block_dir.join("proofs.json");
-                if proofs_path.exists() {
-                    let proofs_content = std::fs::read_to_string(&proofs_path)?;
-                    let proofs: Vec<SavedProof> = serde_json::from_str(&proofs_content)?;
-                    return Ok(Some((metadata, proofs)));
-                } else {
-                    return Ok(Some((metadata, vec![])));
-                }
+            if let Ok(bytes) = std::fs::read(&path)
+                && let Ok(proof) = serde_json::from_slice(&bytes)
+            {
+                proofs.push(proof);
             }
         }
 
-        Ok(None)
+        Ok(Some((metadata, proofs)))
     }
 
     /// Load metadata for a given block hash.
@@ -241,6 +239,21 @@ impl BlockStorage {
             std::fs::remove_dir_all(old_dir)?;
         }
         Ok(())
+    }
+
+    /// Load block and witness data from disk.
+    pub fn load_block_and_witness(
+        &self,
+        block_hash: &str,
+    ) -> Result<Option<(Block, alloy_rpc_types_debug::ExecutionWitness)>> {
+        let block_dir = self.block_dir(block_hash);
+        let data_path = block_dir.join("data.json.gz");
+
+        if !data_path.exists() {
+            return Ok(None);
+        }
+
+        Ok(serde_json::from_slice(&decompress_gzip(&std::fs::read(data_path)?)?).map(Some)?)
     }
 
     /// Get the chain directory path.

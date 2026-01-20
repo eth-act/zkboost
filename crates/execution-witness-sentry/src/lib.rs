@@ -39,8 +39,6 @@ pub use cl_subscription::{BlockEvent, ClEvent, ClEventStream, HeadEvent, subscri
 pub use config::{ClEndpoint, Config, ElEndpoint};
 pub use el_subscription::subscribe_blocks;
 pub use error::{Error, Result};
-pub use rpc::{BlockInfo, ClClient, ElClient, ExecutionProof, generate_random_proof};
-pub use storage::{
-    BlockMetadata, BlockStorage, SavedProof, compress_gzip, decompress_gzip, load_block_data,
-};
+pub use rpc::{BlockInfo, ClClient, ElClient, ExecutionProof, ProofEngineClient};
+pub use storage::{BlockMetadata, BlockStorage, ElBlockWitness, compress_gzip, decompress_gzip};
 pub use util::ExpiringHashMap;
