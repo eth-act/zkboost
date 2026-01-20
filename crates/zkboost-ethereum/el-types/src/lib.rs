@@ -3,8 +3,10 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 pub use el_kind::ElKind;
+pub use el_proof_type::ElProofType;
 
 pub mod el_kind;
+pub mod el_proof_type;
 
 include!(concat!(env!("OUT_DIR"), "/workload_info.rs"));
 

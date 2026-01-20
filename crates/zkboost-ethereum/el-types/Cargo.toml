@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true, features = ["derive"] }
+ere-common.workspace = true
 
 [build-dependencies]
 cargo_metadata.workspace = true
