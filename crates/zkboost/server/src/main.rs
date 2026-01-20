@@ -37,6 +37,7 @@ use crate::app::{AppState, app};
 
 mod app;
 mod metrics;
+mod proof_service;
 
 #[cfg(test)]
 mod mock;
@@ -53,6 +54,10 @@ pub struct Cli {
     /// Port to listen on.
     #[arg(long, default_value = "3001")]
     pub port: u16,
+
+    /// Url for sending proof when generated.
+    #[arg(long, default_value = "http://localhost:3003/proofs")]
+    pub webhook_url: String,
 }
 
 #[tokio::main]
@@ -74,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = Config::load(&cli.config)?;
 
-    let state = AppState::new(&config, metrics_handle).await?;
+    let state = AppState::new(&config, &cli.webhook_url, metrics_handle).await?;
 
     // Record application metrics
     metrics::set_programs_loaded(state.programs.len());

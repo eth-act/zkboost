@@ -54,31 +54,19 @@ pub(crate) async fn verify_proof(
 #[cfg(test)]
 mod tests {
     use axum::{Json, extract::State, http::StatusCode};
-    use zkboost_types::{ProgramID, ProveRequest, VerifyRequest};
+    use zkboost_types::{ProgramID, VerifyRequest};
 
-    use crate::{
-        app::{prove::prove_program, verify::verify_proof},
-        mock::mock_app_state,
-    };
+    use crate::{app::verify::verify_proof, mock::mock_app_state};
 
     #[tokio::test]
     async fn test_verify_valid_proof() {
         let program_id = ProgramID::from("mock_program_id");
         let state = mock_app_state(Some(&program_id));
 
-        let request = ProveRequest {
-            program_id: program_id.clone(),
-            input: Vec::new(),
-        };
-
-        let result = prove_program(State(state.clone()), Json(request))
-            .await
-            .unwrap();
-
-        // Create a request
+        // Create a request with the mock proof that MockzkVM accepts
         let request = VerifyRequest {
-            program_id: result.program_id.clone(),
-            proof: result.proof.clone(),
+            program_id: program_id.clone(),
+            proof: b"mock_proof".to_vec(),
         };
 
         // Call the handler
