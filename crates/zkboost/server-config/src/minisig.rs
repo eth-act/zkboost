@@ -1,6 +1,7 @@
 //! Mini-signature verification implementation
-use minisign::{PublicKey, SignatureBox};
 use std::io::Cursor;
+
+use minisign::{PublicKey, SignatureBox};
 
 /// Verifies a minisign signature against a public key and program data.
 pub fn verify_minisig(
@@ -29,8 +30,9 @@ pub fn verify_minisig(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use minisign::KeyPair;
+
+    use super::*;
 
     #[test]
     fn test_verify_minisig_generated_keys() {
