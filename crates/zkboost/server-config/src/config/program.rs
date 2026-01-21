@@ -36,7 +36,8 @@ impl ProgramConfig {
         };
 
         if let Some(key) = verifier_key {
-            let signature = signature.ok_or_else(|| anyhow::anyhow!("Missing signature for verification"))?;
+            let signature =
+                signature.ok_or_else(|| anyhow::anyhow!("Missing signature for verification"))?;
             verify_minisig(signature.trim(), key, &program_bytes)
                 .with_context(|| "Failed to verify mini-signature")?;
         }
@@ -44,15 +45,20 @@ impl ProgramConfig {
         Ok(SerializedProgram(program_bytes))
     }
 
-    async fn load_from_path(&self, path: &std::path::Path) -> anyhow::Result<(Vec<u8>, Option<String>)> {
-        let program_bytes = fs::read(path).with_context(|| {
-            format!("Failed to read program from path: {}", path.display())
-        })?;
+    async fn load_from_path(
+        &self,
+        path: &std::path::Path,
+    ) -> anyhow::Result<(Vec<u8>, Option<String>)> {
+        let program_bytes = fs::read(path)
+            .with_context(|| format!("Failed to read program from path: {}", path.display()))?;
 
         let sig_path = path.with_extension(".minisig");
         let signature = if sig_path.exists() {
             Some(fs::read_to_string(&sig_path).with_context(|| {
-                format!("Failed to read mini-signature from path: {}", sig_path.display())
+                format!(
+                    "Failed to read mini-signature from path: {}",
+                    sig_path.display()
+                )
             })?)
         } else {
             None
@@ -99,8 +105,6 @@ async fn download_text(url: &str) -> anyhow::Result<String> {
         .await
         .with_context(|| format!("Failed to read response text from URL: {url}"))
 }
-
-
 
 /// Path configuration for explicit path object.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

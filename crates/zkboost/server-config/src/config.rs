@@ -214,12 +214,20 @@ mod test {
             program = { url = "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/block-encoding-length-airbender" }
             publisher_public_key = "RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy"
         "#;
-        
+
         let config = Config::from_toml_str(toml).expect("Failed to parse config");
         match &config.zkvm[0] {
-            zkVMConfig::Docker { program, publisher_public_key, .. } => {
-                 let result = program.load(publisher_public_key.as_deref()).await;
-                 assert!(result.is_ok(), "Failed to load/verify program: {:?}", result.err());
+            zkVMConfig::Docker {
+                program,
+                publisher_public_key,
+                ..
+            } => {
+                let result = program.load(publisher_public_key.as_deref()).await;
+                assert!(
+                    result.is_ok(),
+                    "Failed to load/verify program: {:?}",
+                    result.err()
+                );
             }
             _ => panic!("Unexpected config type"),
         }
