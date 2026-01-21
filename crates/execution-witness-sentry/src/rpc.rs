@@ -57,6 +57,11 @@ impl ElClient {
         &self.name
     }
 
+    /// Return url of the EL client.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
     async fn request<P: Serialize, R: DeserializeOwned>(
         &self,
         method: &'static str,

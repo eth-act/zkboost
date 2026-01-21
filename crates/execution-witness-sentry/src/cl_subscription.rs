@@ -108,7 +108,7 @@ fn build_events_url(base_url: impl AsRef<str>) -> Result<Url> {
 
 #[cfg(test)]
 mod tests {
-    use super::build_events_url;
+    use crate::cl_subscription::build_events_url;
 
     #[test]
     fn build_events_url_adds_path_without_trailing_slash() {

@@ -29,6 +29,7 @@ pub mod config;
 pub mod el_subscription;
 pub mod error;
 pub mod rpc;
+pub mod service;
 pub mod storage;
 
 // Re-export main types at crate root for convenience.

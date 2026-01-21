@@ -19,6 +19,7 @@ serde_json.workspace = true
 serde_with = { workspace = true, features = ["base64"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros"] }
+tokio-util.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
 tower-http = { workspace = true, features = ["trace"] }
 tracing.workspace = true
