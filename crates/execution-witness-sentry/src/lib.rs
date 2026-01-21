@@ -30,7 +30,6 @@ pub mod el_subscription;
 pub mod error;
 pub mod rpc;
 pub mod storage;
-pub mod util;
 
 // Re-export main types at crate root for convenience.
 // Re-export alloy types that appear in our public API.
@@ -41,4 +40,3 @@ pub use el_subscription::subscribe_blocks;
 pub use error::{Error, Result};
 pub use rpc::{BlockInfo, ClClient, ElClient, ExecutionProof, ProofEngineClient};
 pub use storage::{BlockMetadata, BlockStorage, ElBlockWitness, compress_gzip, decompress_gzip};
-pub use util::ExpiringHashMap;
