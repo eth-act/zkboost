@@ -163,7 +163,7 @@ impl BlockStorage {
         let proof_dir = block_dir.join("proof");
         std::fs::create_dir_all(&proof_dir)?;
 
-        let proof_path = proof_dir.join(format!("{}.json", proof_type));
+        let proof_path = proof_dir.join(format!("{proof_type}.json"));
         std::fs::write(
             &proof_path,
             serde_json::to_string(&SavedProof {

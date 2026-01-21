@@ -3036,6 +3036,7 @@ dependencies = [
 name = "execution-witness-sentry"
 version = "0.1.0"
 dependencies = [
+ "alloy-genesis",
  "alloy-provider",
  "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",

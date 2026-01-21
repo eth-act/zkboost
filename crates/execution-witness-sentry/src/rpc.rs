@@ -1,8 +1,9 @@
 //! JSON-RPC client for execution layer nodes.
 
+use alloy_genesis::ChainConfig;
 use reth_ethereum_primitives::{Block, TransactionSigned};
 use reth_stateless::ExecutionWitness;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use url::Url;
 use zkboost_client::zkboostClient;
 use zkboost_ethereum_el_input::ElInput;
@@ -56,12 +57,15 @@ impl ElClient {
         &self.name
     }
 
-    /// Fetch a block by hash. Returns the block and its gzipped JSON.
-    pub async fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<Block>> {
+    async fn request<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &'static str,
+        params: P,
+    ) -> Result<Option<R>> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
-            method: "eth_getBlockByHash",
-            params: (block_hash, false),
+            method,
+            params,
             id: 1,
         };
 
@@ -79,8 +83,7 @@ impl ElClient {
             });
         }
 
-        let rpc_response: JsonRpcResponse<alloy_rpc_types_eth::Block<TransactionSigned>> =
-            response.json().await?;
+        let rpc_response: JsonRpcResponse<R> = response.json().await?;
 
         if let Some(error) = rpc_response.error {
             return Err(Error::Rpc {
@@ -90,9 +93,22 @@ impl ElClient {
         }
 
         match rpc_response.result {
-            Some(block) => Ok(Some(block.into_consensus())),
+            Some(config) => Ok(Some(config)),
             None => Ok(None),
         }
+    }
+
+    /// Fetch chain config.
+    pub async fn get_chain_config(&self) -> Result<Option<ChainConfig>> {
+        self.request("debug_chainConfig", ()).await
+    }
+
+    /// Fetch a block by hash. Returns the block and its gzipped JSON.
+    pub async fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<Block>> {
+        let block: Option<alloy_rpc_types_eth::Block<TransactionSigned>> = self
+            .request("eth_getBlockByHash", (block_hash, false))
+            .await?;
+        Ok(block.map(|block| block.into_consensus()))
     }
 
     /// Fetch execution witness for a block. Returns the witness and its gzipped JSON.
@@ -100,40 +116,8 @@ impl ElClient {
         &self,
         block_hash: &str,
     ) -> Result<Option<ExecutionWitness>> {
-        let request = JsonRpcRequest {
-            jsonrpc: "2.0",
-            method: "debug_executionWitnessByBlockHash",
-            params: (block_hash,),
-            id: 1,
-        };
-
-        let response = self
-            .http_client
-            .post(self.url.clone())
-            .json(&request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Rpc {
-                code: response.status().as_u16() as i64,
-                message: response.text().await.unwrap_or_default(),
-            });
-        }
-
-        let rpc_response: JsonRpcResponse<ExecutionWitness> = response.json().await?;
-
-        if let Some(error) = rpc_response.error {
-            return Err(Error::Rpc {
-                code: error.code,
-                message: error.message,
-            });
-        }
-
-        match rpc_response.result {
-            Some(witness) => Ok(Some(witness)),
-            None => Ok(None),
-        }
+        self.request("debug_executionWitnessByBlockHash", (block_hash,))
+            .await
     }
 }
 
@@ -393,13 +377,13 @@ fn enr_has_zkvm(enr_str: &str) -> bool {
 }
 
 pub struct ProofEngineClient {
-    pub url: String,
+    pub url: Url,
     pub proof_types: Vec<ElProofType>,
     client: zkboostClient,
 }
 
 impl ProofEngineClient {
-    pub fn new(url: String, proof_types: Vec<ElProofType>) -> anyhow::Result<Self> {
+    pub fn new(url: Url, proof_types: Vec<ElProofType>) -> anyhow::Result<Self> {
         let client = zkboostClient::new(url.clone())?;
         Ok(Self {
             url,

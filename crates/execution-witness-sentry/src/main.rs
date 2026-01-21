@@ -40,6 +40,8 @@ use std::{
     time::Duration,
 };
 
+use alloy_genesis::ChainConfig;
+use anyhow::bail;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
 use clap::Parser;
 use execution_witness_sentry::{
@@ -48,12 +50,10 @@ use execution_witness_sentry::{
 };
 use futures::StreamExt;
 use lru::LruCache;
-use reth_chainspec::mainnet_chain_config;
 use reth_stateless::StatelessInput;
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
-use url::Url;
 use zkboost_ethereum_el_input::ElInput;
 use zkboost_ethereum_el_types::ElProofType;
 use zkboost_types::{ProofGenId, ProofResult};
@@ -126,6 +126,7 @@ type PendingProofs = Arc<Mutex<HashMap<ProofGenId, PendingProof>>>;
 #[derive(Clone)]
 struct AppState {
     config: Arc<Config>,
+    chain_config: ChainConfig,
     block_cache: Arc<Mutex<LruCache<String, ElBlockWitness>>>,
     proof_cache: Arc<Mutex<LruCache<String, BTreeMap<ElProofType, SavedProof>>>>,
     storage: Option<Arc<Mutex<BlockStorage>>>,
@@ -382,14 +383,7 @@ async fn fetch_block_from_el(
     storage: &Option<Arc<Mutex<BlockStorage>>>,
 ) -> anyhow::Result<()> {
     for endpoint in el_endpoints {
-        let url = match Url::parse(&endpoint.url) {
-            Ok(u) => u,
-            Err(e) => {
-                warn!(name = %endpoint.name, error = %e, "Invalid EL endpoint URL");
-                continue;
-            }
-        };
-        let el_client = ElClient::new(endpoint.name.clone(), url);
+        let el_client = ElClient::new(endpoint.name.clone(), endpoint.url.clone());
 
         let block = match el_client.get_block_by_hash(block_hash).await {
             Ok(Some(data)) => data,
@@ -750,7 +744,7 @@ async fn request_proofs(
     let stateless_input = StatelessInput {
         block,
         witness,
-        chain_config: mainnet_chain_config(),
+        chain_config: state.chain_config.clone(),
     };
 
     let el_input = ElInput::new(stateless_input.clone());
@@ -928,6 +922,24 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    let mut chain_config = None;
+    for endpoint in &config.el_endpoints {
+        let el_client = ElClient::new(endpoint.name.clone(), endpoint.url.clone());
+        if let Ok(Some(c)) = el_client.get_chain_config().await {
+            chain_config = Some(c);
+            break;
+        } else {
+            warn!(
+                name = %endpoint.name,
+                url = %endpoint.url,
+                "Failed to get chain config",
+            )
+        };
+    }
+    let Some(chain_config) = chain_config else {
+        bail!("Failed to get chain config from any EL endpoint");
+    };
+
     let proof_engine_client = Arc::new(ProofEngineClient::new(
         config.proof_engine.url.clone(),
         config.proof_engine.proof_types.clone(),
@@ -945,14 +957,7 @@ async fn main() -> anyhow::Result<()> {
     let mut event_source_client: Option<ClClient> = None;
 
     for endpoint in &config.cl_endpoints {
-        let url = match Url::parse(&endpoint.url) {
-            Ok(u) => u,
-            Err(e) => {
-                warn!(name = %endpoint.name, error = %e, "Invalid CL endpoint URL");
-                continue;
-            }
-        };
-        let client = ClClient::new(endpoint.name.clone(), url);
+        let client = ClClient::new(endpoint.name.clone(), endpoint.url.clone());
 
         match client.is_zkvm_enabled().await {
             Ok(true) => {
@@ -993,6 +998,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         config,
+        chain_config,
         block_cache,
         proof_cache,
         storage,
@@ -1177,7 +1183,7 @@ async fn main() -> anyhow::Result<()> {
 
     drop(block_ready_tx);
 
-    let mut monitor_interval = tokio::time::interval(Duration::from_millis(6000));
+    let mut monitor_interval = tokio::time::interval(Duration::from_millis(500));
     monitor_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     info!("Waiting for events with monitoring every second");

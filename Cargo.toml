@@ -71,7 +71,8 @@ discv5 = "0.10"
 url = "2.5.7"
 
 # alloy
-alloy-provider = { version = "1", features = ["ws"] }
+alloy-genesis = "1"
+alloy-provider = "1"
 alloy-rpc-types-eth = "1"
 alloy-rpc-types-debug = "1"
 

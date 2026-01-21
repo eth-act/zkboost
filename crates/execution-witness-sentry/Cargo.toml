@@ -25,6 +25,7 @@ tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url.workspace = true
 
+alloy-genesis.workspace = true
 alloy-provider = { workspace = true, features = ["ws"] }
 alloy-rpc-types-debug.workspace = true
 alloy-rpc-types-eth.workspace = true
