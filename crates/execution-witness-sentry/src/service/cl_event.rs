@@ -7,7 +7,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     ClClient, ClEvent,
-    service::proof::{ProofServiceMessage, TargetClients},
+    service::{Target, proof::ProofServiceMessage},
     subscribe_cl_events,
 };
 
@@ -83,7 +83,8 @@ impl ClEventService {
                                 slot,
                                 block_root,
                                 execution_block_hash,
-                                target_clients: TargetClients::All,
+                                target_clients: Target::All,
+                                target_proof_types: Target::All,
                             };
                             if let Err(error) = self.proof_tx.send(message).await {
                                 error!(slot = %slot, error = %error, "Failed to send proof request");

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     num::NonZeroUsize,
     sync::Arc,
     time::{Duration, Instant},
@@ -19,33 +19,12 @@ use zkboost_types::{ProofGenId, ProofResult};
 
 use crate::{
     BlockStorage, ClClient, ElBlockWitness, ExecutionProof, ProofEngineClient,
-    config::ProofEngineConfig, service::is_el_data_ready, storage::SavedProof,
+    config::ProofEngineConfig,
+    service::{Target, is_el_data_ready},
+    storage::SavedProof,
 };
 
 const PROOF_TIMEOUT: Duration = Duration::from_secs(300);
-
-#[derive(Clone, Debug)]
-pub enum TargetClients {
-    All,
-    Partial(HashSet<String>),
-}
-
-impl TargetClients {
-    fn union(&self, other: &Self) -> Self {
-        match (self, other) {
-            (Self::All, _) | (_, Self::All) => Self::All,
-            (Self::Partial(lhs), Self::Partial(rhs)) => {
-                Self::Partial(lhs.union(rhs).cloned().collect())
-            }
-        }
-    }
-}
-
-impl<A: AsRef<str>> FromIterator<A> for TargetClients {
-    fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
-        Self::Partial(iter.into_iter().map(|t| t.as_ref().to_string()).collect())
-    }
-}
 
 pub enum ProofServiceMessage {
     BlockDataReady {
@@ -56,26 +35,27 @@ pub enum ProofServiceMessage {
         slot: u64,
         block_root: String,
         execution_block_hash: String,
-        target_clients: TargetClients,
+        target_clients: Target<String>,
+        target_proof_types: Target<ElProofType>,
     },
 }
 
 #[derive(Clone)]
 pub struct PendingProofRequest {
-    pub slot: u64,
-    pub block_root: String,
-    pub block_hash: String,
-    pub target_clients: TargetClients,
+    slot: u64,
+    block_root: String,
+    target_clients: Target<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PendingProof {
-    pub proof_id: u8,
-    pub proof_type: ElProofType,
-    pub slot: u64,
-    pub block_hash: String,
-    pub beacon_block_root: String,
-    pub target_clients: TargetClients,
+    proof_type: ElProofType,
+    slot: u64,
+    block_hash: String,
+    beacon_block_root: String,
+    target_clients: Target<String>,
+    start: Instant,
+    proof_gen_id: ProofGenId,
 }
 
 #[derive(Clone)]
@@ -87,9 +67,9 @@ pub struct ProofService {
     block_cache: Arc<Mutex<LruCache<String, ElBlockWitness>>>,
     proof_cache: Arc<Mutex<LruCache<String, BTreeMap<ElProofType, SavedProof>>>>,
     storage: Option<Arc<Mutex<BlockStorage>>>,
-    pending_proof_requests: Arc<Mutex<HashMap<String, PendingProofRequest>>>,
-    pending_proofs: Arc<Mutex<HashMap<ProofGenId, PendingProof>>>,
-    in_flight_proofs: Arc<Mutex<HashMap<(String, ElProofType), Instant>>>,
+    pending_proof_requests: Arc<Mutex<HashMap<String, BTreeMap<ElProofType, PendingProofRequest>>>>,
+    pending_proofs: Arc<Mutex<HashMap<(String, ElProofType), PendingProof>>>,
+    proof_gen_ids: Arc<Mutex<HashMap<ProofGenId, (String, ElProofType)>>>,
     proof_rx: Arc<Mutex<mpsc::Receiver<ProofServiceMessage>>>,
 }
 
@@ -110,8 +90,7 @@ impl ProofService {
         let proof_cache = Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
         let pending_proof_requests = Arc::new(Mutex::new(HashMap::new()));
         let pending_proofs = Arc::new(Mutex::new(HashMap::new()));
-        let in_flight_proofs: Arc<Mutex<HashMap<(String, ElProofType), Instant>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let proof_gen_ids = Arc::new(Mutex::new(HashMap::new()));
 
         Ok(Self {
             webhook_port: proof_engine_config.webhook_port,
@@ -123,7 +102,7 @@ impl ProofService {
             storage,
             pending_proof_requests,
             pending_proofs,
-            in_flight_proofs,
+            proof_gen_ids,
             proof_rx: Arc::new(Mutex::new(proof_rx)),
         })
     }
@@ -163,19 +142,21 @@ impl ProofService {
                             block_root,
                             execution_block_hash,
                             target_clients,
+                            target_proof_types,
                         } => {
-                            self.handle_request_proof(
-                                cl_name,
-                                slot,
-                                block_root,
-                                execution_block_hash,
-                                target_clients,
-                            ).await;
+                            for proof_type in target_proof_types.filter(self.proof_engine_client.proof_types().iter().cloned()) {
+                                self.handle_request_proof(
+                                    cl_name.clone(),
+                                    slot,
+                                    block_root.clone(),
+                                    execution_block_hash.clone(),
+                                    target_clients.clone(),
+                                    proof_type,
+                                ).await;
+                            }
                         }
                         ProofServiceMessage::BlockDataReady { block_hash } => {
-                            self.handle_block_data_ready(
-                                block_hash,
-                            ).await;
+                            self.handle_block_data_ready(block_hash).await;
                         }
                     }
                 }
@@ -187,6 +168,235 @@ impl ProofService {
         Ok(())
     }
 
+    async fn handle_request_proof(
+        &self,
+        cl_name: String,
+        slot: u64,
+        block_root: String,
+        execution_block_hash: String,
+        target_clients: Target<String>,
+        proof_type: ElProofType,
+    ) {
+        info!(
+            source = %cl_name,
+            slot = slot,
+            block_root = %block_root,
+            exec_hash = %execution_block_hash,
+            proof_type = %proof_type,
+            "Processing proof request"
+        );
+
+        if let Some(saved_proof) = self.load_proof(&execution_block_hash, proof_type).await {
+            self.submit_proof(
+                &target_clients,
+                slot,
+                &execution_block_hash,
+                &block_root,
+                proof_type,
+                saved_proof.proof_data,
+            )
+            .await;
+            return;
+        }
+
+        if is_el_data_ready(&self.block_cache, &self.storage, &execution_block_hash).await {
+            self.request_proof(
+                slot,
+                &block_root,
+                &execution_block_hash,
+                &target_clients,
+                proof_type,
+            )
+            .await;
+        } else {
+            debug!(block_hash = %execution_block_hash, proof_type = %proof_type, "EL data not ready, inserting pending proof request");
+            let mut pending_guard = self.pending_proof_requests.lock().await;
+            let block_requests = pending_guard
+                .entry(execution_block_hash.clone())
+                .or_default();
+
+            block_requests
+                .entry(proof_type)
+                .and_modify(|existing| {
+                    existing.target_clients = existing.target_clients.union(&target_clients);
+                })
+                .or_insert_with(|| PendingProofRequest {
+                    slot,
+                    block_root: block_root.clone(),
+                    target_clients: target_clients.clone(),
+                });
+        }
+    }
+
+    async fn handle_block_data_ready(&self, block_hash: String) {
+        debug!(block_hash = %block_hash, "Block ready notification received");
+
+        let pending_requests = self.pending_proof_requests.lock().await.remove(&block_hash);
+        let Some(pending_requests) = pending_requests else {
+            debug!(block_hash = %block_hash, "No pending proof requests for this block");
+            return;
+        };
+
+        if pending_requests.is_empty() {
+            return;
+        }
+
+        for (proof_type, pending_request) in pending_requests {
+            if let Some(saved_proof) = self.load_proof(&block_hash, proof_type).await {
+                self.submit_proof(
+                    &pending_request.target_clients,
+                    pending_request.slot,
+                    &block_hash,
+                    &pending_request.block_root,
+                    proof_type,
+                    saved_proof.proof_data,
+                )
+                .await;
+            } else {
+                self.request_proof(
+                    pending_request.slot,
+                    &pending_request.block_root,
+                    &block_hash,
+                    &pending_request.target_clients,
+                    proof_type,
+                )
+                .await;
+            }
+        }
+    }
+
+    async fn load_proof(&self, block_hash: &str, proof_type: ElProofType) -> Option<SavedProof> {
+        {
+            let mut cache = self.proof_cache.lock().await;
+            if let Some(proofs) = cache.get(block_hash)
+                && let Some(proof) = proofs.get(&proof_type)
+            {
+                debug!(block_hash = %block_hash, proof_type = %proof_type, "Load proof from cache");
+                return Some(proof.clone());
+            }
+        }
+
+        if let Some(storage) = &self.storage {
+            let storage_guard = storage.lock().await;
+            match storage_guard.load_proof(block_hash, proof_type) {
+                Ok(Some(proof)) => {
+                    debug!(block_hash = %block_hash, proof_type = %proof_type, "Load proof from disk");
+                    drop(storage_guard);
+
+                    let mut cache = self.proof_cache.lock().await;
+                    cache
+                        .get_or_insert_mut(block_hash.to_string(), Default::default)
+                        .insert(proof_type, proof.clone());
+
+                    return Some(proof);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!(block_hash = %block_hash, proof_type = %proof_type, error = %e, "Failed to load proof from disk");
+                }
+            }
+        }
+
+        None
+    }
+
+    async fn request_proof(
+        &self,
+        slot: u64,
+        block_root: &str,
+        block_hash: &str,
+        target_clients: &Target<String>,
+        proof_type: ElProofType,
+    ) {
+        let (block, witness) = {
+            let cache = self.block_cache.lock().await;
+            match cache.peek(block_hash) {
+                Some(cached) => (cached.block.clone(), cached.witness.clone()),
+                None => {
+                    warn!(
+                        slot = slot,
+                        block_hash = %block_hash,
+                        "Block data not in cache for proof generation"
+                    );
+                    return;
+                }
+            }
+        };
+
+        let stateless_input = StatelessInput {
+            block,
+            witness,
+            chain_config: self.chain_config.clone(),
+        };
+
+        let el_input = ElInput::new(stateless_input);
+
+        let proof_id = proof_type.proof_id();
+        let proof_key = (block_hash.to_string(), proof_type);
+
+        let mut pending_proofs_guard = self.pending_proofs.lock().await;
+        let mut proof_gen_ids_guard = self.proof_gen_ids.lock().await;
+
+        if let Some(pending) = pending_proofs_guard.get(&proof_key) {
+            if pending.start.elapsed() < PROOF_TIMEOUT {
+                debug!(
+                    slot = slot,
+                    block_hash = %block_hash,
+                    proof_id = proof_id,
+                    "Proof already in flight, skipping"
+                );
+                return;
+            }
+            warn!(
+                slot = slot,
+                block_hash = %block_hash,
+                proof_id = proof_id,
+                elapsed_secs = ?pending.start.elapsed().as_secs(),
+                "Proof request timed out, retrying"
+            );
+
+            proof_gen_ids_guard.remove(&pending.proof_gen_id);
+        }
+
+        match self
+            .proof_engine_client
+            .request_proof(&proof_type, &el_input)
+            .await
+        {
+            Ok(proof_gen_id) => {
+                let pending_proof = PendingProof {
+                    proof_type,
+                    slot,
+                    block_hash: block_hash.to_string(),
+                    beacon_block_root: block_root.to_string(),
+                    target_clients: target_clients.clone(),
+                    start: Instant::now(),
+                    proof_gen_id: proof_gen_id.clone(),
+                };
+
+                pending_proofs_guard.insert(proof_key.clone(), pending_proof);
+                proof_gen_ids_guard.insert(proof_gen_id.clone(), proof_key);
+
+                info!(
+                    slot = slot,
+                    block_hash = %block_hash,
+                    proof_id = proof_id,
+                    proof_gen_id = %proof_gen_id,
+                    "Proof job submitted to proof engine"
+                );
+            }
+            Err(e) => {
+                error!(
+                    slot = slot,
+                    block_hash = %block_hash,
+                    proof_id = proof_id,
+                    error = %e,
+                    "Failed to submit proof to proof engine"
+                );
+            }
+        }
+    }
+
     async fn proof_webhook(
         State(state): State<ProofService>,
         Json(proof_result): Json<ProofResult>,
@@ -196,19 +406,32 @@ impl ProofService {
             "Proof received from proof engine via webhook"
         );
 
-        let Some(pending_proof) = state
-            .pending_proofs
+        let Some(proof_key) = state
+            .proof_gen_ids
             .lock()
             .await
             .remove(&proof_result.proof_gen_id)
         else {
             error!(
                 proof_gen_id = %proof_result.proof_gen_id,
-                "Unknown proof result"
+                "Unknown proof_gen_id"
             );
             return Err((
                 StatusCode::BAD_REQUEST,
-                format!("Unknown proof result {}", proof_result.proof_gen_id),
+                format!("Unknown proof_gen_id {}", proof_result.proof_gen_id),
+            ));
+        };
+
+        let Some(pending_proof) = state.pending_proofs.lock().await.remove(&proof_key) else {
+            error!(
+                proof_gen_id = %proof_result.proof_gen_id,
+                block_hash = %proof_key.0,
+                proof_type = %proof_key.1,
+                "Missing pending proof"
+            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Missing pending proof".to_string(),
             ));
         };
 
@@ -255,311 +478,71 @@ impl ProofService {
             }
         }
         state
-            .submit_proofs(
+            .submit_proof(
                 &pending_proof.target_clients,
                 pending_proof.slot,
                 &pending_proof.block_hash,
                 &pending_proof.beacon_block_root,
-                vec![(pending_proof.proof_id, proof_result.proof.clone())],
+                pending_proof.proof_type,
+                proof_result.proof.clone(),
             )
             .await;
-
-        let proof_key = (pending_proof.block_hash.clone(), pending_proof.proof_type);
-        state.in_flight_proofs.lock().await.remove(&proof_key);
 
         Ok(StatusCode::OK)
     }
 
-    async fn handle_request_proof(
+    async fn submit_proof(
         &self,
-        cl_name: String,
-        slot: u64,
-        block_root: String,
-        execution_block_hash: String,
-        target_clients: TargetClients,
-    ) {
-        info!(
-            source = %cl_name,
-            slot = slot,
-            block_root = %block_root,
-            exec_hash = %execution_block_hash,
-            "Processing proof request"
-        );
-
-        let proofs = self.load_proofs(&execution_block_hash).await;
-
-        if let Some(proofs) = proofs {
-            let proof_list: Vec<(u8, Vec<u8>)> = proofs
-                .values()
-                .map(|p| (p.proof_type.proof_id(), p.proof_data.clone()))
-                .collect();
-            self.submit_proofs(
-                &target_clients,
-                slot,
-                &execution_block_hash,
-                &block_root,
-                proof_list,
-            )
-            .await;
-            return;
-        }
-
-        if is_el_data_ready(&self.block_cache, &self.storage, &execution_block_hash).await {
-            self.request_proofs(slot, &block_root, &execution_block_hash, &target_clients)
-                .await;
-        } else {
-            debug!(block_hash = %execution_block_hash, "EL data not ready, inserting pending proof request");
-            self.pending_proof_requests
-                .lock()
-                .await
-                .entry(execution_block_hash.clone())
-                .and_modify(|request| {
-                    request.target_clients = request.target_clients.union(&target_clients);
-                })
-                .or_insert_with(|| PendingProofRequest {
-                    slot,
-                    block_root,
-                    block_hash: execution_block_hash,
-                    target_clients,
-                });
-        }
-    }
-
-    async fn handle_block_data_ready(&self, block_hash: String) {
-        debug!(block_hash = %block_hash, "Block ready notification received");
-
-        let pending_proof = self.pending_proof_requests.lock().await.remove(&block_hash);
-        if pending_proof.is_none() {
-            debug!(block_hash = %block_hash, "No pending proof requests for this block");
-            return;
-        }
-
-        let pending_proof = pending_proof.unwrap();
-
-        let proofs = self.load_proofs(&pending_proof.block_hash).await;
-
-        if let Some(proofs) = proofs {
-            let proof_list: Vec<(u8, Vec<u8>)> = proofs
-                .values()
-                .map(|p| (p.proof_type.proof_id(), p.proof_data.clone()))
-                .collect();
-            self.submit_proofs(
-                &pending_proof.target_clients,
-                pending_proof.slot,
-                &pending_proof.block_hash,
-                &pending_proof.block_root,
-                proof_list,
-            )
-            .await;
-        } else {
-            self.request_proofs(
-                pending_proof.slot,
-                &pending_proof.block_root,
-                &pending_proof.block_hash,
-                &pending_proof.target_clients,
-            )
-            .await;
-        }
-    }
-
-    async fn load_proofs(&self, block_hash: &str) -> Option<BTreeMap<ElProofType, SavedProof>> {
-        {
-            let mut cache = self.proof_cache.lock().await;
-            if let Some(proofs) = cache.get(block_hash) {
-                debug!(block_hash = %block_hash, num_proofs = proofs.len(), "Load proofs from cache");
-                return Some(proofs.clone());
-            }
-        }
-
-        if let Some(storage) = &self.storage {
-            let storage_guard = storage.lock().await;
-            match storage_guard.load_proofs(block_hash) {
-                Ok(Some((metadata, proofs))) if !proofs.is_empty() => {
-                    debug!(
-                        block_hash = %block_hash,
-                        num_proofs = proofs.len(),
-                        "Load proofs from disk"
-                    );
-                    drop(storage_guard);
-
-                    let proof_map: BTreeMap<ElProofType, SavedProof> = proofs
-                        .into_iter()
-                        .map(|proof| (proof.proof_type, proof))
-                        .collect();
-
-                    let mut cache = self.proof_cache.lock().await;
-                    cache.put(block_hash.to_string(), proof_map.clone());
-
-                    return Some(proof_map);
-                }
-                Ok(_) => {
-                    debug!(block_hash = %block_hash, "No saved proofs found");
-                }
-                Err(e) => {
-                    warn!(block_hash = %block_hash, error = %e, "Failed to load proofs from disk");
-                }
-            }
-        }
-
-        None
-    }
-
-    async fn submit_proofs(
-        &self,
-        target_clients: &TargetClients,
+        target_clients: &Target<String>,
         slot: u64,
         block_hash: &str,
         block_root: &str,
-        proofs: Vec<(u8, Vec<u8>)>,
+        proof_type: ElProofType,
+        proof_data: Vec<u8>,
     ) {
-        let cl_clients = match target_clients {
-            TargetClients::All => self.zkvm_enabled_cl_clients.clone(),
-            TargetClients::Partial(partial) => self
-                .zkvm_enabled_cl_clients
-                .iter()
-                .filter(|client| partial.contains(&client.name().to_string()))
-                .cloned()
-                .collect(),
-        };
+        let cl_clients = target_clients
+            .filter_by_key(&self.zkvm_enabled_cl_clients, |cl_client| cl_client.name())
+            .collect::<Vec<_>>();
+
+        let proof_id = proof_type.proof_id();
 
         info!(
             slot = slot,
             block_hash = block_hash,
             cls = ?cl_clients.iter().map(|c| c.name()).collect::<Vec<_>>(),
-            proof_ids = ?proofs.iter().map(|(id,_)| *id).collect::<Vec<_>>(),
+            proof_id = proof_id,
             "Proof submitting to CL"
         );
 
-        for (proof_id, proof_data) in proofs {
-            for client in &cl_clients {
-                let execution_proof = ExecutionProof {
-                    proof_id,
-                    slot,
-                    block_hash: block_hash.to_string(),
-                    block_root: block_root.to_string(),
-                    proof_data: proof_data.clone(),
-                };
+        for client in &cl_clients {
+            let execution_proof = ExecutionProof {
+                proof_id,
+                slot,
+                block_hash: block_hash.to_string(),
+                block_root: block_root.to_string(),
+                proof_data: proof_data.clone(),
+            };
 
-                match client.submit_execution_proof(&execution_proof).await {
-                    Ok(()) => {
-                        info!(
-                            cl = %client.name(),
-                            slot = slot,
-                            proof_id = proof_id,
-                            "Proof submitted to CL"
-                        );
-                    }
-                    Err(e) => {
-                        let msg = e.to_string();
-                        if !msg.contains("already known") {
-                            debug!(
-                                cl = %client.name(),
-                                slot = slot,
-                                proof_id = proof_id,
-                                error = %e,
-                                "Proof submission to CL failed"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    async fn request_proofs(
-        &self,
-        slot: u64,
-        block_root: &str,
-        block_hash: &str,
-        target_clients: &TargetClients,
-    ) {
-        let (block, witness) = {
-            let cache = self.block_cache.lock().await;
-            match cache.peek(block_hash) {
-                Some(cached) => (cached.block.clone(), cached.witness.clone()),
-                None => {
-                    warn!(
-                        slot = slot,
-                        block_hash = %block_hash,
-                        "Block data not in cache for proof generation"
-                    );
-                    return;
-                }
-            }
-        };
-
-        let stateless_input = StatelessInput {
-            block,
-            witness,
-            chain_config: self.chain_config.clone(),
-        };
-
-        let el_input = ElInput::new(stateless_input.clone());
-
-        for &proof_type in self.proof_engine_client.proof_types() {
-            let proof_id = proof_type.proof_id();
-            let proof_key = (block_hash.to_string(), proof_type);
-
-            let mut in_flight_guard = self.in_flight_proofs.lock().await;
-            if let Some(started_at) = in_flight_guard.get(&proof_key) {
-                if started_at.elapsed() < PROOF_TIMEOUT {
-                    debug!(
-                        slot = slot,
-                        block_hash = %block_hash,
-                        proof_id = proof_id,
-                        "Proof already in flight, skipping"
-                    );
-                    continue;
-                }
-                warn!(
-                    slot = slot,
-                    block_hash = %block_hash,
-                    proof_id = proof_id,
-                    elapsed_secs = ?started_at.elapsed().as_secs(),
-                    "Proof request timed out, retrying"
-                );
-            }
-
-            let mut pending_proofs_guard = self.pending_proofs.lock().await;
-
-            match self
-                .proof_engine_client
-                .request_proof(&proof_type, &el_input)
-                .await
-            {
-                Ok(proof_gen_id) => {
-                    let pending_proof = PendingProof {
-                        proof_id,
-                        proof_type,
-                        slot,
-                        block_hash: block_hash.to_string(),
-                        beacon_block_root: block_root.to_string(),
-                        target_clients: target_clients.clone(),
-                    };
-
-                    pending_proofs_guard.insert(proof_gen_id.clone(), pending_proof);
-                    in_flight_guard.insert(proof_key, Instant::now());
-
-                    drop(pending_proofs_guard);
-                    drop(in_flight_guard);
-
+            match client.submit_execution_proof(&execution_proof).await {
+                Ok(()) => {
                     info!(
+                        cl = %client.name(),
                         slot = slot,
                         proof_id = proof_id,
-                        proof_gen_id = %proof_gen_id,
-                        "Proof job submitted to proof engine"
+                        "Proof submitted to CL"
                     );
                 }
                 Err(e) => {
-                    drop(pending_proofs_guard);
-                    drop(in_flight_guard);
-
-                    error!(
-                        slot = slot,
-                        proof_id = proof_id,
-                        error = %e,
-                        "Failed to submit proof to proof engine"
-                    );
+                    let msg = e.to_string();
+                    if !msg.contains("already known") {
+                        debug!(
+                            cl = %client.name(),
+                            slot = slot,
+                            proof_id = proof_id,
+                            error = %e,
+                            "Proof submission to CL failed"
+                        );
+                    }
                 }
             }
         }

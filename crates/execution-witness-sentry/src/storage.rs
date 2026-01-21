@@ -177,46 +177,30 @@ impl BlockStorage {
         Ok(())
     }
 
-    pub fn load_proofs(
+    pub fn load_proof(
         &self,
         block_hash: &str,
-    ) -> Result<Option<(BlockMetadata, Vec<SavedProof>)>> {
+        proof_type: ElProofType,
+    ) -> Result<Option<SavedProof>> {
         let block_dir = self.block_dir(block_hash);
 
         if !block_dir.exists() {
             return Ok(None);
         }
 
-        let metadata_path = block_dir.join("metadata.json");
-        if !metadata_path.exists() {
+        let proof_dir = block_dir.join("proof");
+        if !proof_dir.exists() {
             return Ok(None);
         }
 
-        let content = std::fs::read_to_string(&metadata_path)?;
-        let metadata: BlockMetadata = serde_json::from_str(&content)?;
-
-        let proof_dir = block_dir.join("proof");
-        if !proof_dir.exists() {
-            return Ok(Some((metadata, Vec::new())));
+        let proof_path = proof_dir.join(format!("{proof_type}.json"));
+        if !proof_path.exists() {
+            return Ok(None);
         }
 
-        let mut proofs = Vec::new();
-        for entry in std::fs::read_dir(proof_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if !path.is_file() {
-                continue;
-            }
-
-            if let Ok(bytes) = std::fs::read(&path)
-                && let Ok(proof) = serde_json::from_slice(&bytes)
-            {
-                proofs.push(proof);
-            }
-        }
-
-        Ok(Some((metadata, proofs)))
+        let bytes = std::fs::read(&proof_path)?;
+        let proof: SavedProof = serde_json::from_slice(&bytes)?;
+        Ok(Some(proof))
     }
 
     /// Load metadata for a given block hash.

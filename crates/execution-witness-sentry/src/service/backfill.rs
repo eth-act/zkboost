@@ -7,7 +7,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     BlockStorage, ClClient, ElBlockWitness,
-    service::{el_data::ElDataServiceMessage, is_el_data_ready, proof::ProofServiceMessage},
+    service::{
+        Target, el_data::ElDataServiceMessage, is_el_data_ready, proof::ProofServiceMessage,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -207,6 +209,7 @@ impl BackfillService {
                 target_clients: [zkvm_enabled_client.name().to_string()]
                     .into_iter()
                     .collect(),
+                target_proof_types: Target::All,
             };
 
             if self.proof_tx.send(message).await.is_err() {
