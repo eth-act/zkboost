@@ -101,15 +101,11 @@ impl ElDataService {
             }
         };
 
-        // Atomically check and insert into in_flight to prevent race conditions.
-        {
-            if !self.in_flight.lock().await.insert(block_hash.clone()) {
-                debug!(block_hash = %block_hash, "Block fetch already in flight, skipping");
-                return;
-            }
+        if !self.in_flight.lock().await.insert(block_hash.clone()) {
+            debug!(block_hash = %block_hash, "Block fetch already in flight, skipping");
+            return;
         }
 
-        // Spawn fetch task - in_flight entry already inserted above
         let block_cache_clone = self.block_cache.clone();
         let storage_clone = self.storage.clone();
         let proof_tx_clone = self.proof_tx.clone();
