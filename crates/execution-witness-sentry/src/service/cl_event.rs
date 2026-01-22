@@ -1,24 +1,43 @@
+//! # CL Event Service
+//!
+//! This module provides [`ClEventService`], which subscribes to CL head events via Server-Sent
+//! Events (SSE) and triggers proof requests.
+//!
+//! ## Purpose
+//!
+//! The CL event service is the primary driver for proof generation. It listens for new head events
+//! from the source CL client and initiates the proof workflow for each new block.
+
 use std::{pin::pin, sync::Arc};
 
 use futures::StreamExt;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    ClClient, ClEvent,
+    BlockStorage, ClClient, ClEvent,
     service::{Target, proof::ProofServiceMessage},
     subscribe_cl_events,
 };
 
 pub struct ClEventService {
     client: Arc<ClClient>,
+    storage: Option<Arc<Mutex<BlockStorage>>>,
     proof_tx: mpsc::Sender<ProofServiceMessage>,
 }
 
 impl ClEventService {
-    pub fn new(client: Arc<ClClient>, proof_tx: mpsc::Sender<ProofServiceMessage>) -> Self {
-        Self { client, proof_tx }
+    pub fn new(
+        client: Arc<ClClient>,
+        storage: Option<Arc<Mutex<BlockStorage>>>,
+        proof_tx: mpsc::Sender<ProofServiceMessage>,
+    ) -> Self {
+        Self {
+            client,
+            storage,
+            proof_tx,
+        }
     }
 
     pub async fn run(self, shutdown_token: CancellationToken) {
@@ -63,7 +82,8 @@ impl ClEventService {
                             };
                             let block_root = head.block.clone();
 
-                            let execution_block_hash = match self.client
+                            let execution_block_hash = match self
+                                .client
                                 .get_block_execution_hash(&block_root)
                                 .await
                             {
@@ -78,8 +98,21 @@ impl ClEventService {
                                 }
                             };
 
+                            if let Some(storage) = &self.storage {
+                                let mut storage_guard = storage.lock().await;
+                                if let Err(e) =
+                                    storage_guard.save_cl_data(&execution_block_hash, slot, &block_root)
+                                {
+                                    warn!(block_hash = %execution_block_hash, error = %e, "Failed to save CL block header to disk");
+                                } else {
+                                    debug!(
+                                        block_hash = %execution_block_hash,
+                                        "Saved CL block header to disk"
+                                    );
+                                }
+                            }
+
                             let message = ProofServiceMessage::RequestProof {
-                                cl_name: self.client.name().to_string(),
                                 slot,
                                 block_root,
                                 execution_block_hash,
@@ -91,9 +124,7 @@ impl ClEventService {
                             }
                         }
                         Some(Ok(ClEvent::Block(_))) => {}
-                        Some(Err(e)) => {
-                            error!(name = %self.client.name(), error = %e, "CL stream error");
-                        }
+                        Some(Err(e)) => error!(name = %self.client.name(), error = %e, "CL stream error"),
                         None => {
                             warn!(name = %self.client.name(), "CL SSE stream ended");
                             break;

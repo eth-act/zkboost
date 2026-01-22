@@ -1,3 +1,52 @@
+//! Service architecture for the execution-witness-sentry.
+//!
+//! This module defines the core services that make up the execution-witness-sentry.
+//!
+//! # Architecture Overview
+//!
+//! The sentry is composed of services that communicate via channels:
+//!
+//! ```text
+//! ┌────────────────────────────────────────────────────────┐                ┌────────────────────────────────────────────────────┐
+//! │                          CLs                           │                │                        ELs                         │
+//! └────────────────────────────────────────────────────────┘                └────────────────────────────────────────────────────┘
+//!        ▲                 ▲                     ▲                                   ▲                                 ▲
+//!        │                 │                     │                                   │                                 │
+//!        │                 │                     │                                   │                                 │
+//!        │            Listen heads        Get sync status                Fetch block and witness                  Listen heads
+//!        │               (SSE)                   │                                   │                            (Websocket)
+//!        │                 │                     │                                   │                                 │
+//!        │        ┌────────┴─────────┐  ┌────────┴─────────┐                ┌────────┴────────┐               ┌────────┴─────────┐
+//!  Submit proofs  │ CL Event Service │  │ Backfill Service ├──Fetch data──► │ EL Data Service │◄──Fetch data──┤ EL Event Service │    
+//!        │        └────────┬─────────┘  └────────┬─────────┘                └────────┬────────┘               └──────────────────┘
+//!        │                 │                     │                                   │
+//!        │                 │                     │                                   │
+//!        │           Request proof         Request proof                       Request proof
+//!        │                 │                     │                                   │
+//!        │                 │                     │                                   │
+//!        │                 ▼                     ▼                                   ▼
+//! ┌──────┴─────────────────────────────────────────────────────────────────────────────────────┐
+//! │                                       Proof Service                                        │
+//! └──────┬─────────────────────────────────────────────────────────────────────────────────────┘
+//!        │             ▲
+//!        │             │
+//!  Request proof       │
+//!        │        Proof result
+//!        │         (Webhook)
+//!        ▼             │
+//! ┌────────────────────┴───────┐
+//! │        Proof Engine        │
+//! └────────────────────────────┘
+//! ```
+//!
+//! # Services
+//!
+//! - [`cl_event::ClEventService`]: Subscribes to CL SSE head events and triggers proof requests
+//! - [`el_event::ElEventService`]: Subscribes to EL WebSocket head events and triggers data fetches
+//! - [`el_data::ElDataService`]: Fetches block and witness data from EL, caches to memory/disk
+//! - [`proof::ProofService`]: Manages proof lifecycle - requesting, receiving, submitting
+//! - [`backfill::BackfillService`]: Monitors zkVM CL sync status and backfills missing proofs
+
 use std::{borrow::Borrow, collections::HashSet, hash::Hash, sync::Arc};
 
 use lru::LruCache;
@@ -12,9 +61,12 @@ pub mod el_data;
 pub mod el_event;
 pub mod proof;
 
+/// Represents a target selection that can be either all items or a specific subset.
 #[derive(Clone, Debug)]
 pub enum Target<T> {
+    /// Target all items.
     All,
+    /// Target only the specified items.
     Specific(HashSet<T>),
 }
 
@@ -67,42 +119,44 @@ impl<'a, T: Clone + Eq + Hash> Target<T> {
     }
 }
 
-async fn is_el_data_ready(
+/// Checks if EL block and witness is available for the given block hash.
+///
+/// If data is found on disk but not in cache, it is automatically loaded into the cache
+/// for faster subsequent access.
+///
+/// # Returns
+///
+/// `true` if the EL block and witness is available (in cache or loaded from disk),
+/// `false` otherwise.
+pub(crate) async fn is_el_data_available(
     block_cache: &Arc<Mutex<LruCache<String, ElBlockWitness>>>,
     storage: &Option<Arc<Mutex<BlockStorage>>>,
     block_hash: &str,
 ) -> bool {
-    {
-        let cache = block_cache.lock().await;
-        if cache.contains(block_hash) {
-            return true;
-        }
+    if block_cache.lock().await.contains(block_hash) {
+        return true;
     }
 
-    if let Some(storage) = &storage {
-        let storage_guard = storage.lock().await;
-        match storage_guard.load_block_and_witness(block_hash) {
-            Ok(Some((block, witness))) => {
-                drop(storage_guard);
+    let Some(storage) = &storage else {
+        return false;
+    };
 
-                let mut cache = block_cache.lock().await;
-                cache.put(
-                    block_hash.to_string(),
-                    ElBlockWitness {
-                        block: block.clone(),
-                        witness: witness.clone(),
-                    },
-                );
+    let storage_guard = storage.lock().await;
+    match storage_guard.load_block_and_witness(block_hash) {
+        Ok(Some((block, witness))) => {
+            drop(storage_guard);
 
-                debug!(block_hash = %block_hash, "Loaded EL data from disk to cache");
-                return true;
-            }
-            Ok(None) => {
-                debug!(block_hash = %block_hash, "EL data not found on disk");
-            }
-            Err(e) => {
-                warn!(block_hash = %block_hash, error = %e, "Failed to load EL data from disk");
-            }
+            let mut cache = block_cache.lock().await;
+            cache.put(block_hash.to_string(), ElBlockWitness { block, witness });
+
+            debug!(block_hash = %block_hash, "Loaded EL data from disk to cache");
+            return true;
+        }
+        Ok(None) => {
+            debug!(block_hash = %block_hash, "EL data not found on disk");
+        }
+        Err(e) => {
+            warn!(block_hash = %block_hash, error = %e, "Failed to load EL data from disk");
         }
     }
 

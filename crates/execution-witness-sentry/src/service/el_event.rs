@@ -1,3 +1,13 @@
+//! # EL Event Service
+//!
+//! This module provides [`ElEventService`], which subscribes to EL head events via WebSocket and
+//! triggers block data fetching.
+//!
+//! ## Purpose
+//!
+//! The EL event services notifies [`ElDataService`](super::el_data::ElDataService) when a new block
+//! arrives, to retrieve the full block data and witness.
+
 use std::pin::pin;
 
 use futures::StreamExt;

@@ -92,8 +92,38 @@ impl BlockStorage {
         self.output_dir.join(&self.chain).join(block_hash)
     }
 
-    /// Save block data to disk (without CL info - will be updated later).
-    pub fn save_block(&mut self, el_data: &ElBlockWitness) -> Result<()> {
+    /// Save CL block header data to disk.
+    pub fn save_cl_data(
+        &mut self,
+        block_hash: &str,
+        slot: u64,
+        beacon_block_root: &str,
+    ) -> Result<()> {
+        let block_dir = self.block_dir(block_hash);
+        std::fs::create_dir_all(&block_dir)?;
+
+        // Load existing metadata or create new
+        let metadata_path = block_dir.join("metadata.json");
+        let mut metadata = if metadata_path.exists() {
+            let content = std::fs::read_to_string(&metadata_path)?;
+            serde_json::from_str(&content)?
+        } else {
+            BlockMetadata {
+                block_hash: block_hash.to_string(),
+                ..Default::default()
+            }
+        };
+
+        metadata.slot = Some(slot);
+        metadata.beacon_block_root = Some(beacon_block_root.to_string());
+
+        std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+
+        Ok(())
+    }
+
+    /// Save EL block and witness to disk.
+    pub fn save_el_data(&mut self, el_data: &ElBlockWitness) -> Result<()> {
         let block_number = el_data.block.header.number;
         let block_hash = el_data.block.hash_slow().to_string();
         let gas_used = el_data.block.header.gas_used;
@@ -137,28 +167,12 @@ impl BlockStorage {
 
     pub fn save_proof(
         &self,
-        slot: u64,
-        beacon_block_root: &str,
         block_hash: &str,
         proof_type: ElProofType,
         proof_data: &[u8],
     ) -> Result<()> {
         let block_dir = self.block_dir(block_hash);
         std::fs::create_dir_all(&block_dir)?;
-
-        let metadata_path = block_dir.join("metadata.json");
-        let mut metadata = if metadata_path.exists() {
-            let content = std::fs::read_to_string(&metadata_path)?;
-            serde_json::from_str(&content)?
-        } else {
-            BlockMetadata {
-                block_hash: block_hash.to_string(),
-                ..Default::default()
-            }
-        };
-
-        metadata.slot = Some(slot);
-        metadata.beacon_block_root = Some(beacon_block_root.to_string());
 
         let proof_dir = block_dir.join("proof");
         std::fs::create_dir_all(&proof_dir)?;
@@ -171,8 +185,6 @@ impl BlockStorage {
                 proof_data: proof_data.to_vec(),
             })?,
         )?;
-
-        std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
 
         Ok(())
     }

@@ -167,7 +167,8 @@ async fn main() -> anyhow::Result<()> {
     // Start CL event listening service.
 
     {
-        let cl_event_service = ClEventService::new(source_cl_client.clone(), proof_tx.clone());
+        let cl_event_service =
+            ClEventService::new(source_cl_client.clone(), storage.clone(), proof_tx.clone());
         let shutdown_token = shutdown_token.clone();
 
         handles.push(tokio::spawn(async move {

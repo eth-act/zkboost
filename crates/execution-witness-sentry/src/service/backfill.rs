@@ -1,3 +1,13 @@
+//! # Backfill Service
+//!
+//! This module provides [`BackfillService`], which monitors zkVM-enabled CL clients and triggers
+//! proof backfill when they fall behind the source CL.
+//!
+//! ## Purpose
+//!
+//! The backfill service ensures that zkVM-enabled CL clients stay synchronized with the source CL
+//! by periodically checking for gaps and requesting missing proofs.
+
 use std::{sync::Arc, time::Duration};
 
 use lru::LruCache;
@@ -8,12 +18,13 @@ use tracing::{debug, error, info, warn};
 use crate::{
     BlockStorage, ClClient, ElBlockWitness,
     service::{
-        Target, el_data::ElDataServiceMessage, is_el_data_ready, proof::ProofServiceMessage,
+        Target, el_data::ElDataServiceMessage, is_el_data_available, proof::ProofServiceMessage,
     },
 };
 
 #[derive(Debug, Clone)]
-pub struct ZkvmClStatus {
+#[allow(non_camel_case_types)]
+pub struct zkVMEnabledClStatus {
     pub name: String,
     pub head_slot: u64,
     pub gap: i64,
@@ -67,7 +78,7 @@ impl BackfillService {
                 }
 
                 _ = monitor_interval.tick() => {
-                    let statuses = self.monitor_zkvm_status().await;
+                    let statuses = self.get_statuses().await;
 
                     for status in &statuses {
                         if status.gap < -5 {
@@ -107,7 +118,7 @@ impl BackfillService {
         info!("BackfillService stopped");
     }
 
-    async fn monitor_zkvm_status(&self) -> Vec<ZkvmClStatus> {
+    async fn get_statuses(&self) -> Vec<zkVMEnabledClStatus> {
         let source_head = match self.source_cl_client.get_head_slot().await {
             Ok(slot) => slot,
             Err(e) => {
@@ -121,7 +132,7 @@ impl BackfillService {
             match client.get_head_slot().await {
                 Ok(head_slot) => {
                     let gap = head_slot as i64 - source_head as i64;
-                    statuses.push(ZkvmClStatus {
+                    statuses.push(zkVMEnabledClStatus {
                         name: client.name().to_string(),
                         head_slot,
                         gap,
@@ -169,6 +180,9 @@ impl BackfillService {
             "Backfilling proofs"
         );
 
+        // TODO: Track proof that's already backfilled, if it still fall behind,
+        //       it'd probably be other issues instead of missing proofs.
+
         for slot in (zkvm_head + 1)..=(zkvm_head + slots_to_check) {
             let block_info = match self.source_cl_client.get_block_info(slot).await {
                 Ok(Some(info)) => info,
@@ -187,22 +201,18 @@ impl BackfillService {
                 continue;
             };
 
-            if !is_el_data_ready(&self.block_cache, &self.storage, &block_hash).await {
+            if !is_el_data_available(&self.block_cache, &self.storage, &block_hash).await {
                 debug!(slot = slot, block_hash = %block_hash, "EL data not ready for backfill, sending fetch and proof request");
 
-                if let Err(e) = self
-                    .el_data_tx
-                    .send(ElDataServiceMessage::FetchData {
-                        block_hash: block_hash.clone(),
-                    })
-                    .await
-                {
+                let msg = ElDataServiceMessage::FetchData {
+                    block_hash: block_hash.clone(),
+                };
+                if let Err(e) = self.el_data_tx.send(msg).await {
                     error!(error = %e, "Failed to send block fetch request for backfill");
                 }
             }
 
-            let message = ProofServiceMessage::RequestProof {
-                cl_name: self.source_cl_client.name().to_string(),
+            let msg = ProofServiceMessage::RequestProof {
                 slot,
                 block_root: block_info.block_root.clone(),
                 execution_block_hash: block_hash.clone(),
@@ -211,8 +221,7 @@ impl BackfillService {
                     .collect(),
                 target_proof_types: Target::All,
             };
-
-            if self.proof_tx.send(message).await.is_err() {
+            if self.proof_tx.send(msg).await.is_err() {
                 error!("Failed to send backfill proof request");
             }
         }
