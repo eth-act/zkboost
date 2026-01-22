@@ -5,7 +5,6 @@ use anyhow::{Context, Result, anyhow};
 use minisign_verify::{PublicKey, Signature};
 use reqwest::Client;
 
-
 /// Trait for HTTP client
 pub trait HttpClient {
     /// Fetches bytes from the given URL.
@@ -52,7 +51,7 @@ pub async fn load_and_verify_with_url(
     program_url: &str,
     signature_url: &str,
     publisher_public_key: &str,
-    client: &impl HttpClient
+    client: &impl HttpClient,
 ) -> Result<Vec<u8>> {
     let program_bytes = fetch_bytes_with_url(program_url, client).await?;
     let signature_str = fetch_string_with_url(signature_url, client).await?;
@@ -110,9 +109,11 @@ pub async fn fetch_string_with_path(path: &PathBuf) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use minisign::KeyPair;
     use std::io::Cursor;
+
+    use minisign::KeyPair;
+
+    use super::*;
 
     struct MockHttpClient {
         bytes_responses: std::collections::HashMap<String, Vec<u8>>,
@@ -143,7 +144,6 @@ mod tests {
                 .ok_or_else(|| anyhow!("Url not found: {}", url))
         }
     }
-    
 
     #[test]
     fn test_verify_program_and_signature() {
