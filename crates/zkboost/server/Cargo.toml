@@ -29,6 +29,7 @@ ere-zkvm-interface.workspace = true
 
 zkboost-server-config.workspace = true
 zkboost-types.workspace = true
+guest-loader.workspace = true
 
 [dev-dependencies]
 clap = { workspace = true, features = ["derive"] }
