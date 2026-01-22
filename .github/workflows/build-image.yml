@@ -40,7 +40,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           tags: |
-            type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/master' }}
+            type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
             type=ref,event=tag
 
       - name: Set up Docker Buildx
