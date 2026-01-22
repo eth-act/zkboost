@@ -84,7 +84,12 @@ impl Args {
 }
 
 /// Download program and generate config file.
-async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String> {
+async fn generate_config(
+    args: &Args,
+    workspace: &Path,
+    port: u16,
+    webhook_url: &str,
+) -> anyhow::Result<String> {
     info!("Generating config...");
 
     let program = download_program(
@@ -103,6 +108,8 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
     };
 
     let config = Config {
+        port,
+        webhook_url: webhook_url.to_string(),
         zkvm: vec![zkVMConfig::Docker {
             kind: args.zkvm,
             resource,
@@ -124,10 +131,8 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
 async fn start_zkboost_server(
     args: &Args,
     config_path: &str,
-    webhook_url: &str,
+    zkboost_server_port: u16,
 ) -> anyhow::Result<ClientSession> {
-    let port = 3001;
-
     // Pull server image if using CPU resource
     let server_image = args.server_image();
     if args.resource == "cpu" {
@@ -143,17 +148,16 @@ async fn start_zkboost_server(
     }
 
     if args.dockerized {
-        start_zkboost_server_dockerized(config_path, port, webhook_url).await
+        start_zkboost_server_dockerized(config_path, zkboost_server_port).await
     } else {
-        start_zkboost_server_raw(args, config_path, port, webhook_url).await
+        start_zkboost_server_raw(args, config_path, zkboost_server_port).await
     }
 }
 
 /// Start `zkboost-server` using docker compose.
 async fn start_zkboost_server_dockerized(
     config_path: &str,
-    port: u16,
-    _webhook_url: &str,
+    zkboost_server_port: u16,
 ) -> anyhow::Result<ClientSession> {
     info!("Starting server via docker compose...");
 
@@ -183,7 +187,7 @@ async fn start_zkboost_server_dockerized(
         bail!("Failed to start docker compose");
     }
 
-    let client = wait_for_server_ready(port).await?;
+    let client = wait_for_server_ready(zkboost_server_port).await?;
     Ok(ClientSession {
         client,
         _resources: ServerResources::Docker(guard),
@@ -194,8 +198,7 @@ async fn start_zkboost_server_dockerized(
 async fn start_zkboost_server_raw(
     args: &Args,
     config_path: &str,
-    port: u16,
-    webhook_url: &str,
+    zkboost_server_port: u16,
 ) -> anyhow::Result<ClientSession> {
     info!("Starting server...");
 
@@ -213,17 +216,10 @@ async fn start_zkboost_server_raw(
     unsafe { cmd.pre_exec(|| prctl::set_pdeathsig(Signal::SIGTERM).map_err(io::Error::other)) };
 
     cmd.env("ERE_IMAGE_REGISTRY", &args.ere_image_registry)
-        .args([
-            "--config",
-            config_path,
-            "--port",
-            &port.to_string(),
-            "--webhook-url",
-            webhook_url,
-        ])
+        .args(["--config", config_path])
         .spawn()?;
 
-    let client = wait_for_server_ready(port).await?;
+    let client = wait_for_server_ready(zkboost_server_port).await?;
     Ok(ClientSession {
         client,
         _resources: ServerResources::Raw,
@@ -269,13 +265,15 @@ async fn main() -> anyhow::Result<()> {
         workspace.path().to_path_buf()
     };
 
-    let config_path = generate_config(&args, &workspace).await?;
+    let zkboost_server_port = 3001;
 
     // Webhook url to receive proof results
     let webhook_port = 3003;
     let webhook_url = format!("http://127.0.0.1:{webhook_port}/webhook");
 
-    let client = start_zkboost_server(&args, &config_path, &webhook_url).await?;
+    let config_path = generate_config(&args, &workspace, zkboost_server_port, &webhook_url).await?;
+
+    let client = start_zkboost_server(&args, &config_path, zkboost_server_port).await?;
 
     let program_id = args.program_id();
 
