@@ -5,6 +5,5 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 mod config;
-pub mod minisig;
 
 pub use config::{Config, PathConfig, ProgramConfig, UrlConfig, zkVMConfig};
