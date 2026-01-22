@@ -104,5 +104,3 @@ async fn resolve_public_key(source: &str, client: &Client) -> Result<String> {
     // Assume it's the raw key string
     Ok(source.to_string())
 }
-
-

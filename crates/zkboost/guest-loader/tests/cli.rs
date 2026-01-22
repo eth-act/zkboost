@@ -15,7 +15,6 @@ fn test_cli_verify_and_save() -> Result<()> {
     let pk_path = temp_dir.path().join("minisign.pub");
     let output_path = temp_dir.path().join("verified.elf");
 
-
     let keypair = KeyPair::generate_unencrypted_keypair().unwrap();
     let pk_str = keypair.pk.to_base64();
     let program_data = b"cli test program data".to_vec();
@@ -27,7 +26,6 @@ fn test_cli_verify_and_save() -> Result<()> {
     fs::write(&program_path, &program_data)?;
     fs::write(&signature_path, &sig_str)?;
     fs::write(&pk_path, &pk_str)?;
-
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_guest-loader"));
     cmd.arg("--program")
