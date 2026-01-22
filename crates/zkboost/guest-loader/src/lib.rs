@@ -1,192 +1,193 @@
 //! Guest program loader, loading and verifying guest program ELF and signature
+use std::path::PathBuf;
+
 use anyhow::{Context, Result, anyhow};
 use minisign_verify::{PublicKey, Signature};
 use reqwest::Client;
-use zkboost_server_config::{PathConfig, ProgramConfig, UrlConfig};
 
-/// Responsible for fetching and verifying guest program artifacts.
-#[derive(Debug, Clone, Default)]
-pub struct GuestLoader {
-    client: Client,
+
+/// Trait for HTTP client
+pub trait HttpClient {
+    /// Fetches bytes from the given URL.
+    fn get_bytes(&self, url: &str) -> impl std::future::Future<Output = Result<Vec<u8>>> + Send;
+    /// Fetches string from the given URL.
+    fn get_string(&self, url: &str) -> impl std::future::Future<Output = Result<String>> + Send;
 }
 
-impl GuestLoader {
-    /// Creates a new GuestLoader instance.
-    pub fn new() -> Self {
-        Self {
-            client: Client::new(),
-        }
+impl HttpClient for &Client {
+    async fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+        let response = self
+            .get(url)
+            .send()
+            .await
+            .context("Failed to fetch artifact")?;
+        let bytes = response
+            .error_for_status()
+            .context("HTTP error response")?
+            .bytes()
+            .await
+            .context("Failed to read response bytes")?;
+        Ok(bytes.to_vec())
     }
 
-    /// Fetches the program and its signature, verifies the signature using the public key,
-    /// and returns the verified program bytes.
-    pub async fn load_and_verify(
-        &self,
-        program_source: &ProgramConfig,
-        signature_source: &ProgramConfig,
-        publisher_public_key: &str,
-    ) -> Result<Vec<u8>> {
-        let public_key = PublicKey::from_base64(publisher_public_key)
-            .map_err(|_| anyhow!("Invalid base64 public key"))?;
-        let program_bytes = self.fetch_program_bytes(program_source).await?;
-        let signature_str = self.fetch_program_string(signature_source).await?;
-        let signature =
-            Signature::decode(&signature_str).map_err(|_| anyhow!("Failed to decode signature"))?;
-        public_key
-            .verify(&program_bytes, &signature, false)
-            .map_err(|_| anyhow!("Signature verification failed"))?;
-
-        Ok(program_bytes)
+    async fn get_string(&self, url: &str) -> Result<String> {
+        let response = self
+            .get(url)
+            .send()
+            .await
+            .context("Failed to fetch artifact")?;
+        let text = response
+            .error_for_status()
+            .context("HTTP error response")?
+            .text()
+            .await
+            .context("Failed to read response text")?;
+        Ok(text)
     }
+}
 
-    async fn fetch_program_bytes(&self, source: &ProgramConfig) -> Result<Vec<u8>> {
-        match source {
-            ProgramConfig::Url(UrlConfig { url }) => {
-                let response = self
-                    .client
-                    .get(url)
-                    .send()
-                    .await
-                    .context("Failed to fetch artifact")?;
-                let bytes = response
-                    .error_for_status()
-                    .context("HTTP error response")?
-                    .bytes()
-                    .await
-                    .context("Failed to read response bytes")?;
-                Ok(bytes.to_vec())
-            }
-            ProgramConfig::Path(path) | ProgramConfig::ExplicitPath(PathConfig { path }) => {
-                tokio::fs::read(path).await.context("Failed to read file")
-            }
-        }
-    }
+/// Fetches the program and its signature, verifies the signature using the public key,
+/// and returns the verified program bytes.
+pub async fn load_and_verify_with_url(
+    program_url: &str,
+    signature_url: &str,
+    publisher_public_key: &str,
+    client: &impl HttpClient
+) -> Result<Vec<u8>> {
+    let program_bytes = fetch_bytes_with_url(program_url, client).await?;
+    let signature_str = fetch_string_with_url(signature_url, client).await?;
 
-    async fn fetch_program_string(&self, source: &ProgramConfig) -> Result<String> {
-        match source {
-            ProgramConfig::Url(UrlConfig { url }) => {
-                let response = self
-                    .client
-                    .get(url)
-                    .send()
-                    .await
-                    .context("Failed to fetch artifact")?;
-                let text = response
-                    .error_for_status()
-                    .context("HTTP error response")?
-                    .text()
-                    .await
-                    .context("Failed to read response text")?;
-                Ok(text)
-            }
-            ProgramConfig::Path(path) | ProgramConfig::ExplicitPath(PathConfig { path }) => {
-                tokio::fs::read_to_string(path)
-                    .await
-                    .context("Failed to read file")
-            }
-        }
-    }
+    verify_program_and_signature(&program_bytes, &signature_str, publisher_public_key)?;
+
+    Ok(program_bytes)
+}
+
+/// Verifies the signature using the public key.
+/// This is empolyed when program and signature have been download already
+pub fn verify_program_and_signature(
+    program_bytes: &[u8],
+    signature: &str,
+    publisher_public_key: &str,
+) -> Result<()> {
+    let public_key = PublicKey::from_base64(publisher_public_key)
+        .map_err(|_| anyhow!("Invalid base64 public key"))?;
+    let signature =
+        Signature::decode(signature).map_err(|_| anyhow!("Failed to decode signature"))?;
+    public_key
+        .verify(program_bytes, &signature, false)
+        .map_err(|_| anyhow!("Signature verification failed"))?;
+
+    Ok(())
+}
+
+/// Fetches the program bytes from the given URL.
+pub async fn fetch_bytes_with_url(url: &str, client: &impl HttpClient) -> Result<Vec<u8>> {
+    let response = client.get_bytes(url).await?;
+    Ok(response)
+}
+
+/// Fetches the string from the given URL.
+pub async fn fetch_string_with_url(url: &str, client: &impl HttpClient) -> Result<String> {
+    let response = client.get_string(url).await?;
+    Ok(response)
+}
+
+/// Fetched bytes with Path
+pub async fn fetch_bytes_with_path(path: &PathBuf) -> Result<Vec<u8>> {
+    let bytes: Vec<u8> = tokio::fs::read(path)
+        .await
+        .context("Failed to read artifact")?;
+    Ok(bytes)
+}
+
+/// Fetched string with Path
+pub async fn fetch_string_with_path(path: &PathBuf) -> Result<String> {
+    let text: String = tokio::fs::read_to_string(path)
+        .await
+        .context("Failed to read artifact")?;
+    Ok(text)
 }
 
 #[cfg(test)]
 mod tests {
-    use zkboost_server_config::{Config, zkVMConfig};
-
     use super::*;
+    use minisign::KeyPair;
+    use std::io::Cursor;
 
-    #[tokio::test]
-    async fn test_verify_minisig_downloaded_airbender() {
-        let base_url = "https://github.com/eth-act/ere-guests/releases/download/v0.4.0";
-        let pub_key_url = format!("{base_url}/minisign.pub");
-        let sig_url = format!("{base_url}/block-encoding-length-airbender.minisig");
-        let program_url = format!("{base_url}/block-encoding-length-airbender");
-
-        let pub_key_str = reqwest::get(&pub_key_url)
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
-
-        let pub_key_lines: Vec<&str> = pub_key_str.lines().collect();
-        let pub_key_base64 = pub_key_lines.last().unwrap().trim();
-
-        let loader = GuestLoader::new();
-        let program_config =
-            ProgramConfig::Url(zkboost_server_config::UrlConfig { url: program_url });
-        let sig_config = ProgramConfig::Url(zkboost_server_config::UrlConfig { url: sig_url });
-
-        let result = loader
-            .load_and_verify(&program_config, &sig_config, pub_key_base64)
-            .await;
-        assert!(
-            result.is_ok(),
-            "Verification failed for Airbender: {:?}",
-            result.err()
-        );
+    struct MockHttpClient {
+        bytes_responses: std::collections::HashMap<String, Vec<u8>>,
+        string_responses: std::collections::HashMap<String, String>,
     }
 
-    #[tokio::test]
-    async fn test_verify_minisig_airbender_hardcoded_key() {
-        let base_url = "https://github.com/eth-act/ere-guests/releases/download/v0.4.0";
-        let sig_url = format!("{base_url}/block-encoding-length-airbender.minisig");
-        let program_url = format!("{base_url}/block-encoding-length-airbender");
-
-        let pub_key_str = "RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy";
-
-        let loader = GuestLoader::new();
-        let program_config =
-            ProgramConfig::Url(zkboost_server_config::UrlConfig { url: program_url });
-        let sig_config = ProgramConfig::Url(zkboost_server_config::UrlConfig { url: sig_url });
-
-        let result = loader
-            .load_and_verify(&program_config, &sig_config, pub_key_str.trim())
-            .await;
-        assert!(
-            result.is_ok(),
-            "Verification failed for Airbender (hardcoded key): {:?}",
-            result.err()
-        );
-    }
-
-    #[tokio::test]
-    async fn test_config_program_load_integration() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "risc0"
-            resource = "cpu"
-            program_id = "airbender"
-            program = { url = "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/block-encoding-length-airbender" }
-            program_signature = { url = "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/block-encoding-length-airbender.minisig" }
-            publisher_public_key = "RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy"
-
-        "#;
-
-        let config = Config::from_toml_str(toml).expect("Failed to parse config");
-        match &config.zkvm[0] {
-            zkVMConfig::Docker {
-                program,
-                publisher_public_key,
-                program_signature,
-                ..
-            } => {
-                // Load the program using ProgramConfig
-                let result = program.load().await;
-                assert!(result.is_ok(), "Failed to load program: {:?}", result.err());
-
-                // Verify the program with GuestLoader
-                if let (Some(sig_config), Some(pub_key)) = (program_signature, publisher_public_key)
-                {
-                    let loader = GuestLoader::new();
-                    let verify_result = loader.load_and_verify(program, sig_config, pub_key).await;
-                    assert!(
-                        verify_result.is_ok(),
-                        "Failed to verify program: {:?}",
-                        verify_result.err()
-                    );
-                }
+    impl MockHttpClient {
+        fn new() -> Self {
+            Self {
+                bytes_responses: std::collections::HashMap::new(),
+                string_responses: std::collections::HashMap::new(),
             }
-            _ => panic!("Unexpected config type"),
         }
+    }
+
+    impl HttpClient for MockHttpClient {
+        async fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {
+            self.bytes_responses
+                .get(url)
+                .cloned()
+                .ok_or_else(|| anyhow!("Url not found: {}", url))
+        }
+
+        async fn get_string(&self, url: &str) -> Result<String> {
+            self.string_responses
+                .get(url)
+                .cloned()
+                .ok_or_else(|| anyhow!("Url not found: {}", url))
+        }
+    }
+    
+
+    #[test]
+    fn test_verify_program_and_signature() {
+        let keypair = KeyPair::generate_unencrypted_keypair().unwrap();
+        let pk_str = keypair.pk.to_base64();
+
+        let program_data = b"test program data".to_vec();
+
+        let reader = Cursor::new(program_data.clone());
+        let signature_box = minisign::sign(None, &keypair.sk, reader, None, None).unwrap();
+        let sig_str = signature_box.to_string();
+
+        let result = verify_program_and_signature(&program_data, &sig_str, &pk_str);
+        assert!(
+            result.is_ok(),
+            "Verification failed for generated keys: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_load_and_verify_with_url() {
+        let keypair = KeyPair::generate_unencrypted_keypair().unwrap();
+        let pk_str = keypair.pk.to_base64();
+        let program_data = b"test program data".to_vec();
+        let reader = Cursor::new(program_data.clone());
+        let signature_box = minisign::sign(None, &keypair.sk, reader, None, None).unwrap();
+        let sig_str = signature_box.to_string();
+        let mut client = MockHttpClient::new();
+        let program_url = "http://example.com/program.elf";
+        let signature_url = "http://example.com/program.sig";
+        client
+            .bytes_responses
+            .insert(program_url.to_string(), program_data.clone());
+        client
+            .string_responses
+            .insert(signature_url.to_string(), sig_str.clone());
+        let result = load_and_verify_with_url(program_url, signature_url, &pk_str, &client).await;
+
+        assert!(
+            result.is_ok(),
+            "Verification failed for generated keys: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap(), program_data);
     }
 }

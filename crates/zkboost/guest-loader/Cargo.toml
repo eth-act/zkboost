@@ -9,8 +9,10 @@ license.workspace = true
 anyhow = { workspace = true }
 minisign-verify = "0.2"
 reqwest = { workspace = true }
-tokio = { workspace = true }
-zkboost-server-config = { workspace = true }
+tokio = { workspace = true, features = ["fs", "macros", "rt"] }
+
+[dev-dependencies]
+minisign = "0.7"
 
 [lints]
 workspace = true

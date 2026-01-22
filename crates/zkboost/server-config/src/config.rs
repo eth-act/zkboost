@@ -82,10 +82,6 @@ pub enum zkVMConfig {
         program_id: ProgramID,
         /// Path to the compiled program binary.
         program: ProgramConfig,
-        /// Optional path/url to the program signature.
-        program_signature: Option<ProgramConfig>,
-        /// Optional public key to verify the program signature.
-        publisher_public_key: Option<String>,
     },
     /// External Ere zkVM server configuration
     External {
@@ -174,9 +170,7 @@ mod test {
                     kind: zkVMKind::OpenVM,
                     resource: ProverResourceType::Cpu,
                     program_id: "openvm-test".into(),
-                    program: ProgramConfig::Path("openvm-test-elf".into()),
-                    program_signature: None,
-                    publisher_public_key: None,
+                    program: ProgramConfig::Path("openvm-test-elf".into())
                 },
                 zkVMConfig::Docker {
                     kind: zkVMKind::SP1,
@@ -187,9 +181,7 @@ mod test {
                     program_id: "sp1-test".into(),
                     program: ProgramConfig::ExplicitPath(PathConfig {
                         path: "sp1-test-elf".into(),
-                    }),
-                    program_signature: None,
-                    publisher_public_key: None,
+                    })
                 },
                 zkVMConfig::Docker {
                     kind: zkVMKind::Zisk,
@@ -197,9 +189,7 @@ mod test {
                     program_id: "zisk-test".into(),
                     program: ProgramConfig::Url(UrlConfig {
                         url: "http://artifact".to_string(),
-                    }),
-                    program_signature: None,
-                    publisher_public_key: None,
+                    })
                 },
                 zkVMConfig::External {
                     endpoint: "http://remote:3000".to_string(),
