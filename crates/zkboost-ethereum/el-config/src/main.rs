@@ -55,6 +55,8 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     let config = Config {
+        port: 3001,
+        webhook_url: "http://localhost:3003/proofs".to_string(),
         zkvm: vec![zkVMConfig::Docker {
             kind: args.zkvm,
             resource: match args.resource.to_lowercase().as_str() {

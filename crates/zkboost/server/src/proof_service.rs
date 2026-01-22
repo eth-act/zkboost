@@ -83,6 +83,7 @@ impl ProofService {
                     Some(error),
                 )
             });
+        let proving_time_ms = report.proving_time.as_millis();
 
         record_prove(&program_id.0, error.is_none(), start.elapsed(), proof.len());
 
@@ -90,7 +91,7 @@ impl ProofService {
             proof_gen_id,
             public_values,
             proof,
-            proving_time_ms: report.proving_time.as_millis(),
+            proving_time_ms,
             error,
         })
         .await;

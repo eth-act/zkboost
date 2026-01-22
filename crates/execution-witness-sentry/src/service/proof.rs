@@ -25,6 +25,7 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
     sync::Arc,
     time::{Duration, Instant},
@@ -145,9 +146,11 @@ impl ProofService {
         let app = Router::new()
             .route("/proofs", post(Self::proof_webhook))
             .with_state(self.clone())
-            .layer(TraceLayer::new_for_http());
+            .layer(TraceLayer::new_for_http())
+            // 10MB limit to account for the proof size
+            .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024));
 
-        let addr = format!("127.0.0.1:{}", self.webhook_port);
+        let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), self.webhook_port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         info!(addr = %addr, "HTTP server listening for proof pushes");
 

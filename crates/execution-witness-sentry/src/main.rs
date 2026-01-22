@@ -72,6 +72,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Arc::new(Config::load(&cli.config)?);
 
+    // TODO: Currently we submit all proofs specified in `config.proof_engine.proof_types` to CLs
+    //       but ideally we only need to submit the required amount of proofs to save bandwidth.
+    let _num_proofs = config.num_proofs;
+
     // Initialize EL clients.
 
     info!(
