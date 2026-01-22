@@ -90,8 +90,9 @@ impl GuestLoader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use zkboost_server_config::{Config, zkVMConfig};
+
+    use super::*;
 
     #[tokio::test]
     async fn test_verify_minisig_downloaded_airbender() {
@@ -171,14 +172,11 @@ mod tests {
             } => {
                 // Load the program using ProgramConfig
                 let result = program.load().await;
-                assert!(
-                    result.is_ok(),
-                    "Failed to load program: {:?}",
-                    result.err()
-                );
+                assert!(result.is_ok(), "Failed to load program: {:?}", result.err());
 
                 // Verify the program with GuestLoader
-                if let (Some(sig_config), Some(pub_key)) = (program_signature, publisher_public_key) {
+                if let (Some(sig_config), Some(pub_key)) = (program_signature, publisher_public_key)
+                {
                     let loader = GuestLoader::new();
                     let verify_result = loader.load_and_verify(program, &sig_config, pub_key).await;
                     assert!(
