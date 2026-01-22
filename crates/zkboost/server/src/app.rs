@@ -165,17 +165,18 @@ async fn init_zkvm(config: &zkVMConfig) -> anyhow::Result<zkVMInstance> {
             publisher_public_key,
             ..
         } => {
-            let serialized_program = if let (Some(sig), Some(pub_key)) = (program_signature, publisher_public_key) {
-                let loader = guest_loader::GuestLoader::new();
-                let bytes = loader
-                    .load_and_verify(program, sig, pub_key)
-                    .await
-                    .with_context(|| "Failed to verify program signature")?;
-                
-                SerializedProgram(bytes)
-            } else {
-                program.load().await?
-            };
+            let serialized_program =
+                if let (Some(sig), Some(pub_key)) = (program_signature, publisher_public_key) {
+                    let loader = guest_loader::GuestLoader::new();
+                    let bytes = loader
+                        .load_and_verify(program, sig, pub_key)
+                        .await
+                        .with_context(|| "Failed to verify program signature")?;
+
+                    SerializedProgram(bytes)
+                } else {
+                    program.load().await?
+                };
 
             let zkvm = DockerizedzkVM::new(*kind, serialized_program, resource.clone())
                 .with_context(|| format!("Failed to initialize DockerizedzkVM, kind {kind}"))?;

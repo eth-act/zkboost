@@ -1,5 +1,5 @@
 //! Guest program loader, loading and verifying guest program ELF and signature
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use minisign_verify::{PublicKey, Signature};
 use reqwest::Client;
 use zkboost_server_config::{PathConfig, ProgramConfig, UrlConfig};
@@ -30,8 +30,8 @@ impl GuestLoader {
             .map_err(|_| anyhow!("Invalid base64 public key"))?;
         let program_bytes = self.fetch_program_bytes(program_source).await?;
         let signature_str = self.fetch_program_string(signature_source).await?;
-        let signature = Signature::decode(&signature_str)
-            .map_err(|_| anyhow!("Failed to decode signature"))?;
+        let signature =
+            Signature::decode(&signature_str).map_err(|_| anyhow!("Failed to decode signature"))?;
         public_key
             .verify(&program_bytes, &signature, false)
             .map_err(|_| anyhow!("Signature verification failed"))?;
@@ -42,17 +42,22 @@ impl GuestLoader {
     async fn fetch_program_bytes(&self, source: &ProgramConfig) -> Result<Vec<u8>> {
         match source {
             ProgramConfig::Url(UrlConfig { url }) => {
-                let response = self.client.get(url).send().await
+                let response = self
+                    .client
+                    .get(url)
+                    .send()
+                    .await
                     .context("Failed to fetch artifact")?;
-                let bytes = response.error_for_status()
+                let bytes = response
+                    .error_for_status()
                     .context("HTTP error response")?
-                    .bytes().await
+                    .bytes()
+                    .await
                     .context("Failed to read response bytes")?;
                 Ok(bytes.to_vec())
             }
             ProgramConfig::Path(path) | ProgramConfig::ExplicitPath(PathConfig { path }) => {
-                tokio::fs::read(path).await
-                    .context("Failed to read file")
+                tokio::fs::read(path).await.context("Failed to read file")
             }
         }
     }
@@ -60,24 +65,28 @@ impl GuestLoader {
     async fn fetch_program_string(&self, source: &ProgramConfig) -> Result<String> {
         match source {
             ProgramConfig::Url(UrlConfig { url }) => {
-                let response = self.client.get(url).send().await
+                let response = self
+                    .client
+                    .get(url)
+                    .send()
+                    .await
                     .context("Failed to fetch artifact")?;
-                let text = response.error_for_status()
+                let text = response
+                    .error_for_status()
                     .context("HTTP error response")?
-                    .text().await
+                    .text()
+                    .await
                     .context("Failed to read response text")?;
                 Ok(text)
             }
             ProgramConfig::Path(path) | ProgramConfig::ExplicitPath(PathConfig { path }) => {
-                tokio::fs::read_to_string(path).await
+                tokio::fs::read_to_string(path)
+                    .await
                     .context("Failed to read file")
             }
         }
     }
-
-
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -101,12 +110,9 @@ mod tests {
         let pub_key_base64 = pub_key_lines.last().unwrap().trim();
 
         let loader = GuestLoader::new();
-        let program_config = ProgramConfig::Url(zkboost_server_config::UrlConfig {
-            url: program_url,
-        });
-        let sig_config = ProgramConfig::Url(zkboost_server_config::UrlConfig {
-            url: sig_url,
-        });
+        let program_config =
+            ProgramConfig::Url(zkboost_server_config::UrlConfig { url: program_url });
+        let sig_config = ProgramConfig::Url(zkboost_server_config::UrlConfig { url: sig_url });
 
         let result = loader
             .load_and_verify(&program_config, &sig_config, pub_key_base64)
@@ -127,12 +133,9 @@ mod tests {
         let pub_key_str = "RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy";
 
         let loader = GuestLoader::new();
-        let program_config = ProgramConfig::Url(zkboost_server_config::UrlConfig {
-            url: program_url,
-        });
-        let sig_config = ProgramConfig::Url(zkboost_server_config::UrlConfig {
-            url: sig_url,
-        });
+        let program_config =
+            ProgramConfig::Url(zkboost_server_config::UrlConfig { url: program_url });
+        let sig_config = ProgramConfig::Url(zkboost_server_config::UrlConfig { url: sig_url });
 
         let result = loader
             .load_and_verify(&program_config, &sig_config, pub_key_str.trim())
