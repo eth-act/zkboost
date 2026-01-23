@@ -56,9 +56,13 @@ use crate::{
     storage::Proof,
 };
 
-const PENDING_PROOF_TIMEOUT: Duration = Duration::from_secs(300);
+/// Timeout of pending proof from proof engine webhook (10 mins).
+const PENDING_PROOF_TIMEOUT: Duration = Duration::from_secs(600);
+/// Timeout of pending request due to unavailable EL data (10 mins).
 const PENDING_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+/// Interval to cleanup timeout objects.
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+/// Max retries for proof submission.
 const PROOF_SUBMISSION_MAX_RETRIES: u32 = 3;
 
 /// Identifier for a proof consist of `block_hash` and `proof_type`.

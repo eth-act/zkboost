@@ -131,6 +131,7 @@ impl ElDataService {
     ) {
         if is_el_data_available(&self.el_data_cache, &self.storage, block_hash).await {
             self.send_block_data_ready(block_hash).await;
+            return;
         };
 
         if !self.in_flight.lock().await.insert(block_hash) {
@@ -196,8 +197,13 @@ impl ElDataService {
 
             self.send_block_data_ready(block_hash).await;
 
-            break;
+            return block_hash;
         }
+
+        error!(
+            block_hash = %block_hash,
+            "Failed to fetch block and witness from any EL"
+        );
 
         block_hash
     }
