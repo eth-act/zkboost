@@ -12,6 +12,8 @@ use zkboost_types::ProofGenId;
 
 use crate::error::{Error, Result};
 
+pub type Hash256 = alloy_primitives::B256;
+
 /// JSON-RPC request structure.
 #[derive(Debug, Clone, Serialize)]
 struct JsonRpcRequest<T> {
@@ -109,7 +111,7 @@ impl ElClient {
     }
 
     /// Fetch a block by hash. Returns the block and its gzipped JSON.
-    pub async fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<Block>> {
+    pub async fn get_block_by_hash(&self, block_hash: Hash256) -> Result<Option<Block>> {
         let block: Option<alloy_rpc_types_eth::Block<TransactionSigned>> = self
             .request("eth_getBlockByHash", (block_hash, false))
             .await?;
@@ -119,7 +121,7 @@ impl ElClient {
     /// Fetch execution witness for a block. Returns the witness and its gzipped JSON.
     pub async fn get_execution_witness_by_hash(
         &self,
-        block_hash: &str,
+        block_hash: Hash256,
     ) -> Result<Option<ExecutionWitness>> {
         self.request("debug_executionWitnessByBlockHash", (block_hash,))
             .await
@@ -131,8 +133,8 @@ impl ElClient {
 pub struct ExecutionProof {
     pub proof_id: u8,
     pub slot: u64,
-    pub block_hash: String,
-    pub block_root: String,
+    pub block_hash: Hash256,
+    pub block_root: Hash256,
     pub proof_data: Vec<u8>,
 }
 
@@ -171,7 +173,7 @@ pub struct BlockBody {
 /// Execution payload (minimal fields).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecutionPayload {
-    pub block_hash: String,
+    pub block_hash: Hash256,
 }
 
 /// Syncing status response.
@@ -183,7 +185,8 @@ pub struct SyncingResponse {
 /// Syncing status data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SyncingData {
-    pub head_slot: String,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub head_slot: u64,
     pub is_syncing: bool,
     pub is_optimistic: Option<bool>,
 }
@@ -197,7 +200,7 @@ pub struct BlockHeaderResponse {
 /// Block header data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlockHeaderData {
-    pub root: String,
+    pub root: Hash256,
 }
 
 /// Node identity response.
@@ -283,7 +286,7 @@ impl ClClient {
     }
 
     /// Get the execution block hash for a beacon block.
-    pub async fn get_block_execution_hash(&self, block_root: &str) -> Result<Option<String>> {
+    pub async fn get_block_execution_hash(&self, block_root: Hash256) -> Result<Option<Hash256>> {
         let url = self
             .url
             .join(&format!("eth/v2/beacon/blocks/{block_root}"))?;
@@ -305,16 +308,23 @@ impl ClClient {
     /// Get the current head slot.
     pub async fn get_head_slot(&self) -> Result<u64> {
         let syncing = self.get_syncing().await?;
-        syncing
-            .data
-            .head_slot
-            .parse()
-            .map_err(|e| Error::Config(format!("Invalid head slot: {e}")))
+        Ok(syncing.data.head_slot)
     }
 
     /// Get block info (slot, block_root, execution_block_hash) for a given slot.
     /// Returns None if the slot is empty (no block).
     pub async fn get_block_info(&self, slot: u64) -> Result<Option<BlockInfo>> {
+        // Get the block root from headers endpoint first
+        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
+        let header_response = self.http_client.get(header_url).send().await?;
+
+        if header_response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let header: BlockHeaderResponse = header_response.json().await?;
+        let block_root = header.data.root;
+
         let url = self.url.join(&format!("eth/v2/beacon/blocks/{slot}"))?;
         let response = self.http_client.get(url).send().await?;
 
@@ -337,19 +347,9 @@ impl ClClient {
             .execution_payload
             .map(|p| p.block_hash);
 
-        // Get the block root from headers endpoint
-        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
-        let header_response = self.http_client.get(header_url).send().await?;
-
-        if header_response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-
-        let header: BlockHeaderResponse = header_response.json().await?;
-
         Ok(Some(BlockInfo {
             slot,
-            block_root: header.data.root,
+            block_root,
             execution_block_hash,
         }))
     }
@@ -359,8 +359,8 @@ impl ClClient {
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
     pub slot: u64,
-    pub block_root: String,
-    pub execution_block_hash: Option<String>,
+    pub block_root: Hash256,
+    pub execution_block_hash: Option<Hash256>,
 }
 
 /// The ENR field specifying whether zkVM execution proofs are enabled.
@@ -410,7 +410,7 @@ impl ProofEngineClient {
             .client
             .prove(
                 proof_type.to_string(),
-                el_input.to_zkvm_input(proof_type.el())?.stdin,
+                el_input.to_zkvm_input(proof_type.el(), true)?.stdin,
             )
             .await?
             .proof_gen_id)

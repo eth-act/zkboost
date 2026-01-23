@@ -36,7 +36,7 @@ use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
 use anyhow::bail;
 use clap::Parser;
 use execution_witness_sentry::{
-    BlockStorage, ClClient, Config, ElClient,
+    BlockStorage, ClClient, Config, ElBlockWitness, ElClient, Hash256,
     service::{
         backfill::BackfillService,
         cl_event::ClEventService,
@@ -52,7 +52,7 @@ use tokio::{
     sync::Mutex,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
 #[command(name = "execution-witness-sentry")]
@@ -152,7 +152,8 @@ async fn main() -> anyhow::Result<()> {
     };
     info!(name = %source_cl_client.name(), "CL event source configured");
 
-    let block_cache = Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
+    let block_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>> =
+        Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
     let storage: Option<Arc<Mutex<BlockStorage>>> = config.output_dir.as_ref().map(|dir| {
         Arc::new(Mutex::new(BlockStorage::new(
             dir,
@@ -171,68 +172,59 @@ async fn main() -> anyhow::Result<()> {
     // Start CL event listening service.
 
     {
-        let cl_event_service =
-            ClEventService::new(source_cl_client.clone(), storage.clone(), proof_tx.clone());
-        let shutdown_token = shutdown_token.clone();
+        let cl_event_service = Arc::new(ClEventService::new(
+            source_cl_client.clone(),
+            storage.clone(),
+            proof_tx.clone(),
+        ));
 
-        handles.push(tokio::spawn(async move {
-            cl_event_service.run(shutdown_token).await;
-        }));
+        handles.push(cl_event_service.spawn(shutdown_token.clone()));
     }
 
     // Start EL event listening services.
 
     for endpoint in &config.el_endpoints {
-        let el_event_service = ElEventService::new(endpoint.clone(), el_data_tx.clone());
-        let shutdown_token = shutdown_token.clone();
+        let el_event_service = Arc::new(ElEventService::new(endpoint.clone(), el_data_tx.clone()));
 
-        handles.push(tokio::spawn(async move {
-            el_event_service.run(shutdown_token).await;
-        }));
+        handles.push(el_event_service.spawn(shutdown_token.clone()));
     }
 
     // Start EL data service.
 
     {
-        let el_data_service = ElDataService::new(
+        let el_data_service = Arc::new(ElDataService::new(
             el_clients.clone(),
             block_cache.clone(),
             storage.clone(),
-            el_data_rx,
             proof_tx.clone(),
-        );
-        let shutdown_token = shutdown_token.clone();
+        ));
 
-        handles.push(tokio::spawn(async move {
-            el_data_service.run(shutdown_token).await;
-        }));
+        handles.push(el_data_service.spawn(shutdown_token.clone(), el_data_rx));
     }
 
     // Start proof service.
 
     {
-        let proof_service = ProofService::new(
+        let proof_service = Arc::new(ProofService::new(
             config.proof_engine.clone(),
             chain_config,
             zkvm_enabled_cl_clients.clone(),
             block_cache.clone(),
             storage.clone(),
-            proof_rx,
-        )?;
-        let shutdown_token = shutdown_token.clone();
+        )?);
 
-        handles.push(tokio::spawn(async move {
-            if let Err(e) = proof_service.run(shutdown_token).await {
-                error!(error = %e, "ProofService error");
-            }
-        }));
+        handles.extend(
+            proof_service
+                .spawn(shutdown_token.clone(), proof_rx)
+                .await?,
+        );
     }
 
     // Start backfilling service.
 
     {
-        let interval_ms = 500;
-        let backfill_service = BackfillService::new(
+        let interval_ms = 2000;
+        let backfill_service = Arc::new(BackfillService::new(
             source_cl_client,
             zkvm_enabled_cl_clients,
             block_cache,
@@ -240,12 +232,9 @@ async fn main() -> anyhow::Result<()> {
             proof_tx,
             el_data_tx,
             interval_ms,
-        );
-        let shutdown_token = shutdown_token.clone();
+        ));
 
-        handles.push(tokio::spawn(async move {
-            backfill_service.run(shutdown_token).await;
-        }));
+        handles.push(backfill_service.spawn(shutdown_token.clone()));
     }
 
     info!("All services started, waiting for shutdown signal");

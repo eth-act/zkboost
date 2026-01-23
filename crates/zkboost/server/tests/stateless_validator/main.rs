@@ -278,7 +278,7 @@ async fn main() -> anyhow::Result<()> {
     let program_id = args.program_id();
 
     let el_input = ElInput::new(fetch_empty_block(&workspace).await?);
-    let stdin = el_input.to_zkvm_input(args.el)?.stdin;
+    let stdin = el_input.to_zkvm_input(args.el, true)?.stdin;
 
     // Execution
 

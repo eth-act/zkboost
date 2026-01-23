@@ -41,6 +41,7 @@ anyhow = "1.0"
 axum = "0.8"
 cargo_metadata = "0.19.0"
 clap = "4.5"
+ethereum_serde_utils = "0.8.0"
 eventsource-client = "0.13"
 flate2 = "1.1.5"
 futures = "0.3"
@@ -73,6 +74,7 @@ url = "2.5.7"
 
 # alloy
 alloy-genesis = "1"
+alloy-primitives = "1"
 alloy-provider = "1"
 alloy-rpc-types-eth = "1"
 alloy-rpc-types-debug = "1"
@@ -89,8 +91,8 @@ ere-server = { git = "https://github.com/eth-act/ere", rev = "a9fb04dea82e658b90
 ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "a9fb04dea82e658b900bf09fdf8a816fa4eec59b" }
 
 # ere-guests
-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.3.0", features = ["host"] }
-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.3.0", features = ["host"] }
+stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.4.0", features = ["host"] }
+stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.4.0", features = ["host"] }
 
 # local
 zkboost-client = { path = "crates/zkboost/client" }

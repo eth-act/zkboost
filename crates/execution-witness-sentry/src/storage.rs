@@ -13,13 +13,13 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use zkboost_ethereum_el_types::ElProofType;
 
-use crate::error::Result;
+use crate::{error::Result, rpc::Hash256};
 
 /// Metadata stored alongside block data.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BlockMetadata {
     /// EL block hash
-    pub block_hash: String,
+    pub block_hash: Hash256,
     /// EL block number
     pub block_number: Option<u64>,
     /// Gas used in the block
@@ -29,7 +29,7 @@ pub struct BlockMetadata {
     pub slot: Option<u64>,
     /// CL beacon block root (if known)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub beacon_block_root: Option<String>,
+    pub beacon_block_root: Option<Hash256>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -70,7 +70,7 @@ pub fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
 pub struct BlockStorage {
     output_dir: PathBuf,
     chain: String,
-    retained: Option<VecDeque<String>>,
+    retained: Option<VecDeque<Hash256>>,
 }
 
 impl BlockStorage {
@@ -88,16 +88,18 @@ impl BlockStorage {
     }
 
     /// Get the directory path for a block hash.
-    pub fn block_dir(&self, block_hash: &str) -> PathBuf {
-        self.output_dir.join(&self.chain).join(block_hash)
+    pub fn block_dir(&self, block_hash: Hash256) -> PathBuf {
+        self.output_dir
+            .join(&self.chain)
+            .join(block_hash.to_string())
     }
 
     /// Save CL block header data to disk.
     pub fn save_cl_data(
         &mut self,
-        block_hash: &str,
+        block_hash: Hash256,
         slot: u64,
-        beacon_block_root: &str,
+        beacon_block_root: Hash256,
     ) -> Result<()> {
         let block_dir = self.block_dir(block_hash);
         std::fs::create_dir_all(&block_dir)?;
@@ -109,13 +111,13 @@ impl BlockStorage {
             serde_json::from_str(&content)?
         } else {
             BlockMetadata {
-                block_hash: block_hash.to_string(),
+                block_hash,
                 ..Default::default()
             }
         };
 
         metadata.slot = Some(slot);
-        metadata.beacon_block_root = Some(beacon_block_root.to_string());
+        metadata.beacon_block_root = Some(beacon_block_root);
 
         std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
 
@@ -125,10 +127,10 @@ impl BlockStorage {
     /// Save EL block and witness to disk.
     pub fn save_el_data(&mut self, el_data: &ElBlockWitness) -> Result<()> {
         let block_number = el_data.block.header.number;
-        let block_hash = el_data.block.hash_slow().to_string();
+        let block_hash = el_data.block.hash_slow();
         let gas_used = el_data.block.header.gas_used;
 
-        let block_dir = self.block_dir(&block_hash);
+        let block_dir = self.block_dir(block_hash);
         std::fs::create_dir_all(&block_dir)?;
 
         // Load existing metadata or create new
@@ -138,7 +140,7 @@ impl BlockStorage {
             serde_json::from_str(&content)?
         } else {
             BlockMetadata {
-                block_hash: block_hash.to_string(),
+                block_hash,
                 ..Default::default()
             }
         };
@@ -159,7 +161,7 @@ impl BlockStorage {
             retained.push_back(block_hash);
             expired.flatten()
         }) {
-            self.delete_old_block(&expired)?;
+            self.delete_old_block(expired)?;
         }
 
         Ok(())
@@ -167,7 +169,7 @@ impl BlockStorage {
 
     pub fn save_proof(
         &self,
-        block_hash: &str,
+        block_hash: Hash256,
         proof_type: ElProofType,
         proof_data: &[u8],
     ) -> Result<()> {
@@ -191,7 +193,7 @@ impl BlockStorage {
 
     pub fn load_proof(
         &self,
-        block_hash: &str,
+        block_hash: Hash256,
         proof_type: ElProofType,
     ) -> Result<Option<SavedProof>> {
         let block_dir = self.block_dir(block_hash);
@@ -216,7 +218,7 @@ impl BlockStorage {
     }
 
     /// Load metadata for a given block hash.
-    pub fn load_metadata(&self, block_hash: &str) -> Result<Option<BlockMetadata>> {
+    pub fn load_metadata(&self, block_hash: Hash256) -> Result<Option<BlockMetadata>> {
         let block_dir = self.block_dir(block_hash);
         let metadata_path = block_dir.join("metadata.json");
 
@@ -229,7 +231,7 @@ impl BlockStorage {
     }
 
     /// Delete an old block directory.
-    fn delete_old_block(&self, block_hash: &str) -> Result<()> {
+    fn delete_old_block(&self, block_hash: Hash256) -> Result<()> {
         let old_dir = self.block_dir(block_hash);
         if old_dir.exists() {
             std::fs::remove_dir_all(old_dir)?;
@@ -240,7 +242,7 @@ impl BlockStorage {
     /// Load block and witness data from disk.
     pub fn load_block_and_witness(
         &self,
-        block_hash: &str,
+        block_hash: Hash256,
     ) -> Result<Option<(Block, alloy_rpc_types_debug::ExecutionWitness)>> {
         let block_dir = self.block_dir(block_hash);
         let data_path = block_dir.join("data.json.gz");

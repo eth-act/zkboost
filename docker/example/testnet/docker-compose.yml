@@ -8,8 +8,8 @@ services:
         apk add --no-cache curl
         if [ ! -f /programs/stateless-validator-ethrex-zisk ] || [ ! -f /programs/stateless-validator-reth-zisk ]; then
           echo "Downloading stateless-validator binaries..."
-          curl -fsSL "https://github.com/eth-act/ere-guests/releases/download/v0.3.0/stateless-validator-ethrex-zisk" -o /programs/stateless-validator-ethrex-zisk
-          curl -fsSL "https://github.com/eth-act/ere-guests/releases/download/v0.3.0/stateless-validator-reth-zisk" -o /programs/stateless-validator-reth-zisk
+          curl -fsSL "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/stateless-validator-ethrex-zisk" -o /programs/stateless-validator-ethrex-zisk
+          curl -fsSL "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/stateless-validator-reth-zisk" -o /programs/stateless-validator-reth-zisk
           echo "Download complete."
         else
           echo "Binaries already exist, skipping download."
@@ -35,6 +35,8 @@ services:
     environment:
       - RUST_LOG=info
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
     deploy:
       resources:
         reservations:
@@ -61,6 +63,8 @@ services:
     environment:
       - RUST_LOG=info
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
     deploy:
       resources:
         reservations:
@@ -75,6 +79,9 @@ services:
       context: ../../..
       dockerfile: ./docker/Dockerfile.zkboost-server
     command: ["--config", "/app/config.toml"]
+    depends_on:
+      - ethrex-zisk
+      - reth-zisk
     configs:
       - source: zkboost-server-config
         target: /app/config.toml

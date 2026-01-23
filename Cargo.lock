@@ -2668,6 +2668,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ethereum_hashing"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c853bd72c9e5787f8aafc3df2907c2ed03cff3150c3acd94e2e53a98ab70a8ab"
+dependencies = [
+ "cpufeatures",
+ "ring",
+ "sha2",
+]
+
+[[package]]
 name = "ethereum_serde_utils"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3037,6 +3048,7 @@ name = "execution-witness-sentry"
 version = "0.1.0"
 dependencies = [
  "alloy-genesis",
+ "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
@@ -3045,6 +3057,7 @@ dependencies = [
  "clap",
  "discv5",
  "ere-common",
+ "ethereum_serde_utils",
  "eventsource-client",
  "flate2",
  "futures",
@@ -3519,8 +3532,8 @@ dependencies = [
 
 [[package]]
 name = "guest"
-version = "0.3.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.3.0#0480211b66848f5658e4991ab1dc1868725ab894"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
  "ere-io",
  "ere-platform-trait",
@@ -3931,7 +3944,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -3951,7 +3964,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -6348,6 +6361,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "reth-payload-validator"
+version = "1.9.3"
+source = "git+https://github.com/paradigmxyz/reth?rev=cfde951976bfa9100a6d9f806e06fb539ae25241#cfde951976bfa9100a6d9f806e06fb539ae25241"
+dependencies = [
+ "alloy-consensus",
+ "alloy-rpc-types-engine",
+ "reth-primitives-traits",
+]
+
+[[package]]
 name = "reth-primitives-traits"
 version = "1.9.3"
 source = "git+https://github.com/paradigmxyz/reth?rev=cfde951976bfa9100a6d9f806e06fb539ae25241#cfde951976bfa9100a6d9f806e06fb539ae25241"
@@ -7678,6 +7701,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_types"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b55bedc9a18ed2860a46d6beb4f4082416ee1d60be0cc364cebdcdddc7afd4"
+dependencies = [
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
+ "smallvec",
+ "tree_hash",
+ "typenum",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7685,25 +7724,35 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stateless-validator-common"
-version = "0.3.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.3.0#0480211b66848f5658e4991ab1dc1868725ab894"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
- "reth-stateless",
+ "alloy-eips",
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "rkyv",
  "serde",
+ "serde_with",
  "sha2",
+ "ssz_types",
+ "tree_hash",
+ "tree_hash_derive",
+ "typenum",
 ]
 
 [[package]]
 name = "stateless-validator-ethrex"
-version = "0.3.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.3.0#0480211b66848f5658e4991ab1dc1868725ab894"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-genesis",
  "alloy-rlp",
  "anyhow",
+ "bytes",
  "ere-io",
  "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27)",
  "ethrex-common",
@@ -7712,28 +7761,43 @@ dependencies = [
  "ethrex-vm",
  "guest",
  "guest_program",
+ "reth-stateless",
  "rkyv",
  "stateless-validator-common",
+ "stateless-validator-reth",
 ]
 
 [[package]]
 name = "stateless-validator-reth"
-version = "0.3.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.3.0#0480211b66848f5658e4991ab1dc1868725ab894"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives",
+ "alloy-rlp",
+ "alloy-rpc-types-engine",
  "anyhow",
  "ere-io",
  "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27)",
+ "ethereum_ssz",
  "guest",
  "once_cell",
  "reth-chainspec",
  "reth-ethereum-primitives",
  "reth-evm-ethereum",
+ "reth-payload-validator",
  "reth-primitives-traits",
  "reth-stateless",
  "serde",
+ "serde_with",
+ "sha2",
  "sparsestate",
+ "ssz_types",
  "stateless-validator-common",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -8317,6 +8381,31 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree_hash"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
+dependencies = [
+ "alloy-primitives",
+ "ethereum_hashing",
+ "ethereum_ssz",
+ "smallvec",
+ "typenum",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bee2ea1551f90040ab0e34b6fb7f2fa3bad8acc925837ac654f2c78a13e3089"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]

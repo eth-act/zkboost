@@ -11,12 +11,16 @@
 use std::{sync::Arc, time::Duration};
 
 use lru::LruCache;
-use tokio::sync::{Mutex, mpsc};
+use tokio::{
+    sync::{Mutex, mpsc},
+    task::JoinHandle,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::{
     BlockStorage, ClClient, ElBlockWitness,
+    rpc::Hash256,
     service::{
         Target, el_data::ElDataServiceMessage, is_el_data_available, proof::ProofServiceMessage,
     },
@@ -33,7 +37,7 @@ pub struct zkVMEnabledClStatus {
 pub struct BackfillService {
     source_cl_client: Arc<ClClient>,
     zkvm_enabled_cl_clients: Vec<Arc<ClClient>>,
-    block_cache: Arc<Mutex<LruCache<String, ElBlockWitness>>>,
+    block_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
     storage: Option<Arc<Mutex<BlockStorage>>>,
     proof_tx: mpsc::Sender<ProofServiceMessage>,
     el_data_tx: mpsc::Sender<ElDataServiceMessage>,
@@ -45,7 +49,7 @@ impl BackfillService {
     pub fn new(
         source_cl_client: Arc<ClClient>,
         zkvm_enabled_cl_clients: Vec<Arc<ClClient>>,
-        block_cache: Arc<Mutex<LruCache<String, ElBlockWitness>>>,
+        block_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
         storage: Option<Arc<Mutex<BlockStorage>>>,
         proof_tx: mpsc::Sender<ProofServiceMessage>,
         el_data_tx: mpsc::Sender<ElDataServiceMessage>,
@@ -62,9 +66,13 @@ impl BackfillService {
         }
     }
 
-    pub async fn run(self, shutdown_token: CancellationToken) {
-        let mut monitor_interval = tokio::time::interval(Duration::from_millis(self.interval_ms));
-        monitor_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    pub fn spawn(self: Arc<Self>, shutdown_token: CancellationToken) -> JoinHandle<()> {
+        tokio::spawn(self.run(shutdown_token))
+    }
+
+    async fn run(self: Arc<Self>, shutdown_token: CancellationToken) {
+        let mut interval = tokio::time::interval(Duration::from_millis(self.interval_ms));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         info!(interval_ms = self.interval_ms, "BackfillService started");
 
@@ -77,7 +85,7 @@ impl BackfillService {
                     break;
                 }
 
-                _ = monitor_interval.tick() => {
+                _ = interval.tick() => {
                     let statuses = self.get_statuses().await;
 
                     for status in &statuses {
@@ -201,12 +209,10 @@ impl BackfillService {
                 continue;
             };
 
-            if !is_el_data_available(&self.block_cache, &self.storage, &block_hash).await {
+            if !is_el_data_available(&self.block_cache, &self.storage, block_hash).await {
                 debug!(slot = slot, block_hash = %block_hash, "EL data not ready for backfill, sending fetch and proof request");
 
-                let msg = ElDataServiceMessage::FetchData {
-                    block_hash: block_hash.clone(),
-                };
+                let msg = ElDataServiceMessage::FetchData { block_hash };
                 if let Err(e) = self.el_data_tx.send(msg).await {
                     error!(error = %e, "Failed to send block fetch request for backfill");
                 }
@@ -214,8 +220,8 @@ impl BackfillService {
 
             let msg = ProofServiceMessage::RequestProof {
                 slot,
-                block_root: block_info.block_root.clone(),
-                execution_block_hash: block_hash.clone(),
+                block_root: block_info.block_root,
+                execution_block_hash: block_hash,
                 target_clients: [zkvm_enabled_client.name().to_string()]
                     .into_iter()
                     .collect(),

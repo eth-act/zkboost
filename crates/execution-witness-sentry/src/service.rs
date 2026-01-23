@@ -53,7 +53,7 @@ use lru::LruCache;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use crate::{BlockStorage, ElBlockWitness};
+use crate::{BlockStorage, ElBlockWitness, Hash256};
 
 pub mod backfill;
 pub mod cl_event;
@@ -129,11 +129,11 @@ impl<'a, T: Clone + Eq + Hash> Target<T> {
 /// `true` if the EL block and witness is available (in cache or loaded from disk),
 /// `false` otherwise.
 pub(crate) async fn is_el_data_available(
-    block_cache: &Arc<Mutex<LruCache<String, ElBlockWitness>>>,
+    block_cache: &Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
     storage: &Option<Arc<Mutex<BlockStorage>>>,
-    block_hash: &str,
+    block_hash: Hash256,
 ) -> bool {
-    if block_cache.lock().await.contains(block_hash) {
+    if block_cache.lock().await.contains(&block_hash) {
         return true;
     }
 
@@ -147,7 +147,7 @@ pub(crate) async fn is_el_data_available(
             drop(storage_guard);
 
             let mut cache = block_cache.lock().await;
-            cache.put(block_hash.to_string(), ElBlockWitness { block, witness });
+            cache.put(block_hash, ElBlockWitness { block, witness });
 
             debug!(block_hash = %block_hash, "Loaded EL data from disk to cache");
             return true;

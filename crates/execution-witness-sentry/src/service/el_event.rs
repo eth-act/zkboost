@@ -8,10 +8,10 @@
 //! The EL event services notifies [`ElDataService`](super::el_data::ElDataService) when a new block
 //! arrives, to retrieve the full block data and witness.
 
-use std::{pin::pin, time::Duration};
+use std::{pin::pin, sync::Arc, time::Duration};
 
 use futures::StreamExt;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -31,7 +31,7 @@ impl ElEventService {
     }
 
     async fn handle_header(&self, header: Header) {
-        let block_hash = header.hash.to_string();
+        let block_hash = header.hash;
         info!(
             name = %self.endpoint.name,
             number = header.number,
@@ -39,16 +39,18 @@ impl ElEventService {
             "EL block header received"
         );
 
-        let message = ElDataServiceMessage::FetchData {
-            block_hash: block_hash.clone(),
-        };
+        let message = ElDataServiceMessage::FetchData { block_hash };
         if let Err(error) = self.el_data_tx.send(message).await {
             error!(block_hash = %block_hash, error = %error, "Failed to send block fetch request");
         }
     }
 
-    pub async fn run(self, shutdown_token: CancellationToken) {
-        const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+    pub fn spawn(self: Arc<Self>, shutdown_token: CancellationToken) -> JoinHandle<()> {
+        tokio::spawn(self.run(shutdown_token))
+    }
+
+    async fn run(self: Arc<Self>, shutdown_token: CancellationToken) {
+        const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
         let name = &self.endpoint.name;
         let ws_url = &self.endpoint.ws_url;

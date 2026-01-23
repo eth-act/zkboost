@@ -9,6 +9,7 @@ anyhow.workspace = true
 axum.workspace = true
 clap = { workspace = true, features = ["derive"] }
 discv5.workspace = true
+ethereum_serde_utils.workspace = true
 eventsource-client.workspace = true
 flate2.workspace = true
 futures.workspace = true
@@ -27,6 +28,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url.workspace = true
 
 alloy-genesis.workspace = true
+alloy-primitives.workspace = true
 alloy-provider = { workspace = true, features = ["ws"] }
 alloy-rpc-types-debug.workspace = true
 alloy-rpc-types-eth.workspace = true

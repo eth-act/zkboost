@@ -11,7 +11,10 @@
 use std::{pin::pin, sync::Arc, time::Duration};
 
 use futures::StreamExt;
-use tokio::sync::{Mutex, mpsc};
+use tokio::{
+    sync::{Mutex, mpsc},
+    task::JoinHandle,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -43,21 +46,10 @@ impl ClEventService {
     async fn handle_head(&self, head: HeadEvent) {
         debug!(slot = %head.slot, "Received ClEvent");
 
-        let slot: u64 = match head.slot.parse() {
-            Ok(slot) => slot,
-            Err(e) => {
-                warn!(
-                    name = %self.client.name(),
-                    error = %e,
-                    slot = %head.slot,
-                    "Invalid head slot value"
-                );
-                return;
-            }
-        };
-        let block_root = head.block.clone();
+        let slot: u64 = head.slot;
+        let block_root = head.block;
 
-        let execution_block_hash = match self.client.get_block_execution_hash(&block_root).await {
+        let execution_block_hash = match self.client.get_block_execution_hash(block_root).await {
             Ok(Some(hash)) => hash,
             Ok(None) => {
                 debug!(name = %self.client.name(), slot = slot, "No execution hash for block");
@@ -71,7 +63,7 @@ impl ClEventService {
 
         if let Some(storage) = &self.storage {
             let mut storage_guard = storage.lock().await;
-            if let Err(e) = storage_guard.save_cl_data(&execution_block_hash, slot, &block_root) {
+            if let Err(e) = storage_guard.save_cl_data(execution_block_hash, slot, block_root) {
                 warn!(block_hash = %execution_block_hash, error = %e, "Failed to save CL block header to disk");
             } else {
                 debug!(
@@ -93,7 +85,11 @@ impl ClEventService {
         }
     }
 
-    pub async fn run(self, shutdown_token: CancellationToken) {
+    pub fn spawn(self: Arc<Self>, shutdown_token: CancellationToken) -> JoinHandle<()> {
+        tokio::spawn(self.run(shutdown_token))
+    }
+
+    async fn run(self: Arc<Self>, shutdown_token: CancellationToken) {
         const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
         loop {
@@ -121,7 +117,12 @@ impl ClEventService {
 
                     result = stream.next() => {
                         match result {
-                            Some(Ok(ClEvent::Head(head))) => self.handle_head(head).await,
+                            Some(Ok(ClEvent::Head(head))) => {
+                                let this = Arc::clone(&self);
+                                tokio::spawn(async move {
+                                    this.handle_head(head).await;
+                                });
+                            }
                             Some(Ok(ClEvent::Block(_))) => {}
                             Some(Err(e)) => {
                                 if let Error::Sse(e) = &e && e.contains("ConnectionRefused") {
