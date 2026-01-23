@@ -134,14 +134,14 @@ mod tests {
             self.bytes_responses
                 .get(url)
                 .cloned()
-                .ok_or_else(|| anyhow!("Url not found: {}", url))
+                .ok_or_else(|| anyhow!("Url not found: {url}"))
         }
 
         async fn get_string(&self, url: &str) -> Result<String> {
             self.string_responses
                 .get(url)
                 .cloned()
-                .ok_or_else(|| anyhow!("Url not found: {}", url))
+                .ok_or_else(|| anyhow!("Url not found: {url}"))
         }
     }
 
