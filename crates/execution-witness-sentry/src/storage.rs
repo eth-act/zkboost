@@ -10,7 +10,6 @@ use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use reth_ethereum_primitives::Block;
 use reth_stateless::ExecutionWitness;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 use zkboost_ethereum_el_types::ElProofType;
 
 use crate::{error::Result, rpc::Hash256};
@@ -32,21 +31,20 @@ pub struct BlockMetadata {
     pub beacon_block_root: Option<Hash256>,
 }
 
+/// EL block and execution witness data.
 #[derive(Serialize, Deserialize)]
 pub struct ElBlockWitness {
-    /// EL block
+    /// EL block.
     pub block: Block,
-    /// EL block execution witness
+    /// Execution witness.
     pub witness: ExecutionWitness,
 }
 
 /// A saved proof that can be loaded for backfill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde_as]
-pub struct SavedProof {
+pub struct Proof {
     /// Proof type
     pub proof_type: ElProofType,
-    #[serde_as(as = "Base64")]
     /// Proof data
     pub proof_data: Vec<u8>,
 }
@@ -66,10 +64,29 @@ pub fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>> {
     Ok(decompressed)
 }
 
-/// Manages block data storage on disk.
+/// Manages EL block data and proof storage on disk.
+///
+/// `BlockStorage` organizes data in a directory structure:
+/// ```text
+/// {output_dir}/{chain}/{block_hash}/
+/// ├── metadata.json     # Block metadata (slot, block number, etc.)
+/// ├── data.json.gz      # Compressed block + witness data
+/// └── proof/
+///     └── {proof_type}.json  # Compressed proofs by type
+/// ```
+///
+/// ## Retention Policy
+///
+/// When configured with a retention limit, old block directories are automatically
+/// deleted as new blocks are saved, maintaining a sliding window of the most
+/// recent blocks. This prevents unbounded disk usage.
 pub struct BlockStorage {
+    /// Root directory for all stored data.
     output_dir: PathBuf,
+    /// Chain identifier used as a subdirectory name (e.g., "mainnet", "holesky").
     chain: String,
+    /// Queue of block hashes for retention tracking. When full, the oldest
+    /// entry is removed and its directory deleted. `None` disables retention.
     retained: Option<VecDeque<Hash256>>,
 }
 
@@ -87,11 +104,14 @@ impl BlockStorage {
         }
     }
 
+    /// Get the chain directory path.
+    pub fn chain_dir(&self) -> PathBuf {
+        self.output_dir.join(&self.chain)
+    }
+
     /// Get the directory path for a block hash.
     pub fn block_dir(&self, block_hash: Hash256) -> PathBuf {
-        self.output_dir
-            .join(&self.chain)
-            .join(block_hash.to_string())
+        self.chain_dir().join(block_hash.to_string())
     }
 
     /// Save CL block header data to disk.
@@ -154,7 +174,8 @@ impl BlockStorage {
 
         // Write combined block + witness data
         let data_path = block_dir.join("data.json.gz");
-        std::fs::write(data_path, compress_gzip(&serde_json::to_vec(&el_data)?)?)?;
+        let compressed = compress_gzip(&serde_json::to_vec(&el_data)?)?;
+        std::fs::write(data_path, compressed)?;
 
         if let Some(expired) = self.retained.as_mut().and_then(|retained| {
             let expired = (retained.len() == retained.capacity()).then(|| retained.pop_front());
@@ -167,12 +188,21 @@ impl BlockStorage {
         Ok(())
     }
 
+    /// Save a execution proof to disk.
+    ///
+    /// Proofs are stored in a `proof/` subdirectory under the block's directory,
+    /// with the filename based on the proof type.
     pub fn save_proof(
-        &self,
+        &mut self,
         block_hash: Hash256,
         proof_type: ElProofType,
         proof_data: &[u8],
     ) -> Result<()> {
+        let proof = Proof {
+            proof_type,
+            proof_data: proof_data.to_vec(),
+        };
+
         let block_dir = self.block_dir(block_hash);
         std::fs::create_dir_all(&block_dir)?;
 
@@ -180,22 +210,48 @@ impl BlockStorage {
         std::fs::create_dir_all(&proof_dir)?;
 
         let proof_path = proof_dir.join(format!("{proof_type}.json"));
-        std::fs::write(
-            &proof_path,
-            serde_json::to_string(&SavedProof {
-                proof_type,
-                proof_data: proof_data.to_vec(),
-            })?,
-        )?;
+        let compressed = compress_gzip(&serde_json::to_vec(&proof)?)?;
+        std::fs::write(&proof_path, compressed)?;
 
         Ok(())
     }
 
+    /// Load metadata for a given block hash.
+    pub fn load_metadata(&self, block_hash: Hash256) -> Result<Option<BlockMetadata>> {
+        let block_dir = self.block_dir(block_hash);
+        let metadata_path = block_dir.join("metadata.json");
+
+        if !metadata_path.exists() {
+            return Ok(None);
+        }
+
+        let content = std::fs::read_to_string(&metadata_path)?;
+        Ok(Some(serde_json::from_str(&content)?))
+    }
+
+    /// Load EL block and witness data from disk.
+    pub fn load_el_data(&self, block_hash: Hash256) -> Result<Option<ElBlockWitness>> {
+        let block_dir = self.block_dir(block_hash);
+        let data_path = block_dir.join("data.json.gz");
+
+        if !data_path.exists() {
+            return Ok(None);
+        }
+
+        let compressed = std::fs::read(data_path)?;
+        let el_data = serde_json::from_slice(&decompress_gzip(&compressed)?)?;
+
+        Ok(Some(el_data))
+    }
+
+    /// Load proof from disk.
+    ///
+    /// Returns `None` if no proof of the specified type exists for the given block.
     pub fn load_proof(
         &self,
         block_hash: Hash256,
         proof_type: ElProofType,
-    ) -> Result<Option<SavedProof>> {
+    ) -> Result<Option<Proof>> {
         let block_dir = self.block_dir(block_hash);
 
         if !block_dir.exists() {
@@ -212,22 +268,10 @@ impl BlockStorage {
             return Ok(None);
         }
 
-        let bytes = std::fs::read(&proof_path)?;
-        let proof: SavedProof = serde_json::from_slice(&bytes)?;
+        let compressed = std::fs::read(proof_path)?;
+        let proof = serde_json::from_slice(&decompress_gzip(&compressed)?)?;
+
         Ok(Some(proof))
-    }
-
-    /// Load metadata for a given block hash.
-    pub fn load_metadata(&self, block_hash: Hash256) -> Result<Option<BlockMetadata>> {
-        let block_dir = self.block_dir(block_hash);
-        let metadata_path = block_dir.join("metadata.json");
-
-        if !metadata_path.exists() {
-            return Ok(None);
-        }
-
-        let content = std::fs::read_to_string(&metadata_path)?;
-        Ok(Some(serde_json::from_str(&content)?))
     }
 
     /// Delete an old block directory.
@@ -237,25 +281,5 @@ impl BlockStorage {
             std::fs::remove_dir_all(old_dir)?;
         }
         Ok(())
-    }
-
-    /// Load block and witness data from disk.
-    pub fn load_block_and_witness(
-        &self,
-        block_hash: Hash256,
-    ) -> Result<Option<(Block, alloy_rpc_types_debug::ExecutionWitness)>> {
-        let block_dir = self.block_dir(block_hash);
-        let data_path = block_dir.join("data.json.gz");
-
-        if !data_path.exists() {
-            return Ok(None);
-        }
-
-        Ok(serde_json::from_slice(&decompress_gzip(&std::fs::read(data_path)?)?).map(Some)?)
-    }
-
-    /// Get the chain directory path.
-    pub fn chain_dir(&self) -> PathBuf {
-        self.output_dir.join(&self.chain)
     }
 }

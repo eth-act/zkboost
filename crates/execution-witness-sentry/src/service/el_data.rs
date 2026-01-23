@@ -12,7 +12,6 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use alloy_primitives::B256;
 use lru::LruCache;
 use tokio::{
     sync::{Mutex, mpsc},
@@ -22,38 +21,61 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    BlockStorage, ElBlockWitness, ElClient,
+    BlockStorage, ElBlockWitness, ElClient, Hash256,
     service::{is_el_data_available, proof::ProofServiceMessage},
 };
 
+/// Messages handled by [`ElDataService`].
 pub enum ElDataServiceMessage {
-    FetchData { block_hash: B256 },
+    /// Request to fetch block and witness data for the given block hash.
+    ///
+    /// Sent when a new EL block event arrives or when proof generation
+    /// requires data that is not yet available.
+    FetchData { block_hash: Hash256 },
 }
 
+/// Service responsible for fetching block and witness data from EL clients.
+///
+/// When a [`ElDataServiceMessage::FetchData`] message is received, this service
+/// fetches the block and execution witness from configured EL endpoints. Successfully
+/// fetched data is cached in memory and optionally persisted to disk, then a
+/// [`ProofServiceMessage::BlockDataReady`] notification is sent to the proof service.
+///
+/// ## Deduplication
+///
+/// Concurrent requests for the same block hash are deduplicated via the `in_flight`
+/// set to prevent redundant network calls.
 pub struct ElDataService {
+    /// EL clients to fetch block data from, tried in order.
     el_clients: Vec<Arc<ElClient>>,
-    block_cache: Arc<Mutex<LruCache<B256, ElBlockWitness>>>,
+    /// In-memory LRU cache for recently fetched EL block data.
+    el_data_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
+    /// Optional disk storage for persisting fetched data.
     storage: Option<Arc<Mutex<BlockStorage>>>,
+    /// Channel to notify the proof service when data is ready.
     proof_tx: mpsc::Sender<ProofServiceMessage>,
-    in_flight: Arc<Mutex<HashSet<B256>>>,
+    /// Set of block hashes currently being fetched, used for deduplication.
+    in_flight: Arc<Mutex<HashSet<Hash256>>>,
 }
 
 impl ElDataService {
+    /// Creates a new EL data service.
     pub fn new(
         el_clients: Vec<Arc<ElClient>>,
-        block_cache: Arc<Mutex<LruCache<B256, ElBlockWitness>>>,
+        el_data_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
         storage: Option<Arc<Mutex<BlockStorage>>>,
         proof_tx: mpsc::Sender<ProofServiceMessage>,
     ) -> Self {
         Self {
             el_clients,
-            block_cache,
+            el_data_cache,
             storage,
             proof_tx,
             in_flight: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
+    /// Spawns the service as a background task.
     pub fn spawn(
         self: Arc<Self>,
         shutdown_token: CancellationToken,
@@ -62,12 +84,13 @@ impl ElDataService {
         tokio::spawn(self.run(shutdown_token, el_data_rx))
     }
 
+    /// Main event loop that processes incoming messages until shutdown.
     async fn run(
         self: Arc<Self>,
         shutdown_token: CancellationToken,
         mut el_data_rx: mpsc::Receiver<ElDataServiceMessage>,
     ) {
-        let mut fetch_tasks: JoinSet<B256> = JoinSet::new();
+        let mut fetch_tasks: JoinSet<Hash256> = JoinSet::new();
 
         loop {
             tokio::select! {
@@ -100,12 +123,13 @@ impl ElDataService {
         }
     }
 
+    /// Handles a fetch data request, spawning a fetch task if not already in flight.
     async fn handle_fetch_data(
         self: &Arc<Self>,
-        block_hash: B256,
-        fetch_tasks: &mut JoinSet<B256>,
+        block_hash: Hash256,
+        fetch_tasks: &mut JoinSet<Hash256>,
     ) {
-        if is_el_data_available(&self.block_cache, &self.storage, block_hash).await {
+        if is_el_data_available(&self.el_data_cache, &self.storage, block_hash).await {
             self.send_block_data_ready(block_hash).await;
         };
 
@@ -114,27 +138,11 @@ impl ElDataService {
             return;
         }
 
-        let this = self.clone();
-
-        fetch_tasks.spawn(async move {
-            let result = this.fetch_block_from_el(block_hash).await;
-
-            if result.is_ok() {
-                this.send_block_data_ready(block_hash).await;
-            }
-
-            block_hash
-        });
+        fetch_tasks.spawn(self.clone().fetch_el_data(block_hash));
     }
 
-    async fn send_block_data_ready(&self, block_hash: B256) {
-        let msg = ProofServiceMessage::BlockDataReady { block_hash };
-        if let Err(e) = self.proof_tx.send(msg).await {
-            error!(error = %e, "Failed to send block ready notification");
-        }
-    }
-
-    async fn fetch_block_from_el(&self, block_hash: B256) -> anyhow::Result<()> {
+    /// Fetches EL block and witness, caching and persisting and notifying if success.
+    async fn fetch_el_data(self: Arc<Self>, block_hash: Hash256) -> Hash256 {
         for el_client in &self.el_clients {
             let block = match el_client.get_block_by_hash(block_hash).await {
                 Ok(Some(data)) => data,
@@ -182,15 +190,23 @@ impl ElDataService {
                 }
             }
 
-            let mut cache = self.block_cache.lock().await;
+            let mut cache = self.el_data_cache.lock().await;
             cache.put(block_hash, el_data);
             debug!(block_hash = %block_hash, "Cached fetched block in memory");
 
-            return Ok(());
+            self.send_block_data_ready(block_hash).await;
+
+            break;
         }
 
-        Err(anyhow::anyhow!(
-            "Failed to fetch block from any EL endpoint"
-        ))
+        block_hash
+    }
+
+    /// Notifies the proof service that block data is available.
+    async fn send_block_data_ready(&self, block_hash: Hash256) {
+        let msg = ProofServiceMessage::BlockDataReady { block_hash };
+        if let Err(e) = self.proof_tx.send(msg).await {
+            error!(error = %e, "Failed to send block ready notification");
+        }
     }
 }

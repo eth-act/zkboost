@@ -76,7 +76,11 @@ impl<T: Clone + Eq + Hash> FromIterator<T> for Target<T> {
     }
 }
 
-impl<'a, T: Clone + Eq + Hash> Target<T> {
+impl<T: Clone + Eq + Hash> Target<T> {
+    /// Returns `true` if the target includes the given value.
+    ///
+    /// For [`Target::All`], always returns `true`. For [`Target::Specific`],
+    /// returns `true` only if the value is in the set.
     pub fn contains<Q>(&self, value: &Q) -> bool
     where
         T: Borrow<Q>,
@@ -88,6 +92,10 @@ impl<'a, T: Clone + Eq + Hash> Target<T> {
         }
     }
 
+    /// Computes the union of two targets.
+    ///
+    /// If either target is [`Target::All`], the result is [`Target::All`].
+    /// Otherwise, returns a [`Target::Specific`] containing items from both sets.
     pub fn union(&self, other: &Self) -> Self {
         match (self, other) {
             (Self::All, _) | (_, Self::All) => Self::All,
@@ -95,27 +103,6 @@ impl<'a, T: Clone + Eq + Hash> Target<T> {
                 Self::Specific(lhs.union(rhs).cloned().collect())
             }
         }
-    }
-
-    pub fn filter_by_key<R, Q: ?Sized + Eq + Hash>(
-        &'a self,
-        iter: impl 'a + IntoIterator<Item = R>,
-        f: impl 'a + Fn(&R) -> &Q,
-    ) -> impl 'a + Iterator<Item = R>
-    where
-        T: Borrow<Q>,
-    {
-        iter.into_iter().filter(move |item| match self {
-            Self::All => true,
-            Self::Specific(specific) => specific.contains(f(item)),
-        })
-    }
-
-    pub fn filter(
-        &'a self,
-        iter: impl 'a + IntoIterator<Item = T>,
-    ) -> impl 'a + Iterator<Item = T> {
-        self.filter_by_key(iter, |item| item)
     }
 }
 
@@ -129,11 +116,11 @@ impl<'a, T: Clone + Eq + Hash> Target<T> {
 /// `true` if the EL block and witness is available (in cache or loaded from disk),
 /// `false` otherwise.
 pub(crate) async fn is_el_data_available(
-    block_cache: &Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
+    el_data_cache: &Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
     storage: &Option<Arc<Mutex<BlockStorage>>>,
     block_hash: Hash256,
 ) -> bool {
-    if block_cache.lock().await.contains(&block_hash) {
+    if el_data_cache.lock().await.contains(&block_hash) {
         return true;
     }
 
@@ -142,12 +129,12 @@ pub(crate) async fn is_el_data_available(
     };
 
     let storage_guard = storage.lock().await;
-    match storage_guard.load_block_and_witness(block_hash) {
-        Ok(Some((block, witness))) => {
+    match storage_guard.load_el_data(block_hash) {
+        Ok(Some(el_data)) => {
             drop(storage_guard);
 
-            let mut cache = block_cache.lock().await;
-            cache.put(block_hash, ElBlockWitness { block, witness });
+            let mut cache = el_data_cache.lock().await;
+            cache.put(block_hash, el_data);
 
             debug!(block_hash = %block_hash, "Loaded EL data from disk to cache");
             return true;

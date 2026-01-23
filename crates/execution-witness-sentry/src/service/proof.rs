@@ -53,7 +53,7 @@ use crate::{
     config::ProofEngineConfig,
     rpc::Hash256,
     service::{Target, is_el_data_available},
-    storage::SavedProof,
+    storage::Proof,
 };
 
 const PENDING_PROOF_TIMEOUT: Duration = Duration::from_secs(300);
@@ -64,61 +64,120 @@ const PROOF_SUBMISSION_MAX_RETRIES: u32 = 3;
 /// Identifier for a proof consist of `block_hash` and `proof_type`.
 type ProofKey = (B256, ElProofType);
 
+/// Messages handled by [`ProofService`].
+///
+/// These messages coordinate proof generation and submission workflows.
 pub enum ProofServiceMessage {
+    /// Notification that EL block data is now available in cache.
+    ///
+    /// Sent by [`ElDataService`](super::el_data::ElDataService) after fetching
+    /// block and witness data. Triggers processing of any pending proof requests
+    /// for this block.
     BlockDataReady {
+        /// The execution block hash for which data is now available.
         block_hash: B256,
     },
+    /// Request proof generation for a specific block.
+    ///
+    /// Sent by [`ClEventService`](super::cl_event::ClEventService) on new head
+    /// events and [`BackfillService`](super::backfill::BackfillService) for gap
+    /// filling.
     RequestProof {
+        /// Beacon chain slot number.
         slot: u64,
+        /// Beacon block root hash.
         block_root: Hash256,
+        /// Execution layer block hash.
         execution_block_hash: B256,
+        /// CL clients to submit the proof to.
         target_clients: Target<String>,
+        /// Proof types to generate.
         target_proof_types: Target<ElProofType>,
     },
 }
 
+/// A proof request awaiting EL block data availability.
+///
+/// Created when a proof is requested but the block data is not yet cached.
+/// Processed when [`ProofServiceMessage::BlockDataReady`] is received for
+/// the corresponding block.
 #[derive(Clone)]
 struct PendingRequest {
+    /// Beacon chain slot number.
     slot: u64,
+    /// Beacon block root hash.
     block_root: Hash256,
+    /// CL clients to submit the proof to once generated.
     target_clients: Target<String>,
+    /// Timestamp when this request was created, used for staleness cleanup.
     created_at: Instant,
 }
 
+/// A proof generation job awaiting completion from the proof engine.
+///
+/// Created when a proof request is submitted to the proof engine. Tracked
+/// until the proof engine delivers the result via webhook, or the entry
+/// times out.
 #[derive(Debug, Clone)]
 struct PendingProof {
+    /// Type of proof being generated.
     proof_type: ElProofType,
+    /// Beacon chain slot number.
     slot: u64,
+    /// Execution block hash being proven.
     block_hash: B256,
+    /// Beacon block root hash.
     beacon_block_root: Hash256,
+    /// CL clients to submit the proof to once generated.
     target_clients: Target<String>,
+    /// Timestamp when this proof was requested, used for timeout detection.
     created_at: Instant,
+    /// Unique identifier returned by the proof engine for tracking.
     proof_gen_id: ProofGenId,
 }
 
+/// Coordinates proof generation and submission to CL clients.
+///
+/// This service manages the full lifecycle of proof generation:
+///
+/// 1. Receives proof requests from [`ClEventService`](super::cl_event::ClEventService) and
+///    [`BackfillService`](super::backfill::BackfillService)
+/// 2. Queues requests if EL block data is not yet available
+/// 3. Submits proof jobs to the proof engine
+/// 4. Receives completed proofs via webhook
+/// 5. Caches and persists proofs for reuse
+/// 6. Submits proofs to target CL clients
 #[derive(Clone)]
 pub struct ProofService {
+    /// Port for the webhook HTTP server to receive proof results.
     webhook_port: u16,
+    /// Client for communicating with the proof engine.
     proof_engine_client: Arc<ProofEngineClient>,
+    /// Chain configuration for constructing stateless inputs.
     chain_config: ChainConfig,
+    /// CL clients to submit proofs to.
     zkvm_enabled_cl_clients: Vec<Arc<ClClient>>,
-    block_cache: Arc<Mutex<LruCache<B256, ElBlockWitness>>>,
-    proof_cache: Arc<Mutex<LruCache<ProofKey, SavedProof>>>,
+    /// Shared cache of EL block data (block + witness).
+    el_data_cache: Arc<Mutex<LruCache<B256, ElBlockWitness>>>,
+    /// In-memory cache of generated proofs by block hash and proof type.
+    proof_cache: Arc<Mutex<LruCache<ProofKey, Proof>>>,
+    /// Optional persistent storage for proofs.
     storage: Option<Arc<Mutex<BlockStorage>>>,
-    /// Requests pending for EL data to become available.a
+    /// Proof requests waiting for EL data to become available.
     pending_requests: Arc<Mutex<HashMap<B256, BTreeMap<ElProofType, PendingRequest>>>>,
-    /// Proofs pending for proof engine to send back via webhook.a
+    /// Proof jobs submitted to the engine, awaiting webhook callback.
     pending_proofs: Arc<Mutex<HashMap<ProofKey, PendingProof>>>,
-    /// Mapping from [`ProofGenId`] to [`ProofKey`]a
+    /// Mapping from proof engine job IDs to proof key.
     proof_gen_ids: Arc<Mutex<HashMap<ProofGenId, ProofKey>>>,
 }
 
 impl ProofService {
+    /// Creates a new proof service with the given configuration.
     pub fn new(
         proof_engine_config: ProofEngineConfig,
         chain_config: ChainConfig,
         zkvm_enabled_cl_clients: Vec<Arc<ClClient>>,
-        block_cache: Arc<Mutex<LruCache<B256, ElBlockWitness>>>,
+        el_data_cache: Arc<Mutex<LruCache<B256, ElBlockWitness>>>,
         storage: Option<Arc<Mutex<BlockStorage>>>,
     ) -> anyhow::Result<Self> {
         let proof_engine_client = Arc::new(ProofEngineClient::new(
@@ -136,7 +195,7 @@ impl ProofService {
             proof_engine_client,
             chain_config,
             zkvm_enabled_cl_clients,
-            block_cache,
+            el_data_cache,
             proof_cache,
             storage,
             pending_requests,
@@ -145,6 +204,7 @@ impl ProofService {
         })
     }
 
+    /// Spawns webhook HTTP server and message processing loop.
     pub async fn spawn(
         self: Arc<Self>,
         shutdown_token: CancellationToken,
@@ -155,6 +215,7 @@ impl ProofService {
         Ok(vec![http_handle, service_handle])
     }
 
+    /// Main event loop that processes incoming messages until shutdown.
     async fn run(
         self: Arc<Self>,
         shutdown_token: CancellationToken,
@@ -184,14 +245,20 @@ impl ProofService {
                             target_clients,
                             target_proof_types,
                         } => {
-                            for proof_type in target_proof_types.filter(self.proof_engine_client.proof_types().iter().cloned()) {
+                            for &proof_type in self
+                                .proof_engine_client
+                                .proof_types()
+                                .iter()
+                                .filter(|proof_type| target_proof_types.contains(proof_type))
+                            {
                                 self.handle_request_proof(
                                     slot,
                                     block_root,
                                     execution_block_hash,
                                     target_clients.clone(),
                                     proof_type,
-                                ).await;
+                                )
+                                .await;
                             }
                         }
                         ProofServiceMessage::BlockDataReady { block_hash } => {
@@ -205,6 +272,7 @@ impl ProofService {
         }
     }
 
+    /// Removes stale pending requests and proof jobs that have timed out.
     async fn cleanup_stale_entries(&self) {
         let mut pending_requests_guard = self.pending_requests.lock().await;
 
@@ -250,6 +318,11 @@ impl ProofService {
         }
     }
 
+    /// Handles a proof request.
+    ///
+    /// - If the proof already exists in cache/storage, submits it immediately.
+    /// - If EL data is available, requests proof generation.
+    /// - If EL data is not yet available, queues the request as pending.
     async fn handle_request_proof(
         &self,
         slot: u64,
@@ -279,7 +352,7 @@ impl ProofService {
             return;
         }
 
-        if is_el_data_available(&self.block_cache, &self.storage, execution_block_hash).await {
+        if is_el_data_available(&self.el_data_cache, &self.storage, execution_block_hash).await {
             self.request_proof(
                 slot,
                 block_root,
@@ -308,6 +381,7 @@ impl ProofService {
         }
     }
 
+    /// Processes pending proof requests when EL block data becomes available.
     async fn handle_block_data_ready(&self, block_hash: B256) {
         debug!(block_hash = %block_hash, "Block ready notification received");
 
@@ -341,7 +415,8 @@ impl ProofService {
         }
     }
 
-    async fn load_proof(&self, block_hash: B256, proof_type: ElProofType) -> Option<SavedProof> {
+    /// Loads a proof from cache or disk storage.
+    async fn load_proof(&self, block_hash: B256, proof_type: ElProofType) -> Option<Proof> {
         {
             let mut cache = self.proof_cache.lock().await;
             if let Some(proof) = cache.get(&(block_hash, proof_type)) {
@@ -372,6 +447,11 @@ impl ProofService {
         None
     }
 
+    /// Submits a proof generation request to the proof engine.
+    ///
+    /// Deduplicates requests by checking if a proof job is already in flight
+    /// for this block and proof type. If a previous request has timed out,
+    /// allows retry.
     async fn request_proof(
         &self,
         slot: u64,
@@ -381,7 +461,7 @@ impl ProofService {
         proof_type: ElProofType,
     ) {
         let (block, witness) = {
-            let cache = self.block_cache.lock().await;
+            let cache = self.el_data_cache.lock().await;
             match cache.peek(&block_hash) {
                 Some(cached) => (cached.block.clone(), cached.witness.clone()),
                 None => {
@@ -474,6 +554,7 @@ impl ProofService {
         }
     }
 
+    /// Spawns tasks to submit a proof to target CL clients.
     async fn submit_proofs(
         &self,
         target_clients: &Target<String>,
@@ -483,8 +564,10 @@ impl ProofService {
         proof_type: ElProofType,
         proof_data: Vec<u8>,
     ) {
-        let cl_clients = target_clients
-            .filter_by_key(&self.zkvm_enabled_cl_clients, |cl_client| cl_client.name())
+        let cl_clients = self
+            .zkvm_enabled_cl_clients
+            .iter()
+            .filter(|cl_client| target_clients.contains(cl_client.name()))
             .collect::<Vec<_>>();
 
         let proof_id = proof_type.proof_id();
@@ -570,6 +653,7 @@ async fn submit_proof(client: Arc<ClClient>, execution_proof: ExecutionProof) {
     }
 }
 
+/// Spawns the HTTP server that receives proof results via webhook.
 async fn spawn_webhook_server(
     state: Arc<ProofService>,
     shutdown_token: CancellationToken,
@@ -595,6 +679,10 @@ async fn spawn_webhook_server(
     }))
 }
 
+/// Axum handler for receiving proof results from the proof engine.
+///
+/// Caches the proof, persists to storage if configured, and submits to
+/// target CL clients.
 async fn proof_webhook(
     State(state): State<Arc<ProofService>>,
     Json(proof_result): Json<ProofResult>,
@@ -650,7 +738,7 @@ async fn proof_webhook(
     let mut cache = state.proof_cache.lock().await;
     cache.put(
         (pending_proof.block_hash, pending_proof.proof_type),
-        SavedProof {
+        Proof {
             proof_type: pending_proof.proof_type,
             proof_data: proof_result.proof.clone(),
         },
@@ -658,7 +746,7 @@ async fn proof_webhook(
     drop(cache);
 
     if let Some(ref storage) = state.storage {
-        let storage_guard = storage.lock().await;
+        let mut storage_guard = storage.lock().await;
         if let Err(e) = storage_guard.save_proof(
             pending_proof.block_hash,
             pending_proof.proof_type,

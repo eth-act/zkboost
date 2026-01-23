@@ -17,12 +17,22 @@ use tracing::{error, info, warn};
 
 use crate::{ElEndpoint, Header, service::el_data::ElDataServiceMessage, subscribe_blocks};
 
+/// Subscribes to EL head events via WebSocket and triggers block data fetching.
+///
+/// This service maintains a WebSocket connection to an execution layer node, listening for
+/// `newHeads` events. When a new block header arrives, it requests [`ElDataService`] to fetch
+/// the full block data and execution witness.
+///
+/// [`ElDataService`]: super::el_data::ElDataService
 pub struct ElEventService {
+    /// Configuration for the EL endpoint (name and WebSocket URL).
     endpoint: ElEndpoint,
+    /// Channel to send fetch requests to [`ElDataService`].
     el_data_tx: mpsc::Sender<ElDataServiceMessage>,
 }
 
 impl ElEventService {
+    /// Creates a new EL event service for the given endpoint.
     pub fn new(endpoint: ElEndpoint, el_data_tx: mpsc::Sender<ElDataServiceMessage>) -> Self {
         Self {
             endpoint,
@@ -30,6 +40,7 @@ impl ElEventService {
         }
     }
 
+    /// Processes an incoming block header by sending a fetch request to [`ElDataService`].
     async fn handle_header(&self, header: Header) {
         let block_hash = header.hash;
         info!(
@@ -45,10 +56,12 @@ impl ElEventService {
         }
     }
 
+    /// Spawns the service as a background task.
     pub fn spawn(self: Arc<Self>, shutdown_token: CancellationToken) -> JoinHandle<()> {
         tokio::spawn(self.run(shutdown_token))
     }
 
+    /// Main event loop that processes EL head events until shutdown.
     async fn run(self: Arc<Self>, shutdown_token: CancellationToken) {
         const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 

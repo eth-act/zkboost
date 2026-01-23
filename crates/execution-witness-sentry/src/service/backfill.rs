@@ -10,6 +10,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use alloy_primitives::map::HashMap;
 use lru::LruCache;
 use tokio::{
     sync::{Mutex, mpsc},
@@ -26,50 +27,90 @@ use crate::{
     },
 };
 
+/// Status of a zkVM-enabled CL client relative to the source CL.
+///
+/// Used to determine which clients are behind and need backfilling.
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
 pub struct zkVMEnabledClStatus {
+    /// Human-readable name of the zkVM-enabled CL client.
     pub name: String,
+    /// Current head slot of this zkVM-enabled CL client.
     pub head_slot: u64,
+    /// Slot difference from the source CL (negative means behind).
+    ///
+    /// Calculated as `zkvm_head - source_head`, so a value of -5 means
+    /// the zkVM client is 5 slots behind the source.
     pub gap: i64,
 }
 
+/// Monitors zkVM-enabled CL clients and triggers proof backfill when they fall behind.
+///
+/// The backfill service periodically compares the head slot of each zkVM-enabled CL client
+/// against the source CL. When a client falls more than 5 slots behind, it initiates
+/// backfill by requesting proofs for missing slots.
+///
+/// ## Data Flow
+///
+/// When backfilling, for each missing slot:
+/// 1. Fetches block info from the source CL
+/// 2. Skip if that slot is missing
+/// 3. If EL data is not cached, sends [`ElDataServiceMessage::FetchData`]
+/// 4. Sends [`ProofServiceMessage::RequestProof`] targeting the specific behind client
 pub struct BackfillService {
+    /// Reference CL client used to determine the canonical head.
     source_cl_client: Arc<ClClient>,
-    zkvm_enabled_cl_clients: Vec<Arc<ClClient>>,
-    block_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
+    /// CL clients that require zkVM proofs for block validation.
+    zkvm_enabled_cl_clients: HashMap<String, Arc<ClClient>>,
+    /// Shared LRU cache of execution block data.
+    el_data_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
+    /// Optional persistent storage for proofs.
     storage: Option<Arc<Mutex<BlockStorage>>>,
+    /// Channel for sending proof generation requests to [`ProofService`].
     proof_tx: mpsc::Sender<ProofServiceMessage>,
+    /// Channel for requesting EL block data from [`ElDataService`].
     el_data_tx: mpsc::Sender<ElDataServiceMessage>,
+    /// Polling interval in milliseconds between status checks.
     interval_ms: u64,
 }
 
 impl BackfillService {
+    /// Creates a new backfill service.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         source_cl_client: Arc<ClClient>,
         zkvm_enabled_cl_clients: Vec<Arc<ClClient>>,
-        block_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
+        el_data_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>>,
         storage: Option<Arc<Mutex<BlockStorage>>>,
         proof_tx: mpsc::Sender<ProofServiceMessage>,
         el_data_tx: mpsc::Sender<ElDataServiceMessage>,
         interval_ms: u64,
     ) -> Self {
+        let zkvm_enabled_cl_clients = zkvm_enabled_cl_clients
+            .into_iter()
+            .map(|client| (client.name().to_string(), client))
+            .collect();
         Self {
             source_cl_client,
             zkvm_enabled_cl_clients,
             proof_tx,
             el_data_tx,
-            block_cache,
+            el_data_cache,
             storage,
             interval_ms,
         }
     }
 
+    /// Spawns the backfill service as a background task.
+    ///
+    /// The service runs until the shutdown token is cancelled.
     pub fn spawn(self: Arc<Self>, shutdown_token: CancellationToken) -> JoinHandle<()> {
         tokio::spawn(self.run(shutdown_token))
     }
 
+    /// Main event loop that periodically checks client statuses and triggers backfill.
+    ///
+    /// Uses a timer-based polling approach with configurable interval.
     async fn run(self: Arc<Self>, shutdown_token: CancellationToken) {
         let mut interval = tokio::time::interval(Duration::from_millis(self.interval_ms));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -97,9 +138,8 @@ impl BackfillService {
                                 "zkvm CL is behind, starting backfill"
                             );
 
-                            if let Some(client) = self.zkvm_enabled_cl_clients
-                                .iter()
-                                .find(|client| client.name() == status.name)
+                            if let Some(client) = self.zkvm_enabled_cl_clients.get(&status.name)
+
                             {
                                 self.backfill_proofs(client, 20).await;
                             }
@@ -126,6 +166,10 @@ impl BackfillService {
         info!("BackfillService stopped");
     }
 
+    /// Queries all zkVM-enabled CL clients and computes their gap from the source CL.
+    ///
+    /// Returns an empty vector if the source CL head cannot be retrieved.
+    /// Individual client failures are logged but don't prevent other clients from being checked.
     async fn get_statuses(&self) -> Vec<zkVMEnabledClStatus> {
         let source_head = match self.source_cl_client.get_head_slot().await {
             Ok(slot) => slot,
@@ -136,7 +180,7 @@ impl BackfillService {
         };
 
         let mut statuses = Vec::new();
-        for client in &self.zkvm_enabled_cl_clients {
+        for client in self.zkvm_enabled_cl_clients.values() {
             match client.get_head_slot().await {
                 Ok(head_slot) => {
                     let gap = head_slot as i64 - source_head as i64;
@@ -155,6 +199,11 @@ impl BackfillService {
         statuses
     }
 
+    /// Requests proofs for slots where the given zkVM client is behind.
+    ///
+    /// Iterates through slots from the client's current head up to `max_slots` ahead.
+    ///
+    /// For each slot, request EL data fetch if it is not available, then submits a proof request.
     async fn backfill_proofs(&self, zkvm_enabled_client: &ClClient, max_slots: u64) {
         let zkvm_head = match zkvm_enabled_client.get_head_slot().await {
             Ok(slot) => slot,
@@ -209,7 +258,7 @@ impl BackfillService {
                 continue;
             };
 
-            if !is_el_data_available(&self.block_cache, &self.storage, block_hash).await {
+            if !is_el_data_available(&self.el_data_cache, &self.storage, block_hash).await {
                 debug!(slot = slot, block_hash = %block_hash, "EL data not ready for backfill, sending fetch and proof request");
 
                 let msg = ElDataServiceMessage::FetchData { block_hash };

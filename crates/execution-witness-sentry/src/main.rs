@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
     };
     info!(name = %source_cl_client.name(), "CL event source configured");
 
-    let block_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>> =
+    let el_data_cache: Arc<Mutex<LruCache<Hash256, ElBlockWitness>>> =
         Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
     let storage: Option<Arc<Mutex<BlockStorage>>> = config.output_dir.as_ref().map(|dir| {
         Arc::new(Mutex::new(BlockStorage::new(
@@ -194,7 +194,7 @@ async fn main() -> anyhow::Result<()> {
     {
         let el_data_service = Arc::new(ElDataService::new(
             el_clients.clone(),
-            block_cache.clone(),
+            el_data_cache.clone(),
             storage.clone(),
             proof_tx.clone(),
         ));
@@ -209,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
             config.proof_engine.clone(),
             chain_config,
             zkvm_enabled_cl_clients.clone(),
-            block_cache.clone(),
+            el_data_cache.clone(),
             storage.clone(),
         )?);
 
@@ -227,7 +227,7 @@ async fn main() -> anyhow::Result<()> {
         let backfill_service = Arc::new(BackfillService::new(
             source_cl_client,
             zkvm_enabled_cl_clients,
-            block_cache,
+            el_data_cache,
             storage,
             proof_tx,
             el_data_tx,

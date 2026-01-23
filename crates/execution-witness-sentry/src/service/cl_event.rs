@@ -24,13 +24,18 @@ use crate::{
     subscribe_cl_events,
 };
 
+/// Subscribes to CL head events via SSE and triggers proof requests.
 pub struct ClEventService {
+    /// The source CL client to subscribe to for head events.
     client: Arc<ClClient>,
+    /// Optional storage for persisting CL block metadata to disk.
     storage: Option<Arc<Mutex<BlockStorage>>>,
+    /// Channel for sending proof requests to the [`ProofService`](super::proof::ProofService).
     proof_tx: mpsc::Sender<ProofServiceMessage>,
 }
 
 impl ClEventService {
+    /// Creates a new `ClEventService`.
     pub fn new(
         client: Arc<ClClient>,
         storage: Option<Arc<Mutex<BlockStorage>>>,
@@ -43,6 +48,11 @@ impl ClEventService {
         }
     }
 
+    /// Processes a head event by fetching block data and requesting proofs.
+    ///
+    /// 1. Retrieves the execution block hash from the beacon block
+    /// 2. Persists CL metadata to storage if configured
+    /// 3. Sends a proof request for all configured proof types and clients
     async fn handle_head(&self, head: HeadEvent) {
         debug!(slot = %head.slot, "Received ClEvent");
 
@@ -85,10 +95,12 @@ impl ClEventService {
         }
     }
 
+    /// Spawns the service as a background task that processes CL head events.
     pub fn spawn(self: Arc<Self>, shutdown_token: CancellationToken) -> JoinHandle<()> {
         tokio::spawn(self.run(shutdown_token))
     }
 
+    /// Main event loop that subscribes to CL head events and processes them.
     async fn run(self: Arc<Self>, shutdown_token: CancellationToken) {
         const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
@@ -117,12 +129,7 @@ impl ClEventService {
 
                     result = stream.next() => {
                         match result {
-                            Some(Ok(ClEvent::Head(head))) => {
-                                let this = Arc::clone(&self);
-                                tokio::spawn(async move {
-                                    this.handle_head(head).await;
-                                });
-                            }
+                            Some(Ok(ClEvent::Head(head))) => self.handle_head(head).await,
                             Some(Ok(ClEvent::Block(_))) => {}
                             Some(Err(e)) => {
                                 if let Error::Sse(e) = &e && e.contains("ConnectionRefused") {

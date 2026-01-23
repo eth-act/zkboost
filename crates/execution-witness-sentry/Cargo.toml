@@ -17,7 +17,6 @@ lru.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-serde_with = { workspace = true, features = ["base64"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "rt-multi-thread", "macros"] }
 tokio-util.workspace = true

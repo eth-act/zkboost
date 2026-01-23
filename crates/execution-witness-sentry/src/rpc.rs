@@ -64,6 +64,10 @@ impl ElClient {
         &self.url
     }
 
+    /// Send a JSON-RPC request to the execution layer node.
+    ///
+    /// Serializes the request, sends it to the endpoint, and deserializes the response.
+    /// Returns `None` if the RPC response has a null `result`.
     async fn request<P: Serialize, R: DeserializeOwned>(
         &self,
         method: &'static str,
@@ -381,13 +385,18 @@ fn enr_has_zkvm(enr_str: &str) -> bool {
     }
 }
 
+/// Client for communicating with a proof engine.
 pub struct ProofEngineClient {
+    /// URL of the proof engine.
     pub url: Url,
+    /// Proof types supported by this engine.
     pub proof_types: Vec<ElProofType>,
+    /// Underlying client for API calls.
     client: zkboostClient,
 }
 
 impl ProofEngineClient {
+    /// Create a new proof engine client.
     pub fn new(url: Url, proof_types: Vec<ElProofType>) -> anyhow::Result<Self> {
         let client = zkboostClient::new(url.clone())?;
         Ok(Self {
@@ -397,10 +406,16 @@ impl ProofEngineClient {
         })
     }
 
+    /// Return the proof types supported by this engine.
     pub fn proof_types(&self) -> &[ElProofType] {
         &self.proof_types
     }
 
+    /// Submit a proof generation request to the zkboost server.
+    ///
+    /// Converts the execution input to zkVM format and submits it to the
+    /// configured proof engine. Returns a proof generation ID that can be
+    /// used to identity webhook callbacks.
     pub async fn request_proof(
         &self,
         proof_type: &ElProofType,
