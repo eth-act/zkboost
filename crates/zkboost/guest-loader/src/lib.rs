@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
-use minisign_verify::{PublicKey, Signature};
+use minisign::{PublicKey, SignatureBox};
 use reqwest::Client;
 
 /// Trait for HTTP client
@@ -70,11 +70,18 @@ pub fn verify_program_and_signature(
 ) -> Result<()> {
     let public_key = PublicKey::from_base64(publisher_public_key)
         .map_err(|_| anyhow!("Invalid base64 public key"))?;
-    let signature =
-        Signature::decode(signature).map_err(|_| anyhow!("Failed to decode signature"))?;
-    public_key
-        .verify(program_bytes, &signature, false)
-        .map_err(|_| anyhow!("Signature verification failed"))?;
+    let signature_box =
+        SignatureBox::from_string(signature).map_err(|_| anyhow!("Failed to decode signature"))?;
+
+    minisign::verify(
+        &public_key,
+        &signature_box,
+        std::io::Cursor::new(program_bytes),
+        true,
+        false,
+        false,
+    )
+    .map_err(|_| anyhow!("Signature verification failed"))?;
 
     Ok(())
 }

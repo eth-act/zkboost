@@ -7,13 +7,12 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-minisign-verify = "0.2"
+minisign = "0.7"
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "rt", "rt-multi-thread"] }
 clap = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
-minisign = "0.7"
 assert_cmd = "2.0"
 tempfile = "3.10"
 
