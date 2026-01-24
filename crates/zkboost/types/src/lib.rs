@@ -1,7 +1,7 @@
 //! Shared type definitions for zkboost.
 //!
 //! This crate provides the request and response types used by both the zkboost server
-//! and client for zkVM execution, proving, and verification operations.
+//! and client for zkVM execution, proving, and verification operations
 //!
 //! ## Overview
 //!

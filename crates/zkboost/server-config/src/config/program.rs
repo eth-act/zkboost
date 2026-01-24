@@ -4,8 +4,6 @@ use anyhow::{Context, bail};
 use ere_dockerized::SerializedProgram;
 use serde::{Deserialize, Serialize};
 
-use crate::minisig::verify_minisig;
-
 /// Configuration for how to load a zkVM program.
 ///
 /// Supports multiple formats:
@@ -27,83 +25,32 @@ pub enum ProgramConfig {
 
 impl ProgramConfig {
     /// Load the program from either a local path or remote URL.
-    pub async fn load(&self, verifier_key: Option<&str>) -> anyhow::Result<SerializedProgram> {
-        let (program_bytes, signature) = match self {
+    pub async fn load(&self) -> anyhow::Result<SerializedProgram> {
+        let bytes = match self {
             ProgramConfig::Path(path) | ProgramConfig::ExplicitPath(PathConfig { path }) => {
-                self.load_from_path(path).await?
+                fs::read(path).with_context(|| {
+                    format!("Failed to read program from path: {}", path.display())
+                })?
             }
-            ProgramConfig::Url(UrlConfig { url }) => self.load_from_url(url).await?,
+            ProgramConfig::Url(UrlConfig { url }) => {
+                let response = reqwest::get(url)
+                    .await
+                    .with_context(|| format!("Failed to download program from URL: {url}"))?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    bail!("Failed to download program from URL: {url} (HTTP status: {status})");
+                }
+
+                response
+                    .bytes()
+                    .await
+                    .with_context(|| format!("Failed to read response bytes from URL: {url}"))?
+                    .to_vec()
+            }
         };
-
-        if let Some(key) = verifier_key {
-            let signature =
-                signature.ok_or_else(|| anyhow::anyhow!("Missing signature for verification"))?;
-            verify_minisig(signature.trim(), key, &program_bytes)
-                .with_context(|| "Failed to verify mini-signature")?;
-        }
-
-        Ok(SerializedProgram(program_bytes))
+        Ok(SerializedProgram(bytes))
     }
-
-    async fn load_from_path(
-        &self,
-        path: &std::path::Path,
-    ) -> anyhow::Result<(Vec<u8>, Option<String>)> {
-        let program_bytes = fs::read(path)
-            .with_context(|| format!("Failed to read program from path: {}", path.display()))?;
-
-        let sig_path = path.with_extension(".minisig");
-        let signature = if sig_path.exists() {
-            Some(fs::read_to_string(&sig_path).with_context(|| {
-                format!(
-                    "Failed to read mini-signature from path: {}",
-                    sig_path.display()
-                )
-            })?)
-        } else {
-            None
-        };
-
-        Ok((program_bytes, signature))
-    }
-
-    async fn load_from_url(&self, url: &str) -> anyhow::Result<(Vec<u8>, Option<String>)> {
-        let response = reqwest::get(url)
-            .await
-            .with_context(|| format!("Failed to download program from URL: {url}"))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            bail!("Failed to download program from URL: {url} (HTTP status: {status})");
-        }
-
-        let program_bytes = response
-            .bytes()
-            .await
-            .with_context(|| format!("Failed to read response bytes from URL: {url}"))?
-            .to_vec();
-
-        let sig_url = format!("{url}.minisig");
-        let signature = download_text(&sig_url).await.ok();
-
-        Ok((program_bytes, signature))
-    }
-}
-
-async fn download_text(url: &str) -> anyhow::Result<String> {
-    let response = reqwest::get(url)
-        .await
-        .with_context(|| format!("Failed to download text from URL: {url}"))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        bail!("Failed to download text from URL: {url} (HTTP status: {status})");
-    }
-
-    response
-        .text()
-        .await
-        .with_context(|| format!("Failed to read response text from URL: {url}"))
 }
 
 /// Path configuration for explicit path object.
@@ -177,15 +124,5 @@ mod tests {
     fn test_reject_neither_path_nor_url() {
         let toml = r#"program = {}"#;
         assert!(toml_edit::de::from_str::<TestConfig>(toml).is_err());
-    }
-
-    #[tokio::test]
-    async fn test_load_program() {
-        let config = ProgramConfig::Url(UrlConfig {
-            url: "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/block-encoding-length-airbender".to_string(),
-        });
-        let verifier_key = Some("RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy");
-        let program = config.load(verifier_key).await;
-        assert!(program.is_ok());
     }
 }

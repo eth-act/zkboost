@@ -20,7 +20,5 @@ ere-zkvm-interface.workspace = true
 
 zkboost-types.workspace = true
 
-minisign = "0.8.0"
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

@@ -11,7 +11,7 @@ members = [
     "crates/zkboost-ethereum/el-relayer",
     "crates/zkboost-ethereum/el-types",
 
-    "crates/execution-witness-sentry",
+    "crates/execution-witness-sentry", "crates/zkboost/guest-loader",
 ]
 resolver = "2"
 
@@ -85,6 +85,7 @@ zkboost-client = { path = "crates/zkboost/client" }
 zkboost-server = { path = "crates/zkboost/server" }
 zkboost-server-config = { path = "crates/zkboost/server-config" }
 zkboost-types = { path = "crates/zkboost/types" }
+guest-loader = { path = "crates/zkboost/guest-loader" }
 
 zkboost-ethereum-el-config = { path = "crates/zkboost-ethereum/el-config" }
 zkboost-ethereum-el-input = { path = "crates/zkboost-ethereum/el-input" }

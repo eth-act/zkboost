@@ -82,8 +82,6 @@ pub enum zkVMConfig {
         program_id: ProgramID,
         /// Path to the compiled program binary.
         program: ProgramConfig,
-        /// Optional public key to verify the program signature.
-        publisher_public_key: Option<String>,
     },
     /// External Ere zkVM server configuration
     External {
@@ -173,7 +171,6 @@ mod test {
                     resource: ProverResourceType::Cpu,
                     program_id: "openvm-test".into(),
                     program: ProgramConfig::Path("openvm-test-elf".into()),
-                    publisher_public_key: None,
                 },
                 zkVMConfig::Docker {
                     kind: zkVMKind::SP1,
@@ -185,7 +182,6 @@ mod test {
                     program: ProgramConfig::ExplicitPath(PathConfig {
                         path: "sp1-test-elf".into(),
                     }),
-                    publisher_public_key: None,
                 },
                 zkVMConfig::Docker {
                     kind: zkVMKind::Zisk,
@@ -194,42 +190,12 @@ mod test {
                     program: ProgramConfig::Url(UrlConfig {
                         url: "http://artifact".to_string(),
                     }),
-                    publisher_public_key: None,
                 },
                 zkVMConfig::External {
                     endpoint: "http://remote:3000".to_string(),
                     program_id: "external-test".into(),
                 },
             ],
-        }
-    }
-
-    #[tokio::test]
-    async fn test_config_program_load_integration() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "risc0"
-            resource = "cpu"
-            program_id = "airbender"
-            program = { url = "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/block-encoding-length-airbender" }
-            publisher_public_key = "RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy"
-        "#;
-
-        let config = Config::from_toml_str(toml).expect("Failed to parse config");
-        match &config.zkvm[0] {
-            zkVMConfig::Docker {
-                program,
-                publisher_public_key,
-                ..
-            } => {
-                let result = program.load(publisher_public_key.as_deref()).await;
-                assert!(
-                    result.is_ok(),
-                    "Failed to load/verify program: {:?}",
-                    result.err()
-                );
-            }
-            _ => panic!("Unexpected config type"),
         }
     }
 }
