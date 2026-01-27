@@ -15,6 +15,8 @@
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
+use core::fmt::{self, Display};
+
 pub use ere_zkvm_interface::PublicValues;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,22 @@ impl From<&String> for ProgramID {
 impl From<&str> for ProgramID {
     fn from(s: &str) -> Self {
         ProgramID(s.to_string())
+    }
+}
+
+impl Display for ProgramID {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Unique identifier of the proof generation (UUID).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProofGenId(pub String);
+
+impl Display for ProofGenId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -95,12 +113,20 @@ pub struct ProveRequest {
 
 /// Response from generating a proof for a zkVM program execution.
 ///
-/// Contains the generated proof along with the public outputs and performance metrics.
-#[serde_as]
+/// Returns immediately with a proof generation ID that will be attached when
+/// posting the proof.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProveResponse {
-    /// The unique identifier of the proved program.
-    pub program_id: ProgramID,
+    /// The unique identifier of the proof generation (UUID).
+    pub proof_gen_id: ProofGenId,
+}
+
+/// Proof result send to webhook URL
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProofResult {
+    /// The unique identifier of the proof generation (UUID).
+    pub proof_gen_id: ProofGenId,
     /// The public values output by the program, encoded as base64 when serialized.
     #[serde_as(as = "Base64")]
     pub public_values: PublicValues,
@@ -109,6 +135,8 @@ pub struct ProveResponse {
     pub proof: Vec<u8>,
     /// Proving time in milliseconds.
     pub proving_time_ms: u128,
+    /// Error during proof generation.
+    pub error: Option<String>,
 }
 
 /// Request to verify a proof.

@@ -37,6 +37,7 @@ use crate::app::{AppState, app};
 
 mod app;
 mod metrics;
+mod proof_service;
 
 #[cfg(test)]
 mod mock;
@@ -49,23 +50,12 @@ pub struct Cli {
     /// Config file path.
     #[arg(long)]
     pub config: PathBuf,
-
-    /// Port to listen on.
-    #[arg(long, default_value = "3001")]
-    pub port: u16,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_level(true)
-        .with_thread_names(true)
-        .with_ansi(true)
         .init();
 
     // Initialize Prometheus metrics exporter
@@ -74,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = Config::load(&cli.config)?;
 
-    let state = AppState::new(&config, metrics_handle).await?;
+    let state = AppState::new(&config, &config.webhook_url, metrics_handle).await?;
 
     // Record application metrics
     metrics::set_programs_loaded(state.programs.len());
@@ -82,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
 
     let router = app(state);
 
-    let addr: SocketAddr = format!("0.0.0.0:{}", cli.port).parse()?;
+    let addr: SocketAddr = format!("0.0.0.0:{}", config.port).parse()?;
     info!("zkboost listening on {addr}");
 
     let listener = TcpListener::bind(addr).await?;

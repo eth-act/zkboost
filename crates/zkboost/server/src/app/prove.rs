@@ -1,57 +1,40 @@
-use std::time::Instant;
-
 use axum::{Json, extract::State, http::StatusCode};
-use ere_zkvm_interface::{Input, Proof, ProofKind};
+use ere_zkvm_interface::Input;
 use tracing::instrument;
-use zkboost_types::{ProveRequest, ProveResponse};
+use uuid::Uuid;
+use zkboost_types::{ProofGenId, ProveRequest, ProveResponse};
 
-use crate::{app::AppState, metrics::record_prove};
+use crate::{app::AppState, proof_service::ProofMessage};
 
 /// HTTP handler for the `/prove` endpoint.
 ///
-/// Executes a zkVM program and generates a cryptographic proof.
+/// Queues a proof request and returns immediately with a `ProofGenId`.
 #[instrument(skip_all)]
 pub(crate) async fn prove_program(
     State(state): State<AppState>,
     Json(req): Json<ProveRequest>,
 ) -> Result<Json<ProveResponse>, (StatusCode, String)> {
-    let start = Instant::now();
     let program_id = req.program_id.clone();
 
-    let zkvm = state.programs.get(&program_id).ok_or_else(|| {
-        record_prove(&program_id.0, false, start.elapsed(), 0);
-        (StatusCode::NOT_FOUND, "Program not found".to_string())
+    let proof_tx = state
+        .proof_txs
+        .get(&program_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Program not found".to_string()))?;
+
+    let proof_gen_id = ProofGenId(Uuid::new_v4().to_string());
+
+    let msg = ProofMessage {
+        proof_gen_id: proof_gen_id.clone(),
+        input: Input::new().with_stdin(req.input),
+    };
+    proof_tx.send(msg).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to send proof: {e}"),
+        )
     })?;
 
-    let input = Input::new().with_stdin(req.input);
-
-    let (public_values, proof, report) =
-        zkvm.prove(input, ProofKind::Compressed)
-            .await
-            .map_err(|e| {
-                record_prove(&program_id.0, false, start.elapsed(), 0);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to generate proof: {e}"),
-                )
-            })?;
-
-    let Proof::Compressed(proof) = proof else {
-        record_prove(&program_id.0, false, start.elapsed(), 0);
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Unexpected proof kind: {:?}", proof.kind()),
-        ));
-    };
-
-    record_prove(&program_id.0, true, start.elapsed(), proof.len());
-
-    Ok(Json(ProveResponse {
-        program_id,
-        public_values,
-        proof,
-        proving_time_ms: report.proving_time.as_millis(),
-    }))
+    Ok(Json(ProveResponse { proof_gen_id }))
 }
 
 #[cfg(test)]
@@ -73,8 +56,8 @@ mod tests {
 
         let response = prove_program(State(state), Json(request)).await.unwrap();
 
-        assert_eq!(response.program_id, program_id);
-        assert!(!response.proof.is_empty()); // Check that the proof is not empty
+        // Verify that proof_id is a valid UUID
+        assert!(uuid::Uuid::parse_str(&response.proof_gen_id.0).is_ok());
     }
 
     #[tokio::test]

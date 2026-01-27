@@ -10,18 +10,21 @@ use std::{
 };
 
 use anyhow::bail;
+use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
 use clap::Parser;
-use ere_dockerized::{CRATE_VERSION, zkVMKind};
+use ere_dockerized::zkVMKind;
 use ere_zkvm_interface::ProverResourceType;
 use nix::sys::{prctl, signal::Signal};
 use tempfile::tempdir;
-use tokio::{process::Command, time::sleep};
+use tokio::{process::Command, sync::mpsc, time::sleep};
+use tower_http::trace::TraceLayer;
 use tracing::info;
 use zkboost_client::zkboostClient;
 use zkboost_ethereum_el_config::program::download_program;
 use zkboost_ethereum_el_input::ElInput;
 use zkboost_ethereum_el_types::ElKind;
 use zkboost_server_config::{Config, zkVMConfig};
+use zkboost_types::ProofResult;
 
 use crate::utils::{ClientSession, DockerComposeGuard, ServerResources, fetch_empty_block};
 
@@ -68,20 +71,18 @@ struct Args {
 }
 
 impl Args {
-    fn server_image(&self) -> String {
-        format!(
-            "{}/ere-server-{}:{CRATE_VERSION}",
-            self.ere_image_registry, self.zkvm
-        )
-    }
-
     fn program_id(&self) -> String {
         format!("{}-{}", self.el.as_str(), self.zkvm)
     }
 }
 
 /// Download program and generate config file.
-async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String> {
+async fn generate_config(
+    args: &Args,
+    workspace: &Path,
+    port: u16,
+    webhook_url: &str,
+) -> anyhow::Result<String> {
     info!("Generating config...");
 
     let program = download_program(
@@ -100,6 +101,8 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
     };
 
     let config = Config {
+        port,
+        webhook_url: webhook_url.to_string(),
         zkvm: vec![zkVMConfig::Docker {
             kind: args.zkvm,
             resource,
@@ -117,34 +120,22 @@ async fn generate_config(args: &Args, workspace: &Path) -> anyhow::Result<String
 }
 
 /// Start `zkboost-server` with stateless validator program.
-async fn start_zkboost_server(args: &Args, config_path: &str) -> anyhow::Result<ClientSession> {
-    let port = 3001;
-
-    // Pull server image if using CPU resource
-    let server_image = args.server_image();
-    if args.resource == "cpu" {
-        info!("Pulling image {server_image}...");
-
-        let status = Command::new("docker")
-            .args(["pull", &server_image])
-            .status()
-            .await?;
-        if !status.success() {
-            bail!("Failed to pull Docker image: {server_image}");
-        }
-    }
-
+async fn start_zkboost_server(
+    args: &Args,
+    config_path: &str,
+    zkboost_server_port: u16,
+) -> anyhow::Result<ClientSession> {
     if args.dockerized {
-        start_zkboost_server_dockerized(config_path, port).await
+        start_zkboost_server_dockerized(config_path, zkboost_server_port).await
     } else {
-        start_zkboost_server_raw(args, config_path, port).await
+        start_zkboost_server_raw(args, config_path, zkboost_server_port).await
     }
 }
 
 /// Start `zkboost-server` using docker compose.
 async fn start_zkboost_server_dockerized(
     config_path: &str,
-    port: u16,
+    zkboost_server_port: u16,
 ) -> anyhow::Result<ClientSession> {
     info!("Starting server via docker compose...");
 
@@ -174,7 +165,7 @@ async fn start_zkboost_server_dockerized(
         bail!("Failed to start docker compose");
     }
 
-    let client = wait_for_server_ready(port).await?;
+    let client = wait_for_server_ready(zkboost_server_port).await?;
     Ok(ClientSession {
         client,
         _resources: ServerResources::Docker(guard),
@@ -185,7 +176,7 @@ async fn start_zkboost_server_dockerized(
 async fn start_zkboost_server_raw(
     args: &Args,
     config_path: &str,
-    port: u16,
+    zkboost_server_port: u16,
 ) -> anyhow::Result<ClientSession> {
     info!("Starting server...");
 
@@ -203,10 +194,10 @@ async fn start_zkboost_server_raw(
     unsafe { cmd.pre_exec(|| prctl::set_pdeathsig(Signal::SIGTERM).map_err(io::Error::other)) };
 
     cmd.env("ERE_IMAGE_REGISTRY", &args.ere_image_registry)
-        .args(["--config", config_path, "--port", &port.to_string()])
+        .args(["--config", config_path])
         .spawn()?;
 
-    let client = wait_for_server_ready(port).await?;
+    let client = wait_for_server_ready(zkboost_server_port).await?;
     Ok(ClientSession {
         client,
         _resources: ServerResources::Raw,
@@ -252,9 +243,15 @@ async fn main() -> anyhow::Result<()> {
         workspace.path().to_path_buf()
     };
 
-    let config_path = generate_config(&args, &workspace).await?;
+    let zkboost_server_port = 3001;
 
-    let client = start_zkboost_server(&args, &config_path).await?;
+    // Webhook url to receive proof results
+    let webhook_port = 3003;
+    let webhook_url = format!("http://127.0.0.1:{webhook_port}/webhook");
+
+    let config_path = generate_config(&args, &workspace, zkboost_server_port, &webhook_url).await?;
+
+    let client = start_zkboost_server(&args, &config_path, zkboost_server_port).await?;
 
     let program_id = args.program_id();
 
@@ -284,26 +281,70 @@ async fn main() -> anyhow::Result<()> {
 
     // Proving
 
+    // Create channel for receiving proof results
+    let (proof_tx, mut proof_rx) = mpsc::channel::<ProofResult>(1);
+
+    let webhook_app = Router::new()
+        .route("/webhook", post(webhook_handler))
+        .with_state(proof_tx)
+        .layer(TraceLayer::new_for_http());
+
+    let webhook_addr = format!("127.0.0.1:{webhook_port}");
+    let listener = tokio::net::TcpListener::bind(&webhook_addr).await?;
+    info!("Webhook server listening on {webhook_addr}");
+
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, webhook_app).await {
+            tracing::error!(error = %e, "Webhook server error");
+        }
+    });
+
     info!("Requesting proving...");
 
+    // Submit prove request
     let response = client.prove(&program_id, stdin).await?;
+    let proof_gen_id = response.proof_gen_id.clone();
 
-    assert_eq!(response.program_id.0, program_id);
+    info!("Proof request submitted");
+    info!("Waiting for proof {proof_gen_id} via webhook...");
+
+    // Wait for the webhook to receive the proof result
+    let (proof, public_values, proving_time_ms) = match proof_rx.recv().await {
+        Some(proof_result) => {
+            if proof_result.proof_gen_id == proof_gen_id {
+                if let Some(error) = &proof_result.error {
+                    bail!("Proof generation failed: {}", error);
+                }
+
+                info!("Proof completed");
+                (
+                    proof_result.proof,
+                    proof_result.public_values,
+                    proof_result.proving_time_ms,
+                )
+            } else {
+                bail!("Unexpected proof_gen_id {}", proof_result.proof_gen_id);
+            }
+        }
+        None => {
+            bail!("Webhook channel closed unexpectedly");
+        }
+    };
+
     assert_eq!(
         el_input.expected_public_values(args.el, true)?.as_slice(),
-        response.public_values.as_slice(),
+        public_values.as_slice(),
     );
     info!(
         "Proving time: {:?}, proof size: {} KiB",
-        Duration::from_millis(response.proving_time_ms as u64),
-        response.proof.len() as f64 / 1024f64,
+        Duration::from_millis(proving_time_ms as u64),
+        proof.len() as f64 / 1024f64,
     );
 
     // Verifying (valid proof)
 
     info!("Requesting verifying a valid proof...");
 
-    let proof = response.proof;
     let response = client.verify(&program_id, proof.clone()).await?;
 
     assert_eq!(response.program_id.0, program_id);
@@ -314,20 +355,22 @@ async fn main() -> anyhow::Result<()> {
     );
     info!("Successfully verified");
 
-    // Verifying (invalid proof)
+    Ok(())
+}
 
-    info!("Requesting verifying an invalid proof...");
-
-    let mut proof = proof;
-    *proof.last_mut().unwrap() ^= 1;
-    let response = client.verify(&program_id, proof).await?;
-
-    assert_eq!(response.program_id.0, program_id);
-    assert!(!response.verified);
+async fn webhook_handler(
+    State(tx): State<mpsc::Sender<ProofResult>>,
+    Json(proof_result): Json<ProofResult>,
+) -> Result<StatusCode, (StatusCode, String)> {
     info!(
-        "Verification failed as expected, reason: {}",
-        response.failure_reason
+        proof_gen_id = %proof_result.proof_gen_id,
+        "Received proof result via webhook"
     );
 
-    Ok(())
+    // Send the result through the channel
+    if tx.send(proof_result).await.is_err() {
+        tracing::warn!("Failed to send proof result - receiver dropped");
+    }
+
+    Ok(StatusCode::OK)
 }

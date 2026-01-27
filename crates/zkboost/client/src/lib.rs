@@ -15,11 +15,14 @@
 //! let response = client.execute("my_program", vec![1, 2, 3, 4]).await?;
 //! println!("Execution completed in {} cycles", response.total_num_cycles);
 //!
-//! // Generate a proof
+//! // Request for proof generation
 //! let proof_response = client.prove("my_program", vec![1, 2, 3, 4]).await?;
 //!
+//! // Wait for proof from webhook
+//! let proof = Vec::new();
+//!
 //! // Verify the proof
-//! let verify_response = client.verify("my_program", proof_response.proof).await?;
+//! let verify_response = client.verify("my_program", proof).await?;
 //! assert!(verify_response.verified);
 //! # Ok(())
 //! # }
