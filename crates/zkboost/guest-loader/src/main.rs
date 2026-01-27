@@ -54,10 +54,10 @@ async fn main() -> Result<()> {
 
     println!("Verification successful!");
 
-    if let Some(parent) = args.output.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).await?;
-        }
+    if let Some(parent) = args.output.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent).await?;
     }
     fs::write(&args.output, &program_bytes).await?;
     println!("Verified program written to: {:?}", args.output);

@@ -17,9 +17,23 @@ mod program;
 /// Server configuration loaded from a TOML/YAML file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
+    /// Port to listen on.
+    #[serde(default = "default_port")]
+    pub port: u16,
+    /// Url for sending proof when generated.
+    #[serde(default = "default_webhook_url")]
+    pub webhook_url: String,
     /// List of zkVM programs to load on server startup.
     #[serde(default)]
     pub zkvm: Vec<zkVMConfig>,
+}
+
+fn default_port() -> u16 {
+    3001
+}
+
+fn default_webhook_url() -> String {
+    "http://localhost:3003/proofs".to_string()
 }
 
 impl Config {
@@ -112,6 +126,9 @@ mod test {
     #[test]
     fn test_from_toml_str() {
         let toml = r#"
+            port = 3001
+            webhook_url = "http://localhost:3003/proofs"
+
             [[zkvm]]
             kind = "openvm"
             resource = "cpu"
@@ -140,6 +157,8 @@ mod test {
     #[test]
     fn test_from_yaml_str() {
         let yaml = r#"
+            port: 3001
+            webhook_url: "http://localhost:3003/proofs"
             zkvm:
             - kind: openvm
               resource: cpu
@@ -165,6 +184,8 @@ mod test {
 
     fn sample_config() -> Config {
         Config {
+            port: 3001,
+            webhook_url: "http://localhost:3003/proofs".to_string(),
             zkvm: vec![
                 zkVMConfig::Docker {
                     kind: zkVMKind::OpenVM,

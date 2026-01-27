@@ -13,12 +13,13 @@ anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
 futures.workspace = true
-reqwest = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["json"] }
 sysinfo.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tower-http = { workspace = true, features = ["trace", "limit"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+uuid = { workspace = true, features = ["v4", "serde"] }
 wgpu.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true

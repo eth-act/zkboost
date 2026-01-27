@@ -16,7 +16,8 @@ use ere_zkvm_interface::{
 };
 use futures::future::try_join_all;
 use metrics_exporter_prometheus::PrometheusHandle;
-use reqwest::{StatusCode, Url};
+use reqwest::{Client, StatusCode, Url};
+use tokio::sync::mpsc::Sender;
 use tower_http::trace::TraceLayer;
 use zkboost_server_config::{Config, zkVMConfig};
 use zkboost_types::ProgramID;
@@ -26,6 +27,7 @@ use crate::{
         execute::execute_program, info::get_server_info, prove::prove_program, verify::verify_proof,
     },
     metrics::http_metrics_middleware,
+    proof_service::{ProofMessage, ProofService},
 };
 
 mod execute;
@@ -38,6 +40,8 @@ mod verify;
 pub(crate) struct AppState {
     /// Map of program IDs to their corresponding zkVM instances.
     pub(crate) programs: Arc<HashMap<ProgramID, zkVMInstance>>,
+    /// Map of program IDs to proof service message sender.
+    pub(crate) proof_txs: Arc<HashMap<ProgramID, Sender<ProofMessage>>>,
     /// Prometheus metrics handle for rendering metrics.
     pub(crate) metrics: PrometheusHandle,
 }
@@ -46,13 +50,33 @@ impl AppState {
     /// Creates a new application state from configuration.
     ///
     /// Loads all configured zkVM programs and initializes their instances.
-    pub(crate) async fn new(config: &Config, metrics: PrometheusHandle) -> anyhow::Result<Self> {
+    pub(crate) async fn new(
+        config: &Config,
+        webhook_url: &str,
+        metrics: PrometheusHandle,
+    ) -> anyhow::Result<Self> {
         let zkvms = try_join_all(config.zkvm.iter().map(init_zkvm)).await?;
-        let programs = zip(&config.zkvm, zkvms)
-            .map(|(config, zkvm)| (config.program_id().clone(), zkvm))
-            .collect();
+        let http_client = Client::new();
+        let mut proof_txs = HashMap::new();
+        let mut programs = HashMap::new();
+        for (zkvm_config, zkvm) in zip(&config.zkvm, zkvms) {
+            let program_id = zkvm_config.program_id().clone();
+            let (proof_service, proof_tx) = ProofService::new(
+                program_id.clone(),
+                zkvm.clone(),
+                http_client.clone(),
+                webhook_url.to_string(),
+            );
+
+            proof_service.start_service();
+
+            proof_txs.insert(program_id.clone(), proof_tx);
+            programs.insert(program_id, zkvm);
+        }
+
         Ok(Self {
             programs: Arc::new(programs),
+            proof_txs: Arc::new(proof_txs),
             metrics,
         })
     }
@@ -60,6 +84,7 @@ impl AppState {
 
 /// zkVM instance, either dockerized zkVM or external Ere server.
 #[allow(non_camel_case_types)]
+#[derive(Clone)]
 pub(crate) enum zkVMInstance {
     /// Dockerized zkVM managed by zkboost.
     Docker {
