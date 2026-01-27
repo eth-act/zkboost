@@ -1,0 +1,30 @@
+FROM rust:1.88.0-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libclang-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN --mount=type=cache,sharing=locked,target=/app/target/ \
+    --mount=type=cache,sharing=locked,target=/usr/local/cargo/git/db \
+    --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry/ \
+    cargo build --release --bin execution-witness-sentry && \
+    cp /app/target/release/execution-witness-sentry /app/execution-witness-sentry
+
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    ca-certificates \
+    curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/execution-witness-sentry /usr/local/bin/execution-witness-sentry
+
+ENTRYPOINT ["/usr/local/bin/execution-witness-sentry"]

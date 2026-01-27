@@ -1,4 +1,5 @@
-target
+target/
+local/
 notes.md
 .env
 .vscode
