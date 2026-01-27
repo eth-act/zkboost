@@ -1,3 +1,9 @@
+//! Background proof generation service with webhook delivery.
+//!
+//! This module provides asynchronous proof generation that runs in background tasks.
+//! When a proof request is received, it is queued and processed asynchronously.
+//! Upon completion (success or failure), the result is POSTed to a configured webhook URL.
+
 use std::time::{Duration, Instant};
 
 use ere_zkvm_interface::{Input, Proof, ProofKind};
@@ -8,28 +14,46 @@ use zkboost_types::{ProgramID, ProofGenId, ProofResult};
 
 use crate::{app::zkVMInstance, metrics::record_prove};
 
+/// Message sent to the proof service to request proof generation.
 #[derive(Debug)]
 pub(crate) struct ProofMessage {
+    /// Unique identifier for tracking this proof generation request.
     pub proof_gen_id: ProofGenId,
+    /// Input data for the zkVM program execution.
     pub input: Input,
 }
 
+/// Background service that processes proof generation requests asynchronously.
+///
+/// Each `ProofService` instance is associated with a specific program and runs
+/// as a background task. It receives proof requests via an mpsc channel,
+/// generates proofs using the configured zkVM instance, and delivers results
+/// to a webhook URL with automatic retry on failure.
 pub(crate) struct ProofService {
+    /// Identifier of the program this service generates proofs for.
     program_id: ProgramID,
+    /// zkVM instance used for proof generation.
     zkvm: zkVMInstance,
+    /// Channel receiver for incoming proof requests.
     proof_rx: mpsc::Receiver<ProofMessage>,
+    /// HTTP client for webhook delivery.
     http_client: Client,
+    /// URL to POST proof results to upon completion.
     webhook_url: String,
 }
 
 impl ProofService {
+    /// Creates a new proof service and returns the sender for submitting proof requests.
+    ///
+    /// The returned `mpsc::Sender` should be used to submit `ProofMessage`s for processing.
+    /// The channel has a buffer capacity of 128 messages.
     pub(crate) fn new(
         program_id: ProgramID,
         zkvm: zkVMInstance,
         http_client: Client,
         webhook_url: String,
     ) -> (Self, mpsc::Sender<ProofMessage>) {
-        let (proof_tx, proof_rx) = mpsc::channel(100);
+        let (proof_tx, proof_rx) = mpsc::channel(128);
 
         (
             Self {
@@ -43,6 +67,10 @@ impl ProofService {
         )
     }
 
+    /// Starts the background proof generation service.
+    ///
+    /// This consumes the service and spawns a background task that continuously
+    /// processes incoming proof requests until the channel is closed.
     pub(crate) fn start_service(mut self) {
         tokio::spawn(async move {
             tracing::info!(
@@ -61,6 +89,10 @@ impl ProofService {
         });
     }
 
+    /// Processes a single proof generation request.
+    ///
+    /// Generates a compressed proof using the zkVM instance, records metrics,
+    /// and delivers the result to the webhook URL.
     async fn process_proof(&self, msg: ProofMessage, zkvm: &zkVMInstance) {
         let start = Instant::now();
 
@@ -97,6 +129,10 @@ impl ProofService {
         .await;
     }
 
+    /// Posts the proof result to the configured webhook URL with retry logic.
+    ///
+    /// Attempts up to 3 times with exponential backoff (1s, 2s delays between attempts).
+    /// Stops retrying early on client errors (4xx status codes).
     async fn post_webhook(&self, proof_result: ProofResult) {
         const MAX_ATTEMPT: u32 = 3;
 
