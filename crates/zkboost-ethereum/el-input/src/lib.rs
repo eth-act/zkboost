@@ -32,17 +32,18 @@ impl ElInput {
     /// # Arguments
     ///
     /// * `el` - The execution layer kind (Reth or Ethrex)
+    /// * `valid_block` - Whether this is expected to be a valid block
     ///
     /// # Returns
     ///
     /// [`Input`] for the zkVM methods of the specified EL guest program.
-    pub fn to_zkvm_input(&self, el: ElKind) -> anyhow::Result<Input> {
+    pub fn to_zkvm_input(&self, el: ElKind, valid_block: bool) -> anyhow::Result<Input> {
         let stdin = match el {
             ElKind::Ethrex => StatelessValidatorEthrexIo::serialize_input(
-                &StatelessValidatorEthrexInput::new(&self.stateless_input)?,
+                &StatelessValidatorEthrexInput::new(&self.stateless_input, valid_block)?,
             )?,
             ElKind::Reth => StatelessValidatorRethIo::serialize_input(
-                &StatelessValidatorRethInput::new(&self.stateless_input)?,
+                &StatelessValidatorRethInput::new(&self.stateless_input, valid_block)?,
             )?,
         };
         Ok(Input::new().with_prefixed_stdin(stdin))
@@ -50,12 +51,25 @@ impl ElInput {
 
     /// Returns expected sha256 hash of output given the EL and whether the
     /// stateless validation is successful or not.
-    pub fn expected_public_values(&self, el: ElKind, success: bool) -> anyhow::Result<[u8; 32]> {
-        let output = StatelessValidatorOutput::new(
-            self.stateless_input.block.hash_slow().0,
-            self.stateless_input.block.parent_hash.0,
-            success,
-        );
+    pub fn expected_public_values(
+        &self,
+        el: ElKind,
+        valid_block: bool,
+    ) -> anyhow::Result<[u8; 32]> {
+        let new_payload_request = match el {
+            ElKind::Ethrex => {
+                StatelessValidatorEthrexInput::new(&self.stateless_input, valid_block)?
+                    .new_payload_request
+            }
+            ElKind::Reth => {
+                StatelessValidatorRethInput::new(&self.stateless_input, valid_block)?
+                    .new_payload_request
+            }
+        };
+        let output = StatelessValidatorOutput {
+            new_payload_request_root: new_payload_request.tree_hash_root(),
+            successful_block_validation: valid_block,
+        };
         let serialized_output = match el {
             ElKind::Ethrex => StatelessValidatorEthrexIo::serialize_output(&output)?,
             ElKind::Reth => StatelessValidatorRethIo::serialize_output(&output)?,

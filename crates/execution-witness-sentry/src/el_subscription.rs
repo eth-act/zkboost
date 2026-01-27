@@ -8,6 +8,7 @@ use std::{
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_eth::Header;
 use futures::Stream;
+use url::Url;
 
 use crate::error::{Error, Result};
 
@@ -29,8 +30,8 @@ impl<P: Send> Stream for BlockSubscription<P> {
 }
 
 /// Subscribe to new block headers via WebSocket.
-pub async fn subscribe_blocks(ws_url: &str) -> Result<impl Stream<Item = Result<Header>> + Send> {
-    let ws = WsConnect::new(ws_url);
+pub async fn subscribe_blocks(ws_url: &Url) -> Result<impl Stream<Item = Result<Header>> + Send> {
+    let ws = WsConnect::new(ws_url.as_str());
     let provider = ProviderBuilder::new()
         .connect_ws(ws)
         .await

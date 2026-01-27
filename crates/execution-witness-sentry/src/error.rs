@@ -42,7 +42,7 @@ pub enum Error {
 
     /// TOML parsing error.
     #[error("TOML parse error: {0}")]
-    Toml(#[from] toml::de::Error),
+    Toml(#[from] toml_edit::de::Error),
 
     /// SSE connection error.
     #[error("SSE error: {0}")]
