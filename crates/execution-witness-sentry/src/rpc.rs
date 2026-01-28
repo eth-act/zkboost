@@ -1,13 +1,18 @@
 //! JSON-RPC client for execution layer nodes.
 
-use alloy_rpc_types_eth::Block;
-use serde::{Deserialize, Serialize};
+use alloy_genesis::ChainConfig;
+use reth_ethereum_primitives::{Block, TransactionSigned};
+use reth_stateless::ExecutionWitness;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use url::Url;
+use zkboost_client::zkboostClient;
+use zkboost_ethereum_el_input::ElInput;
+use zkboost_ethereum_el_types::ElProofType;
+use zkboost_types::ProofGenId;
 
-use crate::{
-    error::{Error, Result},
-    storage::compress_gzip,
-};
+use crate::error::{Error, Result};
+
+pub type Hash256 = alloy_primitives::B256;
 
 /// JSON-RPC request structure.
 #[derive(Debug, Clone, Serialize)]
@@ -54,12 +59,24 @@ impl ElClient {
         &self.name
     }
 
-    /// Fetch a block by hash. Returns the block and its gzipped JSON.
-    pub async fn get_block_by_hash(&self, block_hash: &str) -> Result<Option<(Block, Vec<u8>)>> {
+    /// Return url of the EL client.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    /// Send a JSON-RPC request to the execution layer node.
+    ///
+    /// Serializes the request, sends it to the endpoint, and deserializes the response.
+    /// Returns `None` if the RPC response has a null `result`.
+    async fn request<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &'static str,
+        params: P,
+    ) -> Result<Option<R>> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
-            method: "eth_getBlockByHash",
-            params: (block_hash, false),
+            method,
+            params,
             id: 1,
         };
 
@@ -77,7 +94,7 @@ impl ElClient {
             });
         }
 
-        let rpc_response: JsonRpcResponse<Block> = response.json().await?;
+        let rpc_response: JsonRpcResponse<R> = response.json().await?;
 
         if let Some(error) = rpc_response.error {
             return Err(Error::Rpc {
@@ -87,58 +104,31 @@ impl ElClient {
         }
 
         match rpc_response.result {
-            Some(block) => {
-                let json_bytes = serde_json::to_vec(&block)?;
-                let gzipped = compress_gzip(&json_bytes)?;
-                Ok(Some((block, gzipped)))
-            }
+            Some(config) => Ok(Some(config)),
             None => Ok(None),
         }
+    }
+
+    /// Fetch chain config.
+    pub async fn get_chain_config(&self) -> Result<Option<ChainConfig>> {
+        self.request("debug_chainConfig", ()).await
+    }
+
+    /// Fetch a block by hash. Returns the block and its gzipped JSON.
+    pub async fn get_block_by_hash(&self, block_hash: Hash256) -> Result<Option<Block>> {
+        let block: Option<alloy_rpc_types_eth::Block<TransactionSigned>> = self
+            .request("eth_getBlockByHash", (block_hash, false))
+            .await?;
+        Ok(block.map(|block| block.into_consensus()))
     }
 
     /// Fetch execution witness for a block. Returns the witness and its gzipped JSON.
     pub async fn get_execution_witness_by_hash(
         &self,
-        block_hash: &str,
-    ) -> Result<Option<(serde_json::Value, Vec<u8>)>> {
-        let request = JsonRpcRequest {
-            jsonrpc: "2.0",
-            method: "debug_executionWitnessByBlockHash",
-            params: (block_hash,),
-            id: 1,
-        };
-
-        let response = self
-            .http_client
-            .post(self.url.clone())
-            .json(&request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(Error::Rpc {
-                code: response.status().as_u16() as i64,
-                message: response.text().await.unwrap_or_default(),
-            });
-        }
-
-        let rpc_response: JsonRpcResponse<serde_json::Value> = response.json().await?;
-
-        if let Some(error) = rpc_response.error {
-            return Err(Error::Rpc {
-                code: error.code,
-                message: error.message,
-            });
-        }
-
-        match rpc_response.result {
-            Some(witness) => {
-                let json_bytes = serde_json::to_vec(&witness)?;
-                let gzipped = compress_gzip(&json_bytes)?;
-                Ok(Some((witness, gzipped)))
-            }
-            None => Ok(None),
-        }
+        block_hash: Hash256,
+    ) -> Result<Option<ExecutionWitness>> {
+        self.request("debug_executionWitnessByBlockHash", (block_hash,))
+            .await
     }
 }
 
@@ -147,8 +137,8 @@ impl ElClient {
 pub struct ExecutionProof {
     pub proof_id: u8,
     pub slot: u64,
-    pub block_hash: String,
-    pub block_root: String,
+    pub block_hash: Hash256,
+    pub block_root: Hash256,
     pub proof_data: Vec<u8>,
 }
 
@@ -187,7 +177,7 @@ pub struct BlockBody {
 /// Execution payload (minimal fields).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecutionPayload {
-    pub block_hash: String,
+    pub block_hash: Hash256,
 }
 
 /// Syncing status response.
@@ -199,7 +189,8 @@ pub struct SyncingResponse {
 /// Syncing status data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SyncingData {
-    pub head_slot: String,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub head_slot: u64,
     pub is_syncing: bool,
     pub is_optimistic: Option<bool>,
 }
@@ -213,7 +204,7 @@ pub struct BlockHeaderResponse {
 /// Block header data.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlockHeaderData {
-    pub root: String,
+    pub root: Hash256,
 }
 
 /// Node identity response.
@@ -299,7 +290,7 @@ impl ClClient {
     }
 
     /// Get the execution block hash for a beacon block.
-    pub async fn get_block_execution_hash(&self, block_root: &str) -> Result<Option<String>> {
+    pub async fn get_block_execution_hash(&self, block_root: Hash256) -> Result<Option<Hash256>> {
         let url = self
             .url
             .join(&format!("eth/v2/beacon/blocks/{block_root}"))?;
@@ -321,16 +312,23 @@ impl ClClient {
     /// Get the current head slot.
     pub async fn get_head_slot(&self) -> Result<u64> {
         let syncing = self.get_syncing().await?;
-        syncing
-            .data
-            .head_slot
-            .parse()
-            .map_err(|e| Error::Config(format!("Invalid head slot: {e}")))
+        Ok(syncing.data.head_slot)
     }
 
     /// Get block info (slot, block_root, execution_block_hash) for a given slot.
     /// Returns None if the slot is empty (no block).
     pub async fn get_block_info(&self, slot: u64) -> Result<Option<BlockInfo>> {
+        // Get the block root from headers endpoint first
+        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
+        let header_response = self.http_client.get(header_url).send().await?;
+
+        if header_response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let header: BlockHeaderResponse = header_response.json().await?;
+        let block_root = header.data.root;
+
         let url = self.url.join(&format!("eth/v2/beacon/blocks/{slot}"))?;
         let response = self.http_client.get(url).send().await?;
 
@@ -353,19 +351,9 @@ impl ClClient {
             .execution_payload
             .map(|p| p.block_hash);
 
-        // Get the block root from headers endpoint
-        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
-        let header_response = self.http_client.get(header_url).send().await?;
-
-        if header_response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-
-        let header: BlockHeaderResponse = header_response.json().await?;
-
         Ok(Some(BlockInfo {
             slot,
-            block_root: header.data.root,
+            block_root,
             execution_block_hash,
         }))
     }
@@ -375,8 +363,8 @@ impl ClClient {
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
     pub slot: u64,
-    pub block_root: String,
-    pub execution_block_hash: Option<String>,
+    pub block_root: Hash256,
+    pub execution_block_hash: Option<Hash256>,
 }
 
 /// The ENR field specifying whether zkVM execution proofs are enabled.
@@ -397,18 +385,49 @@ fn enr_has_zkvm(enr_str: &str) -> bool {
     }
 }
 
-/// Generate random proof bytes.
-pub fn generate_random_proof(proof_id: u32) -> Vec<u8> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64;
+/// Client for communicating with a proof engine.
+pub struct ProofEngineClient {
+    /// URL of the proof engine.
+    pub url: Url,
+    /// Proof types supported by this engine.
+    pub proof_types: Vec<ElProofType>,
+    /// Underlying client for API calls.
+    client: zkboostClient,
+}
 
-    let mut proof = vec![0u8; 32];
-    for (i, byte) in proof.iter_mut().enumerate() {
-        *byte = ((seed >> (i % 8)) ^ (i as u64)) as u8;
+impl ProofEngineClient {
+    /// Create a new proof engine client.
+    pub fn new(url: Url, proof_types: Vec<ElProofType>) -> anyhow::Result<Self> {
+        let client = zkboostClient::new(url.clone())?;
+        Ok(Self {
+            url,
+            proof_types,
+            client,
+        })
     }
-    proof[31] = proof_id as u8;
-    proof
+
+    /// Return the proof types supported by this engine.
+    pub fn proof_types(&self) -> &[ElProofType] {
+        &self.proof_types
+    }
+
+    /// Submit a proof generation request to the zkboost server.
+    ///
+    /// Converts the execution input to zkVM format and submits it to the
+    /// configured proof engine. Returns a proof generation ID that can be
+    /// used to identity webhook callbacks.
+    pub async fn request_proof(
+        &self,
+        proof_type: &ElProofType,
+        el_input: &ElInput,
+    ) -> anyhow::Result<ProofGenId> {
+        Ok(self
+            .client
+            .prove(
+                proof_type.to_string(),
+                el_input.to_zkvm_input(proof_type.el(), true)?.stdin,
+            )
+            .await?
+            .proof_gen_id)
+    }
 }

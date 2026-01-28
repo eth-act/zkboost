@@ -52,15 +52,12 @@ jobs:
           - ethrex
           - reth
         zkvm:
-          - airbender
           - openvm
           - pico
           - risc0
           - sp1
           - zisk
         exclude:
-          - el: ethrex
-            zkvm: airbender
           - el: ethrex
             zkvm: openvm
           - el: ethrex

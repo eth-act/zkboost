@@ -114,7 +114,7 @@ dependencies = [
  "k256",
  "once_cell",
  "rand 0.8.5",
- "secp256k1",
+ "secp256k1 0.30.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -192,6 +192,8 @@ dependencies = [
  "c-kzg",
  "derive_more 2.1.0",
  "either",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "serde",
  "serde_with",
  "sha2",
@@ -208,9 +210,13 @@ dependencies = [
  "alloy-eips",
  "alloy-hardforks",
  "alloy-primitives",
+ "alloy-rpc-types-engine",
+ "alloy-rpc-types-eth",
  "alloy-sol-types",
  "auto_impl",
  "derive_more 2.1.0",
+ "op-alloy",
+ "op-revm",
  "revm",
  "thiserror 2.0.17",
 ]
@@ -479,7 +485,12 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "alloy-rlp",
+ "alloy-serde",
  "derive_more 2.1.0",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "rand 0.8.5",
+ "serde",
  "strum",
 ]
 
@@ -692,7 +703,7 @@ version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "333544408503f42d7d3792bfc0f7218b643d968a03d2c0ed383ae558fb4a76d0"
 dependencies = [
- "darling",
+ "darling 0.21.3",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -783,6 +794,7 @@ checksum = "d69eab57e8d2663efa5c63135b2af4f396d66424f88954c21104125ab6b3e6bc"
 dependencies = [
  "ark-ec",
  "ark-ff 0.5.0",
+ "ark-r1cs-std",
  "ark-std 0.5.0",
 ]
 
@@ -946,6 +958,35 @@ dependencies = [
  "educe",
  "fnv",
  "hashbrown 0.15.5",
+]
+
+[[package]]
+name = "ark-r1cs-std"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "941551ef1df4c7a401de7068758db6503598e6f01850bdb2cfdb614a1f9dbea1"
+dependencies = [
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-relations",
+ "ark-std 0.5.0",
+ "educe",
+ "num-bigint 0.4.6",
+ "num-integer",
+ "num-traits",
+ "tracing",
+]
+
+[[package]]
+name = "ark-relations"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec46ddc93e7af44bcab5230937635b06fb5744464dd6a7e7b083e80ebd274384"
+dependencies = [
+ "ark-ff 0.5.0",
+ "ark-std 0.5.0",
+ "tracing",
+ "tracing-subscriber 0.2.25",
 ]
 
 [[package]]
@@ -1251,6 +1292,12 @@ dependencies = [
  "quote",
  "syn 2.0.111",
 ]
+
+[[package]]
+name = "az"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be5eb007b7cacc6c660343e96f650fedf4b5a77512399eb952ca6642cf8d13f7"
 
 [[package]]
 name = "base16ct"
@@ -2066,12 +2113,36 @@ dependencies = [
 
 [[package]]
 name = "darling"
+version = "0.20.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc7f46116c46ff9ab3eb1597a45688b6715c6e628b5c133e288e709a29bcb4ee"
+dependencies = [
+ "darling_core 0.20.11",
+ "darling_macro 0.20.11",
+]
+
+[[package]]
+name = "darling"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
 dependencies = [
- "darling_core",
- "darling_macro",
+ "darling_core 0.21.3",
+ "darling_macro 0.21.3",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.20.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -2091,11 +2162,22 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
+version = "0.20.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
+dependencies = [
+ "darling_core 0.20.11",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
+name = "darling_macro"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
 dependencies = [
- "darling_core",
+ "darling_core 0.21.3",
  "quote",
  "syn 2.0.111",
 ]
@@ -2479,16 +2561,16 @@ dependencies = [
 
 [[package]]
 name = "ere-build-utils"
-version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b#a9fb04dea82e658b900bf09fdf8a816fa4eec59b"
+version = "0.1.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
 dependencies = [
  "cargo_metadata",
 ]
 
 [[package]]
 name = "ere-common"
-version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b#a9fb04dea82e658b900bf09fdf8a816fa4eec59b"
+version = "0.1.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
 dependencies = [
  "ere-build-utils",
  "serde",
@@ -2497,13 +2579,13 @@ dependencies = [
 
 [[package]]
 name = "ere-dockerized"
-version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b#a9fb04dea82e658b900bf09fdf8a816fa4eec59b"
+version = "0.1.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
 dependencies = [
  "anyhow",
  "ere-common",
  "ere-server",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "serde",
  "tempfile",
  "thiserror 2.0.17",
@@ -2531,33 +2613,17 @@ dependencies = [
 
 [[package]]
 name = "ere-server"
-version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b#a9fb04dea82e658b900bf09fdf8a816fa4eec59b"
+version = "0.1.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "prost",
  "serde",
  "thiserror 2.0.17",
  "tokio",
  "twirp",
-]
-
-[[package]]
-name = "ere-zkvm-interface"
-version = "0.0.16"
-source = "git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b#a9fb04dea82e658b900bf09fdf8a816fa4eec59b"
-dependencies = [
- "anyhow",
- "auto_impl",
- "bincode 2.0.1",
- "clap",
- "indexmap 2.12.1",
- "serde",
- "serde-untagged",
- "strum",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -2570,6 +2636,22 @@ dependencies = [
  "bincode 2.0.1",
  "indexmap 2.12.1",
  "serde",
+ "strum",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "ere-zkvm-interface"
+version = "0.1.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
+dependencies = [
+ "anyhow",
+ "auto_impl",
+ "bincode 2.0.1",
+ "clap",
+ "indexmap 2.12.1",
+ "serde",
+ "serde-untagged",
  "strum",
  "thiserror 2.0.17",
 ]
@@ -2615,6 +2697,57 @@ dependencies = [
  "impl-serde",
  "primitive-types 0.13.1",
  "uint 0.10.0",
+]
+
+[[package]]
+name = "ethereum_hashing"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c853bd72c9e5787f8aafc3df2907c2ed03cff3150c3acd94e2e53a98ab70a8ab"
+dependencies = [
+ "cpufeatures",
+ "ring",
+ "sha2",
+]
+
+[[package]]
+name = "ethereum_serde_utils"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3dc1355dbb41fbbd34ec28d4fb2a57d9a70c67ac3c19f6a5ca4d4a176b9e997a"
+dependencies = [
+ "alloy-primitives",
+ "hex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+]
+
+[[package]]
+name = "ethereum_ssz"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dcddb2554d19cde19b099fadddde576929d7a4d0c1cd3512d1fd95cf174375c"
+dependencies = [
+ "alloy-primitives",
+ "ethereum_serde_utils",
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
+ "smallvec",
+ "typenum",
+]
+
+[[package]]
+name = "ethereum_ssz_derive"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a657b6b3b7e153637dc6bdc6566ad9279d9ee11a15b12cfb24a2e04360637e9f"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -2749,7 +2882,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -2780,7 +2913,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "rustc-hash 2.1.1",
- "secp256k1",
+ "secp256k1 0.30.0",
  "serde",
  "serde_json",
  "sha2",
@@ -2832,7 +2965,7 @@ dependencies = [
  "jsonwebtoken",
  "rand 0.8.5",
  "reqwest",
- "secp256k1",
+ "secp256k1 0.30.0",
  "serde",
  "serde_json",
  "sha2",
@@ -2843,7 +2976,7 @@ dependencies = [
  "tokio-util",
  "tower-http",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.22",
  "uuid",
 ]
 
@@ -2946,23 +3079,39 @@ dependencies = [
 name = "execution-witness-sentry"
 version = "0.1.0"
 dependencies = [
+ "alloy-genesis",
+ "alloy-primitives",
  "alloy-provider",
+ "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
  "anyhow",
+ "axum",
  "clap",
  "discv5",
+ "ere-common",
+ "ethereum_serde_utils",
  "eventsource-client",
  "flate2",
  "futures",
+ "lru 0.12.5",
  "reqwest",
+ "reth-chainspec",
+ "reth-ethereum-primitives",
+ "reth-stateless",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "tokio",
- "toml",
+ "tokio-util",
+ "toml_edit 0.24.0+spec-1.1.0",
+ "tower-http",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.22",
  "url",
+ "zkboost-client",
+ "zkboost-ethereum-el-input",
+ "zkboost-ethereum-el-types",
+ "zkboost-types",
 ]
 
 [[package]]
@@ -3339,6 +3488,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gmp-mpfr-sys"
+version = "1.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60f8970a75c006bb2f8ae79c6768a116dd215fa8346a87aed99bf9d82ca43394"
+dependencies = [
+ "libc",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "gpu-alloc"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3402,8 +3561,8 @@ dependencies = [
 
 [[package]]
 name = "guest"
-version = "0.2.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.2.0#aa1fb2583801a6bac6e199a867a106cef669e1b0"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
  "ere-io",
  "ere-platform-trait",
@@ -4844,6 +5003,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -4918,6 +5078,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "op-alloy"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3b13412d297c1f9341f678b763750b120a73ffe998fa54a94d6eda98449e7ca"
+dependencies = [
+ "op-alloy-consensus",
+ "op-alloy-network",
+ "op-alloy-provider",
+ "op-alloy-rpc-types",
+ "op-alloy-rpc-types-engine",
+]
+
+[[package]]
 name = "op-alloy-consensus"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4925,13 +5098,97 @@ checksum = "726da827358a547be9f1e37c2a756b9e3729cb0350f43408164794b370cad8ae"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
+ "alloy-network",
  "alloy-primitives",
  "alloy-rlp",
+ "alloy-rpc-types-eth",
  "alloy-serde",
  "derive_more 2.1.0",
  "serde",
  "serde_with",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "op-alloy-network"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63f27e65be273ec8fcb0b6af0fd850b550979465ab93423705ceb3dfddbd2ab"
+dependencies = [
+ "alloy-consensus",
+ "alloy-network",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types-eth",
+ "alloy-signer",
+ "op-alloy-consensus",
+ "op-alloy-rpc-types",
+]
+
+[[package]]
+name = "op-alloy-provider"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a71456699aa256dc20119736422ad9a44da8b9585036117afb936778122093b9"
+dependencies = [
+ "alloy-network",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types-engine",
+ "alloy-transport",
+ "async-trait",
+ "op-alloy-rpc-types-engine",
+]
+
+[[package]]
+name = "op-alloy-rpc-types"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "562dd4462562c41f9fdc4d860858c40e14a25df7f983ae82047f15f08fce4d19"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-network-primitives",
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "alloy-serde",
+ "derive_more 2.1.0",
+ "op-alloy-consensus",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "op-alloy-rpc-types-engine"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8f24b8cb66e4b33e6c9e508bf46b8ecafc92eadd0b93fedd306c0accb477657"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-primitives",
+ "alloy-rlp",
+ "alloy-rpc-types-engine",
+ "alloy-serde",
+ "derive_more 2.1.0",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "op-alloy-consensus",
+ "serde",
+ "snap",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "op-revm"
+version = "14.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1475a779c73999fc803778524042319691b31f3d6699d2b560c4ed8be1db802a"
+dependencies = [
+ "auto_impl",
+ "revm",
+ "serde",
 ]
 
 [[package]]
@@ -6068,6 +6325,7 @@ dependencies = [
  "alloy-primitives",
  "auto_impl",
  "once_cell",
+ "rustc-hash 2.1.1",
 ]
 
 [[package]]
@@ -6083,6 +6341,7 @@ dependencies = [
  "alloy-serde",
  "reth-codecs",
  "reth-primitives-traits",
+ "reth-zstd-compressors",
  "serde",
  "serde_with",
 ]
@@ -6164,9 +6423,20 @@ source = "git+https://github.com/paradigmxyz/reth?rev=cfde951976bfa9100a6d9f806e
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
+ "secp256k1 0.30.0",
  "serde_with",
  "thiserror 2.0.17",
  "url",
+]
+
+[[package]]
+name = "reth-payload-validator"
+version = "1.9.3"
+source = "git+https://github.com/paradigmxyz/reth?rev=cfde951976bfa9100a6d9f806e06fb539ae25241#cfde951976bfa9100a6d9f806e06fb539ae25241"
+dependencies = [
+ "alloy-consensus",
+ "alloy-rpc-types-engine",
+ "reth-primitives-traits",
 ]
 
 [[package]]
@@ -6190,7 +6460,7 @@ dependencies = [
  "revm-bytecode",
  "revm-primitives",
  "revm-state",
- "secp256k1",
+ "secp256k1 0.30.0",
  "serde",
  "serde_with",
  "thiserror 2.0.17",
@@ -6390,6 +6660,7 @@ dependencies = [
  "revm-database-interface",
  "revm-primitives",
  "revm-state",
+ "serde",
 ]
 
 [[package]]
@@ -6405,6 +6676,7 @@ dependencies = [
  "revm-database-interface",
  "revm-primitives",
  "revm-state",
+ "serde",
 ]
 
 [[package]]
@@ -6413,10 +6685,12 @@ version = "9.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "980d8d6bba78c5dd35b83abbb6585b0b902eb25ea4448ed7bfba6283b0337191"
 dependencies = [
+ "alloy-eips",
  "revm-bytecode",
  "revm-database-interface",
  "revm-primitives",
  "revm-state",
+ "serde",
 ]
 
 [[package]]
@@ -6429,6 +6703,7 @@ dependencies = [
  "either",
  "revm-primitives",
  "revm-state",
+ "serde",
 ]
 
 [[package]]
@@ -6447,6 +6722,7 @@ dependencies = [
  "revm-precompile",
  "revm-primitives",
  "revm-state",
+ "serde",
 ]
 
 [[package]]
@@ -6463,6 +6739,8 @@ dependencies = [
  "revm-interpreter",
  "revm-primitives",
  "revm-state",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6475,6 +6753,7 @@ dependencies = [
  "revm-context-interface",
  "revm-primitives",
  "revm-state",
+ "serde",
 ]
 
 [[package]]
@@ -6490,11 +6769,14 @@ dependencies = [
  "ark-serialize 0.5.0",
  "arrayref",
  "aurora-engine-modexp",
+ "c-kzg",
  "cfg-if 1.0.4",
  "k256",
  "p256",
  "revm-primitives",
  "ripemd",
+ "rug",
+ "secp256k1 0.31.1",
  "sha2",
 ]
 
@@ -6624,6 +6906,18 @@ checksum = "a7cc970b249fbe527d6e02e0a227762c9108b2f49d81094fe357ffc6d14d7f6f"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rug"
+version = "1.28.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de190ec858987c79cad4da30e19e546139b3339331282832af004d0ea7829639"
+dependencies = [
+ "az",
+ "gmp-mpfr-sys",
+ "libc",
+ "libm",
 ]
 
 [[package]]
@@ -6946,8 +7240,19 @@ checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
 dependencies = [
  "bitcoin_hashes",
  "rand 0.8.5",
- "secp256k1-sys",
+ "secp256k1-sys 0.10.1",
  "serde",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c3c81b43dc2d8877c216a3fccf76677ee1ebccd429566d3e67447290d0c42b2"
+dependencies = [
+ "bitcoin_hashes",
+ "rand 0.9.2",
+ "secp256k1-sys 0.11.0",
 ]
 
 [[package]]
@@ -6955,6 +7260,15 @@ name = "secp256k1-sys"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcb913707158fadaf0d8702c2db0e857de66eb003ccfdda5924b5f5ac98efb38"
 dependencies = [
  "cc",
 ]
@@ -7086,6 +7400,7 @@ version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
 dependencies = [
+ "indexmap 2.12.1",
  "itoa",
  "memchr",
  "ryu",
@@ -7102,15 +7417,6 @@ dependencies = [
  "itoa",
  "serde",
  "serde_core",
-]
-
-[[package]]
-name = "serde_spanned"
-version = "0.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -7159,7 +7465,7 @@ version = "3.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52a8e3ca0ca629121f70ab50f95249e5a6f925cc0f6ffe8256c45b728875706c"
 dependencies = [
- "darling",
+ "darling 0.21.3",
  "proc-macro2",
  "quote",
  "syn 2.0.111",
@@ -7435,7 +7741,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.22",
 ]
 
 [[package]]
@@ -7464,6 +7770,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_types"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b55bedc9a18ed2860a46d6beb4f4082416ee1d60be0cc364cebdcdddc7afd4"
+dependencies = [
+ "ethereum_serde_utils",
+ "ethereum_ssz",
+ "itertools 0.13.0",
+ "serde",
+ "serde_derive",
+ "smallvec",
+ "tree_hash",
+ "typenum",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7471,55 +7793,80 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stateless-validator-common"
-version = "0.2.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.2.0#aa1fb2583801a6bac6e199a867a106cef669e1b0"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
- "reth-stateless",
+ "alloy-eips",
+ "alloy-primitives",
+ "anyhow",
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
  "rkyv",
  "serde",
+ "serde_with",
  "sha2",
+ "ssz_types",
+ "tree_hash",
+ "tree_hash_derive",
+ "typenum",
 ]
 
 [[package]]
 name = "stateless-validator-ethrex"
-version = "0.2.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.2.0#aa1fb2583801a6bac6e199a867a106cef669e1b0"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
  "alloy-genesis",
  "alloy-rlp",
  "anyhow",
+ "bytes",
  "ere-io",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27)",
+ "ere-zkvm-interface 0.0.16",
  "ethrex-common",
  "ethrex-rlp",
  "ethrex-rpc",
  "ethrex-vm",
  "guest",
  "guest_program",
+ "reth-stateless",
  "rkyv",
  "stateless-validator-common",
+ "stateless-validator-reth",
 ]
 
 [[package]]
 name = "stateless-validator-reth"
-version = "0.2.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.2.0#aa1fb2583801a6bac6e199a867a106cef669e1b0"
+version = "0.4.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.4.0#cc921dcd2978a31ee5e8bb45680396f04549b540"
 dependencies = [
+ "alloy-consensus",
+ "alloy-eips",
+ "alloy-genesis",
+ "alloy-primitives",
+ "alloy-rlp",
+ "alloy-rpc-types-engine",
  "anyhow",
  "ere-io",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=ec75f8a26657ddbf7efc44cdb3167fff4f55fe27)",
+ "ere-zkvm-interface 0.0.16",
+ "ethereum_ssz",
  "guest",
  "once_cell",
  "reth-chainspec",
  "reth-ethereum-primitives",
  "reth-evm-ethereum",
+ "reth-payload-validator",
  "reth-primitives-traits",
  "reth-stateless",
  "serde",
+ "serde_with",
+ "sha2",
  "sparsestate",
+ "ssz_types",
  "stateless-validator-common",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -7942,27 +8289,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "toml"
-version = "0.8.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
-dependencies = [
- "serde",
- "serde_spanned 0.6.9",
- "toml_datetime 0.6.11",
- "toml_edit 0.22.27",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "0.6.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "toml_datetime"
 version = "0.7.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7973,26 +8299,12 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.22.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
-dependencies = [
- "indexmap 2.12.1",
- "serde",
- "serde_spanned 0.6.9",
- "toml_datetime 0.6.11",
- "toml_write",
- "winnow",
-]
-
-[[package]]
-name = "toml_edit"
 version = "0.23.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d7cbc3b4b49633d57a0509303158ca50de80ae32c265093b24c414705807832"
 dependencies = [
  "indexmap 2.12.1",
- "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_datetime",
  "toml_parser",
  "winnow",
 ]
@@ -8005,8 +8317,8 @@ checksum = "8c740b185920170a6d9191122cafef7010bd6270a3824594bff6784c04d7f09e"
 dependencies = [
  "indexmap 2.12.1",
  "serde_core",
- "serde_spanned 1.0.4",
- "toml_datetime 0.7.5+spec-1.1.0",
+ "serde_spanned",
+ "toml_datetime",
  "toml_parser",
  "toml_writer",
  "winnow",
@@ -8020,12 +8332,6 @@ checksum = "a3198b4b0a8e11f09dd03e133c0280504d0801269e9afa46362ffde1cbeebf44"
 dependencies = [
  "winnow",
 ]
-
-[[package]]
-name = "toml_write"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"
@@ -8127,6 +8433,15 @@ dependencies = [
 
 [[package]]
 name = "tracing-subscriber"
+version = "0.2.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e0d2eaa99c3c2e41547cfa109e910a68ea03823cccad4a0525dcbc9b01e8c71"
+dependencies = [
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
 version = "0.3.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f30143827ddab0d256fd843b7a66d164e9f271cfa0dde49142c5ca0ca291f1e"
@@ -8141,6 +8456,31 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree_hash"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee44f4cef85f88b4dea21c0b1f58320bdf35715cf56d840969487cff00613321"
+dependencies = [
+ "alloy-primitives",
+ "ethereum_hashing",
+ "ethereum_ssz",
+ "smallvec",
+ "typenum",
+]
+
+[[package]]
+name = "tree_hash_derive"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bee2ea1551f90040ab0e34b6fb7f2fa3bad8acc925837ac654f2c78a13e3089"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -9295,12 +9635,12 @@ dependencies = [
  "anyhow",
  "clap",
  "ere-common",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "reqwest",
  "serde",
  "tokio",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.22",
  "zkboost-ethereum-el-types",
  "zkboost-server-config",
 ]
@@ -9310,7 +9650,7 @@ name = "zkboost-ethereum-el-input"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "reth-stateless",
  "sha2",
  "stateless-validator-ethrex",
@@ -9327,6 +9667,7 @@ name = "zkboost-ethereum-el-types"
 version = "0.1.0"
 dependencies = [
  "cargo_metadata",
+ "ere-common",
  "serde",
  "strum",
 ]
@@ -9340,7 +9681,7 @@ dependencies = [
  "clap",
  "ere-dockerized",
  "ere-server",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "flate2",
  "futures",
  "metrics",
@@ -9355,7 +9696,7 @@ dependencies = [
  "toml_edit 0.24.0+spec-1.1.0",
  "tower-http",
  "tracing",
- "tracing-subscriber",
+ "tracing-subscriber 0.3.22",
  "uuid",
  "wgpu",
  "zkboost-client",
@@ -9372,7 +9713,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ere-dockerized",
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "reqwest",
  "serde",
  "serde_yaml",
@@ -9385,7 +9726,7 @@ dependencies = [
 name = "zkboost-types"
 version = "0.1.0"
 dependencies = [
- "ere-zkvm-interface 0.0.16 (git+https://github.com/eth-act/ere?rev=a9fb04dea82e658b900bf09fdf8a816fa4eec59b)",
+ "ere-zkvm-interface 0.1.0",
  "indexmap 2.12.1",
  "serde",
  "serde_with",

@@ -41,9 +41,12 @@ anyhow = "1.0"
 axum = "0.8"
 cargo_metadata = "0.19.0"
 clap = "4.5"
+ethereum_serde_utils = "0.8.0"
+eventsource-client = "0.13"
 flate2 = "1.1.5"
 futures = "0.3"
 indexmap = "2.12"
+lru = "0.12"
 nix = "0.29"
 reqwest = "0.12"
 serde = "1.0"
@@ -57,6 +60,7 @@ tar = "0.4.44"
 tempfile = "3.20.0"
 thiserror = "2"
 tokio = "1.48"
+tokio-util = "0.7"
 toml_edit = "0.24"
 tower-http = "0.6"
 tracing = "0.1"
@@ -68,18 +72,27 @@ metrics-exporter-prometheus = "0.16"
 discv5 = "0.10"
 url = "2.5.7"
 
+# alloy
+alloy-genesis = "1"
+alloy-primitives = "1"
+alloy-provider = "1"
+alloy-rpc-types-eth = "1"
+alloy-rpc-types-debug = "1"
+
 # reth
+reth-chainspec = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 reth-stateless = { git = "https://github.com/paradigmxyz/reth", rev = "cfde951976bfa9100a6d9f806e06fb539ae25241" }
 
 # ere
-ere-common = { git = "https://github.com/eth-act/ere", rev = "a9fb04dea82e658b900bf09fdf8a816fa4eec59b" }
-ere-dockerized = { git = "https://github.com/eth-act/ere", rev = "a9fb04dea82e658b900bf09fdf8a816fa4eec59b" }
-ere-server = { git = "https://github.com/eth-act/ere", rev = "a9fb04dea82e658b900bf09fdf8a816fa4eec59b" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", rev = "a9fb04dea82e658b900bf09fdf8a816fa4eec59b" }
+ere-common = { git = "https://github.com/eth-act/ere", tag = "v0.1.0" }
+ere-dockerized = { git = "https://github.com/eth-act/ere", tag = "v0.1.0" }
+ere-server = { git = "https://github.com/eth-act/ere", tag = "v0.1.0" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", tag = "v0.1.0" }
 
 # ere-guests
-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.2.0", features = ["host"] }
-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.2.0", features = ["host"] }
+stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.4.0", features = ["host"] }
+stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.4.0", features = ["host"] }
 
 # local
 zkboost-client = { path = "crates/zkboost/client" }
