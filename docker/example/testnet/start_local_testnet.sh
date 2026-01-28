@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Ported and modified from https://github.com/eth-act/lighthouse/blob/optional-proofs/scripts/local_testnet/start_local_testnet.sh
+
 # Requires `docker`, `kurtosis`, `yq`
 
 set -Eeuo pipefail

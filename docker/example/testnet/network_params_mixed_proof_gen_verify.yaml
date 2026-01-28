@@ -1,3 +1,5 @@
+# Ported and modified from https://github.com/eth-act/lighthouse/blob/optional-proofs/scripts/local_testnet/network_params_mixed_proof_gen_verify.yaml
+
 # Mixed configuration: 3 normal nodes with reth, 3 zkvm nodes with dummy EL
 participants:
   # Normal nodes with real EL (nodes 1-3)

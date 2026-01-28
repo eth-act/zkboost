@@ -116,6 +116,7 @@ services:
 
 volumes:
   programs:
+    name: programs-v0.4.0
 
 networks:
   testnet-ews:
