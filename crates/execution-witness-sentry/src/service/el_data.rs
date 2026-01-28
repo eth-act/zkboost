@@ -10,7 +10,11 @@
 //! sent to this service to fetch the data. It deduplicates the messages with same `block_hash` to
 //! prevent duplicate concurrent requests for the same block.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use lru::LruCache;
 use tokio::{
@@ -24,6 +28,11 @@ use crate::{
     BlockStorage, ElBlockWitness, ElClient, Hash256,
     service::{is_el_data_available, proof::ProofServiceMessage},
 };
+
+/// Timeout for EL data fetch requests (60 seconds).
+const IN_FLIGHT_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
+/// Interval to cleanup stale in-flight requests (30 seconds).
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Messages handled by [`ElDataService`].
 pub enum ElDataServiceMessage {
@@ -54,8 +63,9 @@ pub struct ElDataService {
     storage: Option<Arc<Mutex<BlockStorage>>>,
     /// Channel to notify the proof service when data is ready.
     proof_tx: mpsc::Sender<ProofServiceMessage>,
-    /// Set of block hashes currently being fetched, used for deduplication.
-    in_flight: Arc<Mutex<HashSet<Hash256>>>,
+    /// Map of block hashes currently being fetched to their request timestamps.
+    /// Used for deduplication and staleness detection.
+    in_flight: Arc<Mutex<HashMap<Hash256, Instant>>>,
 }
 
 impl ElDataService {
@@ -71,7 +81,7 @@ impl ElDataService {
             el_data_cache,
             storage,
             proof_tx,
-            in_flight: Arc::new(Mutex::new(HashSet::new())),
+            in_flight: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -91,6 +101,7 @@ impl ElDataService {
         mut el_data_rx: mpsc::Receiver<ElDataServiceMessage>,
     ) {
         let mut fetch_tasks: JoinSet<Hash256> = JoinSet::new();
+        let mut cleanup_interval = tokio::time::interval(CLEANUP_INTERVAL);
 
         loop {
             tokio::select! {
@@ -100,6 +111,10 @@ impl ElDataService {
                     info!("ElDataService received shutdown signal");
                     fetch_tasks.abort_all();
                     break;
+                }
+
+                _ = cleanup_interval.tick() => {
+                    self.cleanup_stale_requests().await;
                 }
 
                 Some(result) = fetch_tasks.join_next() => {
@@ -134,12 +149,39 @@ impl ElDataService {
             return;
         };
 
-        if !self.in_flight.lock().await.insert(block_hash) {
-            debug!(block_hash = %block_hash, "Block fetch already in flight, skipping");
-            return;
+        {
+            let mut in_flight = self.in_flight.lock().await;
+            if let Some(&created_at) = in_flight.get(&block_hash) {
+                if created_at.elapsed() < IN_FLIGHT_FETCH_TIMEOUT {
+                    debug!(block_hash = %block_hash, "Block fetch already in flight, skipping");
+                    return;
+                }
+                warn!(
+                    block_hash = %block_hash,
+                    elapsed_secs = ?created_at.elapsed().as_secs(),
+                    "Stale in-flight request, retrying fetch"
+                );
+            }
+            in_flight.insert(block_hash, Instant::now());
         }
 
         fetch_tasks.spawn(self.clone().fetch_el_data(block_hash));
+    }
+
+    /// Removes in-flight entries older than the timeout threshold.
+    async fn cleanup_stale_requests(&self) {
+        let mut in_flight = self.in_flight.lock().await;
+        in_flight.retain(|block_hash, created_at| {
+            let is_stale = created_at.elapsed() >= IN_FLIGHT_FETCH_TIMEOUT;
+            if is_stale {
+                warn!(
+                    block_hash = %block_hash,
+                    elapsed_secs = created_at.elapsed().as_secs(),
+                    "Removing stale in-flight fetch request"
+                );
+            }
+            !is_stale
+        });
     }
 
     /// Fetches EL block and witness, caching and persisting and notifying if success.

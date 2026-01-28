@@ -24,7 +24,7 @@
 //! [`BlockDataReady`]: ProofServiceMessage::BlockDataReady
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, hash_map::Entry},
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
     sync::Arc,
@@ -57,7 +57,7 @@ use crate::{
 };
 
 /// Timeout of pending proof from proof engine webhook (10 mins).
-const PENDING_PROOF_TIMEOUT: Duration = Duration::from_secs(600);
+const IN_FLIGHT_PROOF_TIMEOUT: Duration = Duration::from_secs(600);
 /// Timeout of pending request due to unavailable EL data (10 mins).
 const PENDING_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 /// Interval to cleanup timeout objects.
@@ -123,7 +123,7 @@ struct PendingRequest {
 /// until the proof engine delivers the result via webhook, or the entry
 /// times out.
 #[derive(Debug, Clone)]
-struct PendingProof {
+struct InFlightProof {
     /// Type of proof being generated.
     proof_type: ElProofType,
     /// Beacon chain slot number.
@@ -137,7 +137,7 @@ struct PendingProof {
     /// Timestamp when this proof was requested, used for timeout detection.
     created_at: Instant,
     /// Unique identifier returned by the proof engine for tracking.
-    proof_gen_id: ProofGenId,
+    proof_gen_id: Option<ProofGenId>,
 }
 
 /// Coordinates proof generation and submission to CL clients.
@@ -170,7 +170,7 @@ pub struct ProofService {
     /// Proof requests waiting for EL data to become available.
     pending_requests: Arc<Mutex<HashMap<B256, BTreeMap<ElProofType, PendingRequest>>>>,
     /// Proof jobs submitted to the engine, awaiting webhook callback.
-    pending_proofs: Arc<Mutex<HashMap<ProofKey, PendingProof>>>,
+    in_flight_proofs: Arc<Mutex<HashMap<ProofKey, InFlightProof>>>,
     /// Mapping from proof engine job IDs to proof key.
     proof_gen_ids: Arc<Mutex<HashMap<ProofGenId, ProofKey>>>,
 }
@@ -191,7 +191,7 @@ impl ProofService {
 
         let proof_cache = Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
         let pending_requests = Arc::new(Mutex::new(HashMap::new()));
-        let pending_proofs = Arc::new(Mutex::new(HashMap::new()));
+        let in_flight_proofs = Arc::new(Mutex::new(HashMap::new()));
         let proof_gen_ids = Arc::new(Mutex::new(HashMap::new()));
 
         Ok(Self {
@@ -203,7 +203,7 @@ impl ProofService {
             proof_cache,
             storage,
             pending_requests,
-            pending_proofs,
+            in_flight_proofs,
             proof_gen_ids,
         })
     }
@@ -300,25 +300,27 @@ impl ProofService {
 
         drop(pending_requests_guard);
 
-        let mut pending_proofs_guard = self.pending_proofs.lock().await;
+        let mut in_flight_proofs_guard = self.in_flight_proofs.lock().await;
         let mut proof_gen_ids_guard = self.proof_gen_ids.lock().await;
 
         let mut stale_proof_keys = Vec::new();
-        for (proof_key, pending_proof) in pending_proofs_guard.iter() {
-            if pending_proof.created_at.elapsed() >= PENDING_REQUEST_TIMEOUT {
+        for (proof_key, in_flight_proof) in in_flight_proofs_guard.iter() {
+            if in_flight_proof.created_at.elapsed() >= IN_FLIGHT_PROOF_TIMEOUT {
                 warn!(
                     block_hash = %proof_key.0,
                     proof_type = %proof_key.1,
-                    slot = pending_proof.slot,
-                    elapsed_secs = pending_proof.created_at.elapsed().as_secs(),
-                    "Removing stale pending proof"
+                    slot = in_flight_proof.slot,
+                    elapsed_secs = in_flight_proof.created_at.elapsed().as_secs(),
+                    "Removing stale in-flight proof"
                 );
-                stale_proof_keys.push((*proof_key, pending_proof.proof_gen_id.clone()));
+                stale_proof_keys.push((*proof_key, in_flight_proof.proof_gen_id.clone()));
             }
         }
         for (proof_key, proof_gen_id) in stale_proof_keys {
-            pending_proofs_guard.remove(&proof_key);
-            proof_gen_ids_guard.remove(&proof_gen_id);
+            in_flight_proofs_guard.remove(&proof_key);
+            if let Some(proof_gen_id) = proof_gen_id {
+                proof_gen_ids_guard.remove(&proof_gen_id);
+            }
         }
     }
 
@@ -489,28 +491,47 @@ impl ProofService {
         let proof_id = proof_type.proof_id();
         let proof_key = (block_hash, proof_type);
 
-        let mut pending_proofs_guard = self.pending_proofs.lock().await;
-        let mut proof_gen_ids_guard = self.proof_gen_ids.lock().await;
+        {
+            let mut in_flight_proofs_guard = self.in_flight_proofs.lock().await;
+            let mut proof_gen_ids_guard = self.proof_gen_ids.lock().await;
 
-        if let Some(pending) = pending_proofs_guard.get(&proof_key) {
-            if pending.created_at.elapsed() < PENDING_PROOF_TIMEOUT {
-                debug!(
-                    slot = slot,
-                    block_hash = %block_hash,
-                    proof_id = proof_id,
-                    "Proof already in flight, skipping"
-                );
-                return;
+            match in_flight_proofs_guard.entry(proof_key) {
+                Entry::Occupied(mut entry) => {
+                    let in_flight_proof = entry.get_mut();
+                    if in_flight_proof.created_at.elapsed() < IN_FLIGHT_PROOF_TIMEOUT {
+                        debug!(
+                            slot = slot,
+                            block_hash = %block_hash,
+                            proof_id = proof_id,
+                            "Proof already in flight, skipping"
+                        );
+                        return;
+                    }
+                    warn!(
+                        slot = slot,
+                        block_hash = %block_hash,
+                        proof_id = proof_id,
+                        elapsed_secs = ?in_flight_proof.created_at.elapsed().as_secs(),
+                        "Proof request timed out, retrying"
+                    );
+
+                    in_flight_proof.created_at = Instant::now();
+                    if let Some(proof_gen_id) = in_flight_proof.proof_gen_id.take() {
+                        proof_gen_ids_guard.remove(&proof_gen_id);
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(InFlightProof {
+                        proof_type,
+                        slot,
+                        block_hash,
+                        beacon_block_root: block_root,
+                        target_clients: target_clients.clone(),
+                        created_at: Instant::now(),
+                        proof_gen_id: None,
+                    });
+                }
             }
-            warn!(
-                slot = slot,
-                block_hash = %block_hash,
-                proof_id = proof_id,
-                elapsed_secs = ?pending.created_at.elapsed().as_secs(),
-                "Proof request timed out, retrying"
-            );
-
-            proof_gen_ids_guard.remove(&pending.proof_gen_id);
         }
 
         match self
@@ -519,21 +540,13 @@ impl ProofService {
             .await
         {
             Ok(proof_gen_id) => {
-                let pending_proof = PendingProof {
-                    proof_type,
-                    slot,
-                    block_hash,
-                    beacon_block_root: block_root,
-                    target_clients: target_clients.clone(),
-                    created_at: Instant::now(),
-                    proof_gen_id: proof_gen_id.clone(),
+                let mut in_flight_proofs_guard = self.in_flight_proofs.lock().await;
+                let mut proof_gen_ids_guard = self.proof_gen_ids.lock().await;
+
+                if let Some(in_flight) = in_flight_proofs_guard.get_mut(&proof_key) {
+                    in_flight.proof_gen_id = Some(proof_gen_id.clone());
+                    proof_gen_ids_guard.insert(proof_gen_id.clone(), proof_key);
                 };
-
-                pending_proofs_guard.insert(proof_key, pending_proof);
-                drop(pending_proofs_guard);
-
-                proof_gen_ids_guard.insert(proof_gen_id.clone(), proof_key);
-                drop(proof_gen_ids_guard);
 
                 info!(
                     slot = slot,
@@ -544,8 +557,7 @@ impl ProofService {
                 );
             }
             Err(e) => {
-                drop(pending_proofs_guard);
-                drop(proof_gen_ids_guard);
+                self.in_flight_proofs.lock().await.remove(&proof_key);
 
                 error!(
                     slot = slot,
@@ -576,6 +588,8 @@ impl ProofService {
 
         let proof_id = proof_type.proof_id();
 
+        let mut handles = Vec::new();
+
         for client in cl_clients {
             let execution_proof = ExecutionProof {
                 proof_id,
@@ -585,7 +599,15 @@ impl ProofService {
                 proof_data: proof_data.clone(),
             };
 
-            tokio::spawn(submit_proof(client.clone(), execution_proof));
+            handles.push(tokio::spawn(submit_proof(client.clone(), execution_proof)));
+        }
+
+        for handle in handles {
+            if let Err(e) = handle.await
+                && e.is_panic()
+            {
+                error!(error = ?e, "Proof submission task panicked");
+            }
         }
     }
 }
@@ -712,16 +734,16 @@ async fn proof_webhook(
         ));
     };
 
-    let Some(pending_proof) = state.pending_proofs.lock().await.remove(&proof_key) else {
+    let Some(in_flight_proof) = state.in_flight_proofs.lock().await.remove(&proof_key) else {
         error!(
             proof_gen_id = %proof_result.proof_gen_id,
             block_hash = %proof_key.0,
             proof_type = %proof_key.1,
-            "Missing pending proof"
+            "Missing in-flight proof"
         );
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Missing pending proof".to_string(),
+            "Missing in-flight proof".to_string(),
         ));
     };
 
@@ -730,9 +752,9 @@ async fn proof_webhook(
 
         error!(
             proof_gen_id = %proof_result.proof_gen_id,
-            proof_type = %pending_proof.proof_type,
-            slot = pending_proof.slot,
-            block_hash = %pending_proof.block_hash,
+            proof_type = %in_flight_proof.proof_type,
+            slot = in_flight_proof.slot,
+            block_hash = %in_flight_proof.block_hash,
             error = %error,
             "Proof generation failed"
         );
@@ -741,9 +763,9 @@ async fn proof_webhook(
 
     let mut cache = state.proof_cache.lock().await;
     cache.put(
-        (pending_proof.block_hash, pending_proof.proof_type),
+        (in_flight_proof.block_hash, in_flight_proof.proof_type),
         Proof {
-            proof_type: pending_proof.proof_type,
+            proof_type: in_flight_proof.proof_type,
             proof_data: proof_result.proof.clone(),
         },
     );
@@ -752,27 +774,27 @@ async fn proof_webhook(
     if let Some(ref storage) = state.storage {
         let mut storage_guard = storage.lock().await;
         if let Err(e) = storage_guard.save_proof(
-            pending_proof.block_hash,
-            pending_proof.proof_type,
+            in_flight_proof.block_hash,
+            in_flight_proof.proof_type,
             &proof_result.proof,
         ) {
-            warn!(slot = pending_proof.slot, error = %e, "Failed to save proof to disk");
+            warn!(slot = in_flight_proof.slot, error = %e, "Failed to save proof to disk");
         } else {
             debug!(
                 proof_gen_id = %proof_result.proof_gen_id,
-                proof_type = %pending_proof.proof_type,
-                slot = pending_proof.slot,
+                proof_type = %in_flight_proof.proof_type,
+                slot = in_flight_proof.slot,
                 "Proof saved"
             );
         }
     }
     state
         .submit_proofs(
-            &pending_proof.target_clients,
-            pending_proof.slot,
-            pending_proof.block_hash,
-            pending_proof.beacon_block_root,
-            pending_proof.proof_type,
+            &in_flight_proof.target_clients,
+            in_flight_proof.slot,
+            in_flight_proof.block_hash,
+            in_flight_proof.beacon_block_root,
+            in_flight_proof.proof_type,
             proof_result.proof.clone(),
         )
         .await;
