@@ -82,9 +82,8 @@ services:
     depends_on:
       - ethrex-zisk
       - reth-zisk
-    configs:
-      - source: zkboost-server-config
-        target: /app/config.toml
+    volumes:
+      - ./config/zkboost-server.toml:/app/config.toml:ro
     networks:
       - testnet-ews
     environment:
@@ -99,9 +98,8 @@ services:
       context: ../../..
       dockerfile: ./docker/Dockerfile.execution-witness-sentry
     command: ["--config", "/app/config.toml"]
-    configs:
-      - source: execution-witness-sentry-config
-        target: /app/config.toml
+    volumes:
+      - ./config/execution-witness-sentry.toml:/app/config.toml:ro
     networks:
       - testnet-ews
     extra_hosts:
@@ -109,7 +107,7 @@ services:
     ports:
       - "3003:3003"
     environment:
-      - RUST_LOG=info,execution-witness-sentry=debug
+      - RUST_LOG=info,execution_witness_sentry=debug
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep -v grep | grep execution-witness-sentry"]
@@ -121,52 +119,3 @@ volumes:
 networks:
   testnet-ews:
     name: testnet-ews
-
-configs:
-  zkboost-server-config:
-    content: |
-      port = 3001
-      webhook_url = "http://execution-witness-sentry:3003/proofs"
-
-      [[zkvm]]
-      endpoint = "http://ethrex-zisk:3000"
-      program_id = "ethrex-zisk"
-
-      [[zkvm]]
-      endpoint = "http://reth-zisk:3000"
-      program_id = "reth-zisk"
-
-  execution-witness-sentry-config:
-    content: |
-      output_dir = "."
-      chain = "local"
-      retain = 10
-      num_proofs = 2
-
-      [proof_engine]
-      url = "http://zkboost-server:3001"
-      proof_types = ["ethrex-zisk", "reth-zisk"]
-      webhook_port = 3003
-
-      [[el_endpoints]]
-      name = "el-1-reth-lighthouse"
-      url = "http://host.docker.internal:32003"
-      ws_url = "ws://host.docker.internal:32004"
-
-      # Non-zkvm CL for head event subscription
-      [[cl_endpoints]]
-      name = "cl-1-lighthouse-reth"
-      url = "http://host.docker.internal:33001/"
-
-      # zkvm-enabled CLs for proof submission
-      [[cl_endpoints]]
-      name = "cl-4-lighthouse-geth"
-      url = "http://host.docker.internal:33022/"
-
-      [[cl_endpoints]]
-      name = "cl-5-lighthouse-geth"
-      url = "http://host.docker.internal:33029/"
-
-      [[cl_endpoints]]
-      name = "cl-6-lighthouse-geth"
-      url = "http://host.docker.internal:33036/"

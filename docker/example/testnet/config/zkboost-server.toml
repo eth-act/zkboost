@@ -1,0 +1,10 @@
+port = 3001
+webhook_url = "http://execution-witness-sentry:3003/proofs"
+
+[[zkvm]]
+endpoint = "http://ethrex-zisk:3000"
+program_id = "ethrex-zisk"
+
+[[zkvm]]
+endpoint = "http://reth-zisk:3000"
+program_id = "reth-zisk"
