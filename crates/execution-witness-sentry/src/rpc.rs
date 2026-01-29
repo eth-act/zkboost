@@ -318,38 +318,12 @@ impl ClClient {
     /// Get block info (slot, block_root, execution_block_hash) for a given slot.
     /// Returns None if the slot is empty (no block).
     pub async fn get_block_info(&self, slot: u64) -> Result<Option<BlockInfo>> {
-        // Get the block root from headers endpoint first
-        let header_url = self.url.join(&format!("eth/v1/beacon/headers/{slot}"))?;
-        let header_response = self.http_client.get(header_url).send().await?;
-
-        if header_response.status() == reqwest::StatusCode::NOT_FOUND {
+        let Some(header) = self.get_block_header(slot).await? else {
             return Ok(None);
-        }
+        };
 
-        let header: BlockHeaderResponse = header_response.json().await?;
         let block_root = header.data.root;
-
-        let url = self.url.join(&format!("eth/v2/beacon/blocks/{slot}"))?;
-        let response = self.http_client.get(url).send().await?;
-
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-
-        if !response.status().is_success() {
-            return Err(Error::Rpc {
-                code: response.status().as_u16() as i64,
-                message: response.text().await.unwrap_or_default(),
-            });
-        }
-
-        let block_response: BlockResponse = response.json().await?;
-        let execution_block_hash = block_response
-            .data
-            .message
-            .body
-            .execution_payload
-            .map(|p| p.block_hash);
+        let execution_block_hash = self.get_block_execution_hash(block_root).await?;
 
         Ok(Some(BlockInfo {
             slot,

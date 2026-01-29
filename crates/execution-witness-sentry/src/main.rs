@@ -58,7 +58,7 @@ use tracing::{info, warn};
 #[command(name = "execution-witness-sentry")]
 #[command(about = "Monitor execution layer nodes and fetch execution witnesses")]
 struct Cli {
-    #[arg(long, short, default_value = "config.toml")]
+    #[arg(long, short)]
     config: PathBuf,
 }
 
