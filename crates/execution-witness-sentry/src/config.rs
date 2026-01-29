@@ -3,6 +3,8 @@
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use url::Url;
+use zkboost_ethereum_el_types::ElProofType;
 
 use crate::error::{Error, Result};
 
@@ -23,6 +25,8 @@ pub struct Config {
     pub retain: Option<u64>,
     /// Number of proofs to submit per block.
     pub num_proofs: Option<u32>,
+    /// Endpoint of proof engine.
+    pub proof_engine: ProofEngineConfig,
 }
 
 /// Execution layer endpoint configuration.
@@ -31,18 +35,46 @@ pub struct ElEndpoint {
     /// Human-readable name for this endpoint.
     pub name: String,
     /// HTTP JSON-RPC URL.
-    pub url: String,
+    pub url: Url,
     /// WebSocket URL for subscriptions.
-    pub ws_url: String,
+    pub ws_url: Url,
 }
 
 /// Consensus layer endpoint configuration.
+///
+/// When the sentry starts if queries each CL endpoint to check whether its ENR
+/// contains the zkVM flag, to determine whether the client requires proof
+/// submission or not.
+///
+/// The first non-zkVM activated client will be used as the source of the new
+/// head SSE subscription.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ClEndpoint {
     /// Human-readable name for this endpoint.
     pub name: String,
     /// HTTP API URL.
-    pub url: String,
+    pub url: Url,
+}
+
+/// Configuration for the proof engine.
+///
+/// The proof engine receives proof requests and asynchronously generates
+/// proofs, pushing results back via a webhook. Multiple proof types can
+/// be configured to generate different proof variants per block.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ProofEngineConfig {
+    /// Proof engine URL.
+    pub url: Url,
+    /// Proof types the proof engine supports.
+    pub proof_types: Vec<ElProofType>,
+    /// Port for HTTP server to receive proofs from proof engine.
+    #[serde(default = "default_proof_engine_webhook_port")]
+    pub webhook_port: u16,
+}
+
+/// Returns the default webhook port for receiving proofs from the proof engine.
+fn default_proof_engine_webhook_port() -> u16 {
+    3003
 }
 
 impl Config {
@@ -55,6 +87,6 @@ impl Config {
                 e
             ))
         })?;
-        Ok(toml::from_str(&content)?)
+        Ok(toml_edit::de::from_str(&content)?)
     }
 }

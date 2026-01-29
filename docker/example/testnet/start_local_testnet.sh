@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Ported and modified from https://github.com/eth-act/lighthouse/blob/optional-proofs/scripts/local_testnet/start_local_testnet.sh
+
 # Requires `docker`, `kurtosis`, `yq`
 
 set -Eeuo pipefail
@@ -81,14 +83,6 @@ fi
 if [ "$KEEP_ENCLAVE" = false ]; then
   # Stop local testnet
   kurtosis enclave rm -f $ENCLAVE_NAME 2>/dev/null || true
-fi
-
-if [ "$BUILD_IMAGE" = true ]; then
-    echo "Building Lighthouse Docker image."
-    ROOT_DIR="$SCRIPT_DIR/../.."
-    docker build --build-arg FEATURES=portable,spec-minimal -f $ROOT_DIR/Dockerfile -t $LH_IMAGE_NAME $ROOT_DIR
-else
-    echo "Not rebuilding Lighthouse Docker image."
 fi
 
 kurtosis run --enclave $ENCLAVE_NAME github.com/ethpandaops/ethereum-package@$ETHEREUM_PKG_VERSION --args-file $NETWORK_PARAMS_FILE

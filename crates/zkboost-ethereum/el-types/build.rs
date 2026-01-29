@@ -1,10 +1,16 @@
 //! Build script that generates `ere-guests` repository and version information.
 
-use std::{env, fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 fn main() {
     generate_ere_guests_info();
-    println!("cargo:rerun-if-changed=Cargo.lock");
+
+    if let Some(cargo_lock_path) = cargo_lock_path() {
+        println!("cargo:rerun-if-changed={}", cargo_lock_path.display());
+    }
 }
 
 fn generate_ere_guests_info() {
@@ -46,4 +52,25 @@ pub const ERE_GUESTS_REPO: &str = {repo};
 pub const ERE_GUESTS_VERSION: PackageVersion = {version};"#
     );
     fs::write(path, content).unwrap();
+}
+
+/// Returns path to the closest workspace that contains `Cargo.lock` from `CARGO_MANIFEST_DIR`,
+/// returns `None` if not found.
+pub fn workspace() -> Option<PathBuf> {
+    let mut dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+        .canonicalize()
+        .ok()?;
+    loop {
+        if dir.join("Cargo.lock").exists() {
+            return Some(dir);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Returns path to the closest `Cargo.lock` from `CARGO_MANIFEST_DIR`, returns `None` if not found.
+pub fn cargo_lock_path() -> Option<PathBuf> {
+    workspace().map(|workspace| workspace.join("Cargo.lock"))
 }

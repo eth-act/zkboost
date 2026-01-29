@@ -10,14 +10,18 @@ use futures::Stream;
 use serde::Deserialize;
 use url::Url;
 
-use crate::error::{Error, Result};
+use crate::{
+    Hash256,
+    error::{Error, Result},
+};
 
 /// Head event from the CL.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HeadEvent {
-    pub slot: String,
-    pub block: String,
-    pub state: String,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub slot: u64,
+    pub block: Hash256,
+    pub state: Hash256,
     pub epoch_transition: bool,
     pub execution_optimistic: bool,
 }
@@ -25,8 +29,9 @@ pub struct HeadEvent {
 /// Block event from the CL.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlockEvent {
-    pub slot: String,
-    pub block: String,
+    #[serde(with = "serde_utils::quoted_u64")]
+    pub slot: u64,
+    pub block: Hash256,
     pub execution_optimistic: bool,
 }
 
@@ -38,17 +43,17 @@ pub enum ClEvent {
 }
 
 impl ClEvent {
-    pub fn slot(&self) -> &str {
+    pub fn slot(&self) -> u64 {
         match self {
-            ClEvent::Head(e) => &e.slot,
-            ClEvent::Block(e) => &e.slot,
+            ClEvent::Head(e) => e.slot,
+            ClEvent::Block(e) => e.slot,
         }
     }
 
-    pub fn block_root(&self) -> &str {
+    pub fn block_root(&self) -> Hash256 {
         match self {
-            ClEvent::Head(e) => &e.block,
-            ClEvent::Block(e) => &e.block,
+            ClEvent::Head(e) => e.block,
+            ClEvent::Block(e) => e.block,
         }
     }
 }
@@ -108,7 +113,7 @@ fn build_events_url(base_url: impl AsRef<str>) -> Result<Url> {
 
 #[cfg(test)]
 mod tests {
-    use super::build_events_url;
+    use crate::cl_subscription::build_events_url;
 
     #[test]
     fn build_events_url_adds_path_without_trailing_slash() {

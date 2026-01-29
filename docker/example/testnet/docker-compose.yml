@@ -1,0 +1,121 @@
+services:
+  download-programs:
+    image: alpine:latest
+    command:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache curl
+        if [ ! -f /programs/stateless-validator-ethrex-zisk ] || [ ! -f /programs/stateless-validator-reth-zisk ]; then
+          echo "Downloading stateless-validator binaries..."
+          curl -fsSL "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/stateless-validator-ethrex-zisk" -o /programs/stateless-validator-ethrex-zisk
+          curl -fsSL "https://github.com/eth-act/ere-guests/releases/download/v0.4.0/stateless-validator-reth-zisk" -o /programs/stateless-validator-reth-zisk
+          echo "Download complete."
+        else
+          echo "Binaries already exist, skipping download."
+        fi
+    volumes:
+      - programs:/programs
+
+  ethrex-zisk:
+    image: ere-server-zisk:local-cuda
+    command: ["--port", "3000", "--program-path", "/programs/stateless-validator-ethrex-zisk", "gpu"]
+    depends_on:
+      download-programs:
+        condition: service_completed_successfully
+    volumes:
+      - programs:/programs:ro
+    shm_size: 32G
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - testnet-ews
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0', '1', '2', '3']
+              capabilities: [gpu]
+
+  reth-zisk:
+    image: ere-server-zisk:local-cuda
+    command: ["--port", "3000", "--program-path", "/programs/stateless-validator-reth-zisk", "gpu"]
+    depends_on:
+      download-programs:
+        condition: service_completed_successfully
+    volumes:
+      - programs:/programs:ro
+    shm_size: 32G
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - testnet-ews
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['4', '5', '6', '7']
+              capabilities: [gpu]
+
+  zkboost-server:
+    image: zkboost-server:local
+    build:
+      context: ../../..
+      dockerfile: ./docker/Dockerfile.zkboost-server
+    command: ["--config", "/app/config.toml"]
+    depends_on:
+      - ethrex-zisk
+      - reth-zisk
+    volumes:
+      - ./config/zkboost-server.toml:/app/config.toml:ro
+    networks:
+      - testnet-ews
+    environment:
+      - RUST_LOG=info,zkboost=debug
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+
+  execution-witness-sentry:
+    image: execution-witness-sentry:local
+    build:
+      context: ../../..
+      dockerfile: ./docker/Dockerfile.execution-witness-sentry
+    command: ["--config", "/app/config.toml"]
+    volumes:
+      - ./config/execution-witness-sentry.toml:/app/config.toml:ro
+    networks:
+      - testnet-ews
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3003:3003"
+    environment:
+      - RUST_LOG=info,execution_witness_sentry=debug
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep execution-witness-sentry"]
+
+volumes:
+  programs:
+    name: programs-v0.4.0
+
+networks:
+  testnet-ews:
+    name: testnet-ews
