@@ -1,0 +1,12 @@
+port = 3001
+webhook_url = "http://execution-witness-sentry:3003/proofs"
+
+[[zkvm]]
+mock_proving_time_ms = 1000
+mock_proof_size = 1024
+program_id = "ethrex-zisk"
+
+[[zkvm]]
+mock_proving_time_ms = 1000
+mock_proof_size = 1024
+program_id = "reth-zisk"
