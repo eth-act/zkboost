@@ -42,7 +42,7 @@ mod tests {
     use axum::{Json, extract::State, http::StatusCode};
     use zkboost_types::{ProgramID, ProveRequest};
 
-    use crate::{app::prove::prove_program, mock::mock_app_state};
+    use crate::{app::prove::prove_program, mock::tests::mock_app_state};
 
     #[tokio::test]
     async fn test_prove_success() {

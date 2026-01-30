@@ -56,7 +56,7 @@ mod tests {
     use axum::{Json, extract::State, http::StatusCode};
     use zkboost_types::{ProgramID, VerifyRequest};
 
-    use crate::{app::verify::verify_proof, mock::mock_app_state};
+    use crate::{app::verify::verify_proof, mock::tests::mock_app_state};
 
     #[tokio::test]
     async fn test_verify_valid_proof() {

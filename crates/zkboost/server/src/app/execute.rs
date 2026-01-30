@@ -54,7 +54,7 @@ mod tests {
     use axum::{Json, extract::State, http::StatusCode};
     use zkboost_types::{ExecuteRequest, ProgramID};
 
-    use crate::{app::execute::execute_program, mock::mock_app_state};
+    use crate::{app::execute::execute_program, mock::tests::mock_app_state};
 
     #[tokio::test]
     async fn test_execute_success() {

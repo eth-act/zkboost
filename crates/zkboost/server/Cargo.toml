@@ -13,6 +13,7 @@ anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
 clap = { workspace = true, features = ["derive"] }
 futures.workspace = true
+rand.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 sysinfo.workspace = true
 tokio = { workspace = true, features = ["full"] }
