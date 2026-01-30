@@ -131,7 +131,7 @@ impl zkVMInstance {
         match self {
             Self::Docker { vm } => vm.execute_async(input).await,
             Self::External { client } => Ok(client.execute(input).await?),
-            Self::Mock(vm) => vm.execute(&input),
+            Self::Mock(vm) => vm.execute(&input).await,
         }
     }
 
@@ -144,7 +144,7 @@ impl zkVMInstance {
         match self {
             Self::Docker { vm } => vm.prove_async(input, proof_kind).await,
             Self::External { client } => Ok(client.prove(input, proof_kind).await?),
-            Self::Mock(vm) => vm.prove(&input, proof_kind),
+            Self::Mock(vm) => vm.prove(&input, proof_kind).await,
         }
     }
 
@@ -154,7 +154,7 @@ impl zkVMInstance {
         match self {
             Self::Docker { vm } => vm.verify_async(proof).await,
             Self::External { client } => Ok(client.verify(proof).await?),
-            Self::Mock(vm) => vm.verify(&proof),
+            Self::Mock(vm) => vm.verify(&proof).await,
         }
     }
 }

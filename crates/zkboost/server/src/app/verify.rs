@@ -56,17 +56,24 @@ mod tests {
     use axum::{Json, extract::State, http::StatusCode};
     use zkboost_types::{ProgramID, VerifyRequest};
 
-    use crate::{app::verify::verify_proof, mock::tests::mock_app_state};
+    use crate::{
+        app::{verify::verify_proof, zkVMInstance},
+        mock::tests::mock_app_state,
+    };
 
     #[tokio::test]
     async fn test_verify_valid_proof() {
         let program_id = ProgramID::from("mock_program_id");
         let state = mock_app_state(Some(&program_id));
 
+        let zkVMInstance::Mock(zkvm) = &state.programs[&program_id] else {
+            unreachable!()
+        };
+
         // Create a request with the mock proof that MockzkVM accepts
         let request = VerifyRequest {
             program_id: program_id.clone(),
-            proof: b"mock_proof".to_vec(),
+            proof: zkvm.random_proof(),
         };
 
         // Call the handler

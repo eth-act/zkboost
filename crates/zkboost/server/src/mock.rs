@@ -20,16 +20,21 @@ impl MockzkVM {
             mock_proof_size,
         }
     }
-}
 
-impl MockzkVM {
-    pub(crate) fn execute(
+    // Generate random proof.
+    pub(crate) fn random_proof(&self) -> Vec<u8> {
+        let mut proof = vec![0; self.mock_proof_size as usize];
+        rand::fill(proof.as_mut_slice());
+        proof
+    }
+
+    pub(crate) async fn execute(
         &self,
         _: &Input,
     ) -> anyhow::Result<(PublicValues, ProgramExecutionReport)> {
-        // Simulate some computation time to avoid 0-ms durations in unit tests
+        // Simulate some computation time to avoid 0-ms durations
         let execution_duration = Duration::from_millis(10);
-        std::thread::sleep(execution_duration);
+        tokio::time::sleep(execution_duration).await;
         Ok((
             Vec::new(),
             ProgramExecutionReport {
@@ -40,27 +45,27 @@ impl MockzkVM {
         ))
     }
 
-    pub(crate) fn prove(
+    pub(crate) async fn prove(
         &self,
         _: &Input,
         proof_kind: ProofKind,
     ) -> anyhow::Result<(PublicValues, Proof, ProgramProvingReport)> {
-        // Simulate some computation time to avoid 0-ms durations in unit tests
-        std::thread::sleep(self.mock_proving_time);
-        // Generate random proofs.
-        let mut proof = vec![0; self.mock_proof_size as usize];
-        rand::fill(proof.as_mut_slice());
+        // Simulate some computation time to avoid 0-ms durations
+        tokio::time::sleep(self.mock_proving_time).await;
         Ok((
             Vec::new(),
-            Proof::new(proof_kind, proof),
+            Proof::new(proof_kind, self.random_proof()),
             ProgramProvingReport {
                 proving_time: self.mock_proving_time,
             },
         ))
     }
 
-    pub(crate) fn verify(&self, proof: &Proof) -> anyhow::Result<PublicValues> {
-        if proof.as_bytes() == b"mock_proof" {
+    pub(crate) async fn verify(&self, proof: &Proof) -> anyhow::Result<PublicValues> {
+        // Simulate some computation time to avoid 0-ms durations
+        let verify_time = Duration::from_millis(10);
+        tokio::time::sleep(verify_time).await;
+        if proof.as_bytes().len() == self.mock_proof_size as usize {
             Ok(Vec::new())
         } else {
             anyhow::bail!("invalid proof")
