@@ -37,10 +37,8 @@ use crate::app::{AppState, app};
 
 mod app;
 mod metrics;
-mod proof_service;
-
-#[cfg(test)]
 mod mock;
+mod proof_service;
 
 /// Command-line interface for the zkboost server.
 #[derive(Parser, Debug)]

@@ -1,0 +1,40 @@
+services:
+  zkboost-server:
+    image: zkboost-server:local
+    build:
+      context: ../../..
+      dockerfile: ./docker/Dockerfile.zkboost-server
+    command: ["--config", "/app/config.toml"]
+    volumes:
+      - ./config/zkboost-server.toml:/app/config.toml:ro
+    networks:
+      - mocknet-ews
+    environment:
+      - RUST_LOG=info,zkboost=debug
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+
+  execution-witness-sentry:
+    image: execution-witness-sentry:local
+    build:
+      context: ../../..
+      dockerfile: ./docker/Dockerfile.execution-witness-sentry
+    command: ["--config", "/app/config.toml"]
+    volumes:
+      - ./config/execution-witness-sentry.toml:/app/config.toml:ro
+    networks:
+      - mocknet-ews
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3003:3003"
+    environment:
+      - RUST_LOG=info,execution_witness_sentry=debug
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep -v grep | grep execution-witness-sentry"]
+
+networks:
+  mocknet-ews:
+    name: mocknet-ews

@@ -104,6 +104,15 @@ pub enum zkVMConfig {
         /// Unique identifier for this program.
         program_id: ProgramID,
     },
+    /// Mock zkVM configuration
+    Mock {
+        /// Mock time in millisecond for proof generation.
+        mock_proving_time_ms: u64,
+        /// Mock size for proof.
+        mock_proof_size: u64,
+        /// Unique identifier for this program.
+        program_id: ProgramID,
+    },
 }
 
 impl zkVMConfig {
@@ -112,6 +121,7 @@ impl zkVMConfig {
         match self {
             Self::Docker { program_id, .. } => program_id,
             Self::External { program_id, .. } => program_id,
+            Self::Mock { program_id, .. } => program_id,
         }
     }
 }
@@ -150,6 +160,11 @@ mod test {
             [[zkvm]]
             endpoint = "http://remote:3000"
             program_id = "external-test"
+
+            [[zkvm]]
+            mock_proving_time_ms = 1000
+            mock_proof_size = 1024
+            program_id = "mock"
         "#;
         assert_eq!(Config::from_toml_str(toml).unwrap(), sample_config());
     }
@@ -178,6 +193,9 @@ mod test {
                 url: http://artifact
             - endpoint: "http://remote:3000"
               program_id: "external-test"
+            - mock_proving_time_ms: 1000
+              mock_proof_size: 1024
+              program_id: "mock"
         "#;
         assert_eq!(Config::from_yaml_str(yaml).unwrap(), sample_config());
     }
@@ -215,6 +233,11 @@ mod test {
                 zkVMConfig::External {
                     endpoint: "http://remote:3000".to_string(),
                     program_id: "external-test".into(),
+                },
+                zkVMConfig::Mock {
+                    mock_proving_time_ms: 1000,
+                    mock_proof_size: 1 << 10,
+                    program_id: "mock".into(),
                 },
             ],
         }

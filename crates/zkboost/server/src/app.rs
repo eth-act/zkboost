@@ -27,6 +27,7 @@ use crate::{
         execute::execute_program, info::get_server_info, prove::prove_program, verify::verify_proof,
     },
     metrics::http_metrics_middleware,
+    mock::MockzkVM,
     proof_service::{ProofMessage, ProofService},
 };
 
@@ -97,8 +98,7 @@ pub(crate) enum zkVMInstance {
         client: Arc<zkVMClient>,
     },
     /// Mock zkVM
-    #[cfg(test)]
-    Mock(crate::mock::MockzkVM),
+    Mock(MockzkVM),
 }
 
 impl zkVMInstance {
@@ -118,6 +118,11 @@ impl zkVMInstance {
         })
     }
 
+    /// Creates an mock zkVM instance.
+    pub(crate) fn mock(mock_proving_time_ms: u64, mock_proof_size: u64) -> Self {
+        Self::Mock(MockzkVM::new(mock_proving_time_ms, mock_proof_size))
+    }
+
     /// Executes the program with the given input.
     pub(crate) async fn execute(
         &self,
@@ -126,8 +131,7 @@ impl zkVMInstance {
         match self {
             Self::Docker { vm } => vm.execute_async(input).await,
             Self::External { client } => Ok(client.execute(input).await?),
-            #[cfg(test)]
-            Self::Mock(vm) => vm.execute(&input),
+            Self::Mock(vm) => vm.execute(&input).await,
         }
     }
 
@@ -140,8 +144,7 @@ impl zkVMInstance {
         match self {
             Self::Docker { vm } => vm.prove_async(input, proof_kind).await,
             Self::External { client } => Ok(client.prove(input, proof_kind).await?),
-            #[cfg(test)]
-            Self::Mock(vm) => vm.prove(&input, proof_kind),
+            Self::Mock(vm) => vm.prove(&input, proof_kind).await,
         }
     }
 
@@ -151,8 +154,7 @@ impl zkVMInstance {
         match self {
             Self::Docker { vm } => vm.verify_async(proof).await,
             Self::External { client } => Ok(client.verify(proof).await?),
-            #[cfg(test)]
-            Self::Mock(vm) => vm.verify(&proof),
+            Self::Mock(vm) => vm.verify(&proof).await,
         }
     }
 }
@@ -194,5 +196,10 @@ async fn init_zkvm(config: &zkVMConfig) -> anyhow::Result<zkVMInstance> {
             Ok(zkVMInstance::docker(zkvm))
         }
         zkVMConfig::External { endpoint, .. } => zkVMInstance::external(endpoint.clone()).await,
+        zkVMConfig::Mock {
+            mock_proving_time_ms,
+            mock_proof_size,
+            ..
+        } => Ok(zkVMInstance::mock(*mock_proving_time_ms, *mock_proof_size)),
     }
 }

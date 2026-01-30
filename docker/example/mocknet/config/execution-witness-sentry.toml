@@ -1,0 +1,32 @@
+output_dir = "."
+chain = "local"
+retain = 10
+num_proofs = 2
+
+[proof_engine]
+url = "http://zkboost-server:3001"
+proof_types = ["ethrex-zisk", "reth-zisk"]
+webhook_port = 3003
+
+[[el_endpoints]]
+name = "el-1-reth-lighthouse"
+url = "http://host.docker.internal:32003"
+ws_url = "ws://host.docker.internal:32004"
+
+# Non-zkvm CL for head event subscription
+[[cl_endpoints]]
+name = "cl-1-lighthouse-reth"
+url = "http://host.docker.internal:33001/"
+
+# zkvm-enabled CLs for proof submission
+[[cl_endpoints]]
+name = "cl-4-lighthouse-geth"
+url = "http://host.docker.internal:33022/"
+
+[[cl_endpoints]]
+name = "cl-5-lighthouse-geth"
+url = "http://host.docker.internal:33029/"
+
+[[cl_endpoints]]
+name = "cl-6-lighthouse-geth"
+url = "http://host.docker.internal:33036/"
