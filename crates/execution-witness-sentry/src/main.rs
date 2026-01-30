@@ -1,7 +1,6 @@
-//! Relayer for execution proof.
+//! Execution witness sentry (EWS).
 //!
-//! This relayer orchestrates the complete workflow for generating proofs of
-//! execution proof:
+//! EWS orchestrates the complete workflow for generating proofs of execution proof:
 //!
 //! 1. Listen to new block from CL
 //! 2. Fetch execution witness from EL
@@ -12,7 +11,7 @@
 //! ## Architecture
 //!
 //! ```text
-//!   CL          Relayer               EL            Proof Engine
+//!   CL            EWS                 EL            Proof Engine
 //!   |              |                  |                  |
 //!   |--new block-->|                  |                  |
 //!   |              |                  |                  |
@@ -31,7 +30,7 @@
 //!   |              |                  |                  |
 //! ```
 
-use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
+use std::{num::NonZeroUsize, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::bail;
 use clap::Parser;
@@ -50,6 +49,7 @@ use lru::LruCache;
 use tokio::{
     signal::unix::{SignalKind, signal},
     sync::Mutex,
+    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -99,21 +99,19 @@ async fn main() -> anyhow::Result<()> {
 
     // Get chain config.
 
-    let mut chain_config = None;
-    for el_client in &el_clients {
-        if let Ok(Some(c)) = el_client.get_chain_config().await {
-            chain_config = Some(c);
-            break;
-        } else {
+    let chain_config = 'outer: loop {
+        for el_client in &el_clients {
+            if let Ok(Some(chain_config)) = el_client.get_chain_config().await {
+                break 'outer chain_config;
+            }
             warn!(
                 name = %el_client.name(),
                 url = %el_client.url(),
                 "Failed to get chain config",
             )
-        };
-    }
-    let Some(chain_config) = chain_config else {
-        bail!("Failed to get chain config from any EL endpoint");
+        }
+
+        sleep(Duration::from_secs(2)).await;
     };
 
     // Initialize CL clients.
@@ -137,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             Err(e) => {
-                warn!(name = %endpoint.name, error = %e, "Failed to check zkvm status");
+                warn!(name = %endpoint.name, error = %e, "Failed to check if client has zkVM enabled or not");
             }
         }
     }
