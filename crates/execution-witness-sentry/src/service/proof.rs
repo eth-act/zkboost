@@ -33,7 +33,12 @@ use std::{
 
 use alloy_genesis::ChainConfig;
 use alloy_primitives::B256;
-use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+};
 use lru::LruCache;
 use reth_stateless::StatelessInput;
 use tokio::{
@@ -691,6 +696,7 @@ async fn spawn_webhook_server(
     Ok(tokio::spawn(async move {
         let app = Router::new()
             .route("/proofs", post(proof_webhook))
+            .route("/health", get(StatusCode::OK))
             .with_state(state)
             .layer(TraceLayer::new_for_http())
             // 10MB limit to account for the proof size
