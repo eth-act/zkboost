@@ -2,6 +2,24 @@
 
 This example shows how to run a small local testnet with 3 normal nodes, and 3 optional-proofs nodes, with zkboost generating EL execution proofs, and EWS (Execution Witness Sentry) publish the proofs (configured to have 2 proof types `ethrex-zisk` and `reth-zisk`).
 
+```mermaid
+sequenceDiagram
+    participant CL as CL
+    participant EL as EL
+    participant CLOptionalProofs as CL <br> (optional-proofs)
+    participant EWS as EWS
+    participant zkboost as zkboost <br> server
+    participant ere as Ere <br> server(s)
+    CL->>EWS: New head <br> (SSE)
+    EL->>EWS: Fetch block + witness
+    EWS->>zkboost: Request proof
+    zkboost->>EWS: Response proof_gen_id
+    zkboost->>ere: Request proof
+    ere->>zkboost: Response proof
+    zkboost->>EWS: Send proof + proof_gen_id
+    EWS->>CLOptionalProofs: Submit proof
+```
+
 ## Installation
 
 1. Install [Docker](https://docs.docker.com/get-docker/). Verify that Docker has been successfully installed by running `sudo docker run hello-world`. 
