@@ -2549,28 +2549,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "erased-serde"
-version = "0.4.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89e8918065695684b2b0702da20382d5ae6065cf3327bc2d6436bd49a71ce9f3"
-dependencies = [
- "serde",
- "serde_core",
- "typeid",
-]
-
-[[package]]
 name = "ere-build-utils"
-version = "0.1.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
+version = "0.3.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.3.0#ffc0e230cf4387fb22eb755f0fb323b38294520f"
 dependencies = [
  "cargo_metadata",
 ]
 
 [[package]]
 name = "ere-common"
-version = "0.1.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
+version = "0.3.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.3.0#ffc0e230cf4387fb22eb755f0fb323b38294520f"
 dependencies = [
  "ere-build-utils",
  "serde",
@@ -2579,13 +2568,13 @@ dependencies = [
 
 [[package]]
 name = "ere-dockerized"
-version = "0.1.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
+version = "0.3.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.3.0#ffc0e230cf4387fb22eb755f0fb323b38294520f"
 dependencies = [
  "anyhow",
  "ere-common",
  "ere-server",
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "serde",
  "tempfile",
  "thiserror 2.0.17",
@@ -2613,12 +2602,12 @@ dependencies = [
 
 [[package]]
 name = "ere-server"
-version = "0.1.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
+version = "0.3.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.3.0#ffc0e230cf4387fb22eb755f0fb323b38294520f"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "prost",
  "serde",
  "thiserror 2.0.17",
@@ -2642,8 +2631,8 @@ dependencies = [
 
 [[package]]
 name = "ere-zkvm-interface"
-version = "0.1.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.1.0#bfc3a2f47227aaf3e501dd31e2b805c841d9b0f7"
+version = "0.3.0"
+source = "git+https://github.com/eth-act/ere?tag=v0.3.0#ffc0e230cf4387fb22eb755f0fb323b38294520f"
 dependencies = [
  "anyhow",
  "auto_impl",
@@ -2651,7 +2640,6 @@ dependencies = [
  "clap",
  "indexmap 2.12.1",
  "serde",
- "serde-untagged",
  "strum",
  "thiserror 2.0.17",
 ]
@@ -7354,18 +7342,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-untagged"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9faf48a4a2d2693be24c6289dbe26552776eb7737074e6722891fadbe6c5058"
-dependencies = [
- "erased-serde",
- "serde",
- "serde_core",
- "typeid",
-]
-
-[[package]]
 name = "serde_arrays"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8549,12 +8525,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "typeid"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
-
-[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9635,7 +9605,7 @@ dependencies = [
  "anyhow",
  "clap",
  "ere-common",
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "reqwest",
  "serde",
  "tokio",
@@ -9650,7 +9620,7 @@ name = "zkboost-ethereum-el-input"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "reth-stateless",
  "sha2",
  "stateless-validator-ethrex",
@@ -9681,7 +9651,7 @@ dependencies = [
  "clap",
  "ere-dockerized",
  "ere-server",
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "flate2",
  "futures",
  "metrics",
@@ -9714,7 +9684,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ere-dockerized",
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "reqwest",
  "serde",
  "serde_yaml",
@@ -9727,7 +9697,7 @@ dependencies = [
 name = "zkboost-types"
 version = "0.1.0"
 dependencies = [
- "ere-zkvm-interface 0.1.0",
+ "ere-zkvm-interface 0.3.0",
  "indexmap 2.12.1",
  "serde",
  "serde_with",

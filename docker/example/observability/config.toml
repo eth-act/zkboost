@@ -4,6 +4,6 @@
 # Add zkVM programs here. Example:
 # [[zkvm]]
 # kind = "sp1"
-# resource = "cpu"
+# resource = { kind = "cpu" }
 # program_id = "my-program"
 # program = "/path/to/elf"

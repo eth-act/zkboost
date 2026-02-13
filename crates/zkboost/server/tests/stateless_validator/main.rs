@@ -13,7 +13,7 @@ use anyhow::bail;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
 use clap::Parser;
 use ere_dockerized::zkVMKind;
-use ere_zkvm_interface::ProverResourceType;
+use ere_zkvm_interface::ProverResource;
 use nix::sys::{prctl, signal::Signal};
 use tempfile::tempdir;
 use tokio::{process::Command, sync::mpsc, time::sleep};
@@ -95,8 +95,8 @@ async fn generate_config(
     .await?;
 
     let resource = match args.resource.to_lowercase().as_str() {
-        "cpu" => ProverResourceType::Cpu,
-        "gpu" => ProverResourceType::Gpu,
+        "cpu" => ProverResource::Cpu,
+        "gpu" => ProverResource::Gpu,
         _ => bail!("Unsupported resource type: {}", args.resource),
     };
 

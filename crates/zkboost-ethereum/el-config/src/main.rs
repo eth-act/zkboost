@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use ere_common::zkVMKind;
-use ere_zkvm_interface::ProverResourceType;
+use ere_zkvm_interface::ProverResource;
 use tokio::fs;
 use zkboost_ethereum_el_config::program::download_program;
 use zkboost_ethereum_el_types::ElKind;
@@ -60,8 +60,8 @@ async fn main() -> anyhow::Result<()> {
         zkvm: vec![zkVMConfig::Docker {
             kind: args.zkvm,
             resource: match args.resource.to_lowercase().as_str() {
-                "cpu" => ProverResourceType::Cpu,
-                "gpu" => ProverResourceType::Gpu,
+                "cpu" => ProverResource::Cpu,
+                "gpu" => ProverResource::Gpu,
                 _ => unreachable!(),
             },
             program_id: format!("{}-{}", args.el, args.zkvm).into(),
