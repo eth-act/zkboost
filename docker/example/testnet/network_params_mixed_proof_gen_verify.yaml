@@ -6,7 +6,7 @@ participants:
   - el_type: reth
     el_image: ghcr.io/paradigmxyz/reth:latest
     cl_type: lighthouse
-    cl_image: ghcr.io/han0110/lighthouse/lighthouse:latest-optional-proofs
+    cl_image: ghcr.io/eth-act/lighthouse/lighthouse:latest-optional-proofs
     cl_extra_params:
       - --target-peers=5
     count: 3
@@ -14,7 +14,7 @@ participants:
   - el_type: dummy
     el_image: ethpandaops/dummy-el:master
     cl_type: lighthouse
-    cl_image: ghcr.io/han0110/lighthouse/lighthouse:latest-optional-proofs
+    cl_image: ghcr.io/eth-act/lighthouse/lighthouse:latest-optional-proofs
     cl_extra_params:
       - --activate-zkvm
       - --target-peers=5
