@@ -18,7 +18,7 @@ services:
       - programs:/programs
 
   ethrex-zisk:
-    image: ere-server-zisk:local-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda
     command: ["--port", "3000", "--program-path", "/programs/stateless-validator-ethrex-zisk", "gpu"]
     depends_on:
       download-programs:
@@ -34,9 +34,12 @@ services:
       - testnet-ews
     environment:
       - RUST_LOG=info
+      - ERE_ZISK_SETUP_ON_INIT=1
+      - ERE_ZISK_START_SERVER_TIMEOUT_SEC=10
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      start_period: 300s
     deploy:
       resources:
         reservations:
@@ -46,25 +49,8 @@ services:
               capabilities: [gpu]
 
   reth-zisk:
-    image: ere-server-zisk:local-cuda
+    extends: ethrex-zisk
     command: ["--port", "3000", "--program-path", "/programs/stateless-validator-reth-zisk", "gpu"]
-    depends_on:
-      download-programs:
-        condition: service_completed_successfully
-    volumes:
-      - programs:/programs:ro
-    shm_size: 32G
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    networks:
-      - testnet-ews
-    environment:
-      - RUST_LOG=info
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
     deploy:
       resources:
         reservations:
@@ -80,8 +66,10 @@ services:
       dockerfile: ./docker/Dockerfile.zkboost-server
     command: ["--config", "/app/config.toml"]
     depends_on:
-      - ethrex-zisk
-      - reth-zisk
+      ethrex-zisk:
+        condition: service_healthy
+      reth-zisk:
+        condition: service_healthy
     volumes:
       - ./config/zkboost-server.toml:/app/config.toml:ro
     networks:

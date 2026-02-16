@@ -6,7 +6,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use ere_dockerized::zkVMKind;
-use ere_zkvm_interface::ProverResourceType;
+use ere_zkvm_interface::ProverResource;
 use serde::{Deserialize, Serialize};
 use zkboost_types::ProgramID;
 
@@ -91,7 +91,7 @@ pub enum zkVMConfig {
         /// The kind of zkVM backend to use.
         kind: zkVMKind,
         /// The compute resource type for proving (CPU, GPU, or network).
-        resource: ProverResourceType,
+        resource: ProverResource,
         /// Unique identifier for this program.
         program_id: ProgramID,
         /// Path to the compiled program binary.
@@ -129,7 +129,7 @@ impl zkVMConfig {
 #[cfg(test)]
 mod test {
     use ere_dockerized::zkVMKind;
-    use ere_zkvm_interface::{NetworkProverConfig, ProverResourceType};
+    use ere_zkvm_interface::{ProverResource, RemoteProverConfig};
 
     use crate::{Config, PathConfig, ProgramConfig, UrlConfig, zkVMConfig};
 
@@ -141,19 +141,19 @@ mod test {
 
             [[zkvm]]
             kind = "openvm"
-            resource = "cpu"
+            resource = { kind = "cpu" }
             program_id = "openvm-test"
             program = "openvm-test-elf"
 
             [[zkvm]]
             kind = "sp1"
-            resource = { endpoint = "http://localhost:3000", api_key = "secret" }
+            resource = { kind = "network", endpoint = "http://localhost:3000", api_key = "secret" }
             program_id = "sp1-test"
             program = { path = "sp1-test-elf" }
 
             [[zkvm]]
             kind = "zisk"
-            resource = "gpu"
+            resource = { kind = "gpu" }
             program_id = "zisk-test"
             program = { url = "http://artifact" }
 
@@ -176,18 +176,21 @@ mod test {
             webhook_url: "http://localhost:3003/proofs"
             zkvm:
             - kind: openvm
-              resource: cpu
+              resource:
+                kind: cpu
               program_id: openvm-test
               program: openvm-test-elf
             - kind: sp1
               resource:
+                kind: network
                 endpoint: http://localhost:3000
                 api_key: secret
               program_id: sp1-test
               program:
                 path: sp1-test-elf
             - kind: zisk
-              resource: gpu
+              resource:
+                kind: gpu
               program_id: zisk-test
               program:
                 url: http://artifact
@@ -207,13 +210,13 @@ mod test {
             zkvm: vec![
                 zkVMConfig::Docker {
                     kind: zkVMKind::OpenVM,
-                    resource: ProverResourceType::Cpu,
+                    resource: ProverResource::Cpu,
                     program_id: "openvm-test".into(),
                     program: ProgramConfig::Path("openvm-test-elf".into()),
                 },
                 zkVMConfig::Docker {
                     kind: zkVMKind::SP1,
-                    resource: ProverResourceType::Network(NetworkProverConfig {
+                    resource: ProverResource::Network(RemoteProverConfig {
                         endpoint: "http://localhost:3000".to_string(),
                         api_key: Some("secret".to_string()),
                     }),
@@ -224,7 +227,7 @@ mod test {
                 },
                 zkVMConfig::Docker {
                     kind: zkVMKind::Zisk,
-                    resource: ProverResourceType::Gpu,
+                    resource: ProverResource::Gpu,
                     program_id: "zisk-test".into(),
                     program: ProgramConfig::Url(UrlConfig {
                         url: "http://artifact".to_string(),

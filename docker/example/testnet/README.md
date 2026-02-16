@@ -28,18 +28,28 @@ sequenceDiagram
 
 1. Install [`yq`](https://github.com/mikefarah/yq). If you are on Ubuntu, you can install `yq` by running `snap install yq`.
 
-## Build image with GPU acceleration
+## (Optional) Build image locally with GPU acceleration
 
-To make sure EWS can keep up with the testnet, we can build the `ere-server-zisk` image with GPU acceleration if it is available.
+The pre-built ZisK prover image (`ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda`) supports Blackwell GPUs only (ZisK only supports single architecture codegen). If you have a Blackwell GPU, e.g. RTX 50 series or RTX PRO 6000, skip this section.
 
-```
-git clone --depth 1 --branch v0.1.0 https://github.com/eth-act/ere
+Build the image with the compute capability of local GPU:
+
+```bash
+git clone --depth 1 --branch v0.3.0 https://github.com/eth-act/ere
 cd ere
-COMPUTE_CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
-bash .github/scripts/build-image.sh --zkvm zisk --tag local --base --server --cuda --cuda-arch "sm_$COMPUTE_CAP"
+CUDA_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
+echo "Building for CUDA architecture: $CUDA_ARCH"
+bash .github/scripts/build-image.sh \
+    --registry ghcr.io/eth-act/ere \
+    --zkvm zisk \
+    --tag 0.3.0-cuda \
+    --base \
+    --server \
+    --cuda \
+    --cuda-archs "$CUDA_ARCH"
 ```
 
-This builds the image `ere-server-zisk:local-cuda`
+This produces `ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda`, which is referenced by the `./docker/example/testnet/docker-compose.yml`.
 
 ## Start local testnet
 
