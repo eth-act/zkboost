@@ -5,7 +5,7 @@ use ere_zkvm_interface::Input;
 use tracing::instrument;
 use zkboost_types::{ExecuteRequest, ExecuteResponse};
 
-use crate::{app::AppState, metrics::record_execute};
+use crate::{http_service::AppState, metrics::record_execute};
 
 /// HTTP handler for the `/execute` endpoint.
 ///
@@ -54,7 +54,7 @@ mod tests {
     use axum::{Json, extract::State, http::StatusCode};
     use zkboost_types::{ExecuteRequest, ProgramID};
 
-    use crate::{app::execute::execute_program, mock::tests::mock_app_state};
+    use crate::{http_service::execute::execute_program, zkvm::mock::tests::mock_app_state};
 
     #[tokio::test]
     async fn test_execute_success() {

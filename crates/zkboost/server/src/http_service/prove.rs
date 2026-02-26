@@ -4,7 +4,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use zkboost_types::{ProofGenId, ProveRequest, ProveResponse};
 
-use crate::{app::AppState, proof_service::ProofMessage};
+use crate::{http_service::AppState, proof_service::ProofMessage};
 
 /// HTTP handler for the `/prove` endpoint.
 ///
@@ -42,7 +42,7 @@ mod tests {
     use axum::{Json, extract::State, http::StatusCode};
     use zkboost_types::{ProgramID, ProveRequest};
 
-    use crate::{app::prove::prove_program, mock::tests::mock_app_state};
+    use crate::{http_service::prove::prove_program, zkvm::mock::tests::mock_app_state};
 
     #[tokio::test]
     async fn test_prove_success() {

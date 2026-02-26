@@ -33,12 +33,12 @@ use tokio::{
 use tracing::info;
 use zkboost_server_config::Config;
 
-use crate::app::{AppState, app};
+use crate::http_service::{AppState, app};
 
-mod app;
+mod http_service;
 mod metrics;
-mod mock;
 mod proof_service;
+mod zkvm;
 
 /// Command-line interface for the zkboost server.
 #[derive(Parser, Debug)]

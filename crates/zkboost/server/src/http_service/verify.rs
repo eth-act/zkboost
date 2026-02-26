@@ -5,7 +5,7 @@ use ere_zkvm_interface::Proof;
 use tracing::instrument;
 use zkboost_types::{VerifyRequest, VerifyResponse};
 
-use crate::{app::AppState, metrics::record_verify};
+use crate::{http_service::AppState, metrics::record_verify};
 
 /// HTTP handler for the `/verify` endpoint.
 ///
@@ -57,8 +57,9 @@ mod tests {
     use zkboost_types::{ProgramID, VerifyRequest};
 
     use crate::{
-        app::{verify::verify_proof, zkVMInstance},
-        mock::tests::mock_app_state,
+        http_service::verify::verify_proof,
+        zkvm::mock::tests::mock_app_state,
+        zkvm::zkVMInstance,
     };
 
     #[tokio::test]

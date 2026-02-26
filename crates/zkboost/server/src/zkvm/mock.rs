@@ -82,9 +82,9 @@ pub(crate) mod tests {
     use zkboost_types::ProgramID;
 
     use crate::{
-        app::{AppState, zkVMInstance},
-        mock::MockzkVM,
+        http_service::AppState,
         proof_service::ProofService,
+        zkvm::{mock::MockzkVM, zkVMInstance},
     };
 
     /// Create an AppState with an optional mock program for testing.

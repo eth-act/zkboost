@@ -91,7 +91,7 @@ fn get_gpu_info() -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::info::get_server_info;
+    use crate::http_service::info::get_server_info;
 
     #[tokio::test]
     async fn test_server_info() {

@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use zkboost_types::{ProgramID, ProofGenId, ProofResult};
 
-use crate::{app::zkVMInstance, metrics::record_prove};
+use crate::{metrics::record_prove, zkvm::zkVMInstance};
 
 /// Message sent to the proof service to request proof generation.
 #[derive(Debug)]
