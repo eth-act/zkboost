@@ -1,10 +1,12 @@
-port = 3001
-webhook_url = "http://execution-witness-sentry:3003/proofs"
+port = 3000
+el_endpoint = "http://host.docker.internal:32003"
 
 [[zkvm]]
+kind = "external"
 endpoint = "http://ethrex-zisk:3000"
-program_id = "ethrex-zisk"
+proof_type = "ethrex-zisk"
 
 [[zkvm]]
+kind = "external"
 endpoint = "http://reth-zisk:3000"
-program_id = "reth-zisk"
+proof_type = "reth-zisk"

@@ -445,8 +445,8 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_prove_total[$__rate_interval])) by (program_id, status)",
-          "legendFormat": "{{program_id}} ({{status}})",
+          "expr": "sum(rate(zkboost_prove_total[$__rate_interval])) by (proof_type, status)",
+          "legendFormat": "{{proof_type}} ({{status}})",
           "refId": "A"
         }
       ],
@@ -494,18 +494,18 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p50",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p95",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p99",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p99",
           "refId": "C"
         }
       ],
@@ -553,13 +553,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p50",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p95",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         }
       ],
@@ -569,176 +569,6 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
-      "id": 103,
-      "panels": [],
-      "title": "Execute Operations",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
-      "id": 13,
-      "options": {
-        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "sum(rate(zkboost_execute_total[$__rate_interval])) by (program_id, status)",
-          "legendFormat": "{{program_id}} ({{status}})",
-          "refId": "A"
-        }
-      ],
-      "title": "Execute Operations Rate",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
-      "id": 14,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_execute_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_execute_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_execute_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p99",
-          "refId": "C"
-        }
-      ],
-      "title": "Execute Duration",
-      "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
-      "id": 15,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_execute_cycles_total_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_execute_cycles_total_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p95",
-          "refId": "B"
-        }
-      ],
-      "title": "Execution Cycles",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
       "id": 104,
       "panels": [],
       "title": "Verify Operations",
@@ -776,7 +606,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
       "id": 16,
       "options": {
         "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -785,8 +615,8 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_verify_total[$__rate_interval])) by (program_id, verified)",
-          "legendFormat": "{{program_id}} (verified={{verified}})",
+          "expr": "sum(rate(zkboost_verify_total[$__rate_interval])) by (proof_type, verified)",
+          "legendFormat": "{{proof_type}} (verified={{verified}})",
           "refId": "A"
         }
       ],
@@ -825,7 +655,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
       "id": 17,
       "options": {
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
@@ -834,18 +664,18 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p50",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p95",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, program_id))",
-          "legendFormat": "{{program_id}} p99",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p99",
           "refId": "C"
         }
       ],
