@@ -9,14 +9,10 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-zkboost-types.workspace = true
-zkboost-client.workspace = true
-
 anyhow.workspace = true
 async-stream = "0.3"
 clap = { workspace = true, features = ["derive"] }
 futures.workspace = true
-lighthouse_types.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 reqwest-eventsource.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -27,4 +23,11 @@ tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url.workspace = true
+
+# lighthouse
 ethereum_serde_utils.workspace = true
+lighthouse_types.workspace = true
+
+# local
+zkboost-client.workspace = true
+zkboost-types.workspace = true
