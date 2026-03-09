@@ -12,7 +12,7 @@ members = [
     "crates/zkboost-ethereum/el-types",
 
     "crates/execution-witness-sentry",
-    "crates/zkboost/guest-loader",
+    "crates/guest-loader",
 ]
 resolver = "2"
 
