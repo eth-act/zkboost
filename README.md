@@ -34,7 +34,7 @@ zkboost is an API wrapper on top of [Ere](https://github.com/eth-act/ere) allowi
 
 ### Prerequisites
 
-* **Rust** ≥ 1.88
+* **Rust** ≥ 1.91
 
 ```bash
 # 1. Clone
