@@ -1,0 +1,63 @@
+[package]
+name = "zkboost-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum = { workspace = true, features = ["macros"] }
+bincode.workspace = true
+bytes.workspace = true
+clap = { workspace = true, features = ["derive"] }
+lru.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+rand.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+strum = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true, features = ["sync"] }
+tokio-util.workspace = true
+toml_edit = { workspace = true, features = ["serde"] }
+tower-http = { workspace = true, features = ["trace", "limit"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url.workspace = true
+
+# alloy
+alloy-eips.workspace = true
+alloy-genesis.workspace = true
+alloy-primitives.workspace = true
+alloy-rpc-types-engine.workspace = true
+alloy-rpc-types-eth.workspace = true
+
+# reth
+reth-ethereum-primitives.workspace = true
+reth-stateless.workspace = true
+
+# ere
+ere-server.workspace = true
+ere-zkvm-interface.workspace = true
+
+# ere-guests
+stateless-validator-ethrex.workspace = true
+stateless-validator-reth.workspace = true
+
+# local
+zkboost-types.workspace = true
+
+[dev-dependencies]
+futures.workspace = true
+tower = { workspace = true, features = ["util"] }
+
+# local
+zkboost-client.workspace = true

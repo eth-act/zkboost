@@ -21,9 +21,6 @@ jobs:
         arch:
           - amd64
           - arm64
-        image:
-          - execution-witness-sentry
-          - zkboost-server
         include:
           - arch: amd64
             runner: ubuntu-latest
@@ -38,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+          images: ghcr.io/${{ github.repository }}/zkboost-server
           tags: |
             type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
             type=semver,pattern={{version}}
@@ -53,16 +50,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build ${{ matrix.image }} image
+      - name: Build zkboost-server image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile.${{ matrix.image }}
+          file: docker/Dockerfile
           push: ${{ github.event_name == 'push' }}
           platforms: linux/${{ matrix.arch }}
-          tags: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+          tags: ghcr.io/${{ github.repository }}/zkboost-server:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=zkboost-server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=zkboost-server-${{ matrix.arch }}
 
   merge-manifests:
     permissions:
@@ -71,11 +68,6 @@ jobs:
     needs: build-images
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
-    strategy:
-      matrix:
-        image:
-          - execution-witness-sentry
-          - zkboost-server
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -89,12 +81,12 @@ jobs:
 
       - name: Create and push multi-arch manifest
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ needs.build-images.outputs.version }} \
-            ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ needs.build-images.outputs.version }}-amd64 \
-            ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ needs.build-images.outputs.version }}-arm64
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }} \
+            ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }}-amd64 \
+            ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }}-arm64
 
       - name: Tag latest
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/${{ matrix.image }}:latest \
-            ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ needs.build-images.outputs.version }}
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost-server:latest \
+            ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }}

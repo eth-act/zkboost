@@ -1,0 +1,23 @@
+[package]
+name = "zkboost-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-stream.workspace = true
+bytes.workspace = true
+futures.workspace = true
+reqwest = { workspace = true, features = ["json"] }
+reqwest-eventsource.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio-stream.workspace = true
+url.workspace = true
+
+zkboost-types.workspace = true

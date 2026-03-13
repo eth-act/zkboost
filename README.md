@@ -16,6 +16,8 @@ zkboost is an API wrapper on top of [Ere](https://github.com/eth-act/ere) allowi
   - [Prerequisites](#prerequisites)
 - [API](#api)
 - [Observability](#observability)
+  - [Docker Compose with Grafana](#docker-compose-with-grafana)
+  - [Available Metrics](#available-metrics)
 - [Supported Backends](#supported-backends)
 - [Contributing](#contributing)
 - [License](#license)
@@ -28,15 +30,11 @@ zkboost is an API wrapper on top of [Ere](https://github.com/eth-act/ere) allowi
 
 ## Quick Start
 
-The easiest way to start is by running the `GITHUB_TOKEN=<github-token> RUST_LOG=info cargo test --package zkboost-server --test stateless_validator -- --zkvm sp1 --resource cpu`.
-
-> The `GITHUB_TOKEN` is needed to download compiled artifact from repo [`eth-act/zkevm-benchmark-workload`](https://github.com/eth-act/zkevm-benchmark-workload).
-
 ## Manual Build
 
 ### Prerequisites
 
-* **Rust** ≥ 1.88
+* **Rust** ≥ 1.91
 
 ```bash
 # 1. Clone
@@ -50,13 +48,14 @@ cargo run --release
 
 The following endpoints are available:
 
-| Endpoint   | Method | Purpose                                  |
-| ---------- | ------ | ---------------------------------------- |
-| `/info`    | `GET`  | Get server and system information        |
-| `/execute` | `POST` | Run program and get execution metrics    |
-| `/prove`   | `POST` | Generate proof for a program with inputs |
-| `/verify`  | `POST` | Verify a previously generated proof      |
-| `/metrics` | `GET`  | Prometheus metrics endpoint              |
+| Method | Endpoint                                                       | Purpose                                                       |
+| ------ | -------------------------------------------------------------- | ------------------------------------------------------------- |
+| `POST` | `/v1/execution_proof_requests?proof_types=`                    | Submit SSZ-encoded `NewPayloadRequest` to request for a proof |
+| `GET`  | `/v1/execution_proof_requests?new_payload_request_root=`       | SSE stream of proof result                                    |
+| `GET`  | `/v1/execution_proofs/{new_payload_request_root}/{proof_type}` | Fetch a completed proof                                       |
+| `POST` | `/v1/execution_proof_verifications`                            | Verify a proof                                                |
+| `GET`  | `/health`                                                      | Health check                                                  |
+| `GET`  | `/metrics`                                                     | Prometheus metrics                                            |
 
 ## Observability
 
@@ -67,34 +66,31 @@ zkboost exposes Prometheus-compatible metrics at `/metrics` for monitoring with 
 The Docker Compose setup includes pre-configured Prometheus and Grafana with a zkboost dashboard:
 
 ```bash
-cd docker && docker-compose up -d
+cd docker/example/observability && docker-compose up -d
 ```
 
-| Service    | URL                     | Credentials     |
-| ---------- | ----------------------- | --------------- |
-| zkboost    | http://localhost:3000   | -               |
-| Prometheus | http://localhost:9090   | -               |
-| Grafana    | http://localhost:3001   | admin / admin   |
+| Service    | URL                   | Credentials   |
+| ---------- | --------------------- | ------------- |
+| zkboost    | http://localhost:3000 | -             |
+| Prometheus | http://localhost:9090 | -             |
+| Grafana    | http://localhost:3002 | admin / admin |
 
 The zkboost dashboard is auto-provisioned and available at Grafana > Dashboards > zkboost.
 
 ### Available Metrics
 
-| Metric | Type | Description |
-| ------ | ---- | ----------- |
-| `zkboost_http_requests_total` | Counter | Total HTTP requests by endpoint, method, status |
-| `zkboost_http_request_duration_seconds` | Histogram | Request latency by endpoint |
-| `zkboost_http_requests_in_flight` | Gauge | Currently processing requests |
-| `zkboost_prove_total` | Counter | Prove operations by program and status |
-| `zkboost_prove_duration_seconds` | Histogram | Proof generation time |
-| `zkboost_prove_proof_bytes` | Histogram | Generated proof sizes |
-| `zkboost_execute_total` | Counter | Execute operations by program and status |
-| `zkboost_execute_duration_seconds` | Histogram | Execution time |
-| `zkboost_execute_cycles_total` | Histogram | zkVM cycle counts |
-| `zkboost_verify_total` | Counter | Verify operations by program and result |
-| `zkboost_verify_duration_seconds` | Histogram | Verification time |
-| `zkboost_programs_loaded` | Gauge | Number of loaded zkVM programs |
-| `zkboost_build_info` | Gauge | Build version info |
+| Metric                                  | Type      | Description                                     |
+| --------------------------------------- | --------- | ----------------------------------------------- |
+| `zkboost_http_requests_total`           | Counter   | Total HTTP requests by endpoint, method, status |
+| `zkboost_http_request_duration_seconds` | Histogram | Request latency by endpoint                     |
+| `zkboost_http_requests_in_flight`       | Gauge     | Currently processing requests                   |
+| `zkboost_prove_total`                   | Counter   | Prove operations by program and status          |
+| `zkboost_prove_duration_seconds`        | Histogram | Proof generation time                           |
+| `zkboost_prove_proof_bytes`             | Histogram | Generated proof sizes                           |
+| `zkboost_verify_total`                  | Counter   | Verify operations by program and result         |
+| `zkboost_verify_duration_seconds`       | Histogram | Verification time                               |
+| `zkboost_programs_loaded`               | Gauge     | Number of loaded zkVM programs                  |
+| `zkboost_build_info`                    | Gauge     | Build version info                              |
 
 ## Supported Backends
 
