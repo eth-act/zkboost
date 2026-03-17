@@ -102,15 +102,20 @@ impl zkBoostServer {
         self,
         shutdown_token: CancellationToken,
     ) -> anyhow::Result<(SocketAddr, Vec<JoinHandle<()>>)> {
-        let mut handles = Vec::new();
+        let witness_timeout = Duration::from_secs(self.config.witness_timeout_secs);
+        let proof_timeout = Duration::from_secs(self.config.proof_timeout_secs);
+
+        let completed_proofs = Arc::new(RwLock::new(LruCache::new(
+            NonZeroUsize::new(self.config.proof_cache_size)
+                .expect("proof_cache_size must be non-zero"),
+        )));
 
         let (proof_service_tx, proof_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (witness_service_tx, witness_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (worker_output_tx, worker_output_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (proof_event_tx, proof_event_rx) = broadcast::channel(CHANNEL_CAPACITY);
 
-        let witness_timeout = Duration::from_secs(self.config.witness_timeout_secs);
-        let proof_timeout = Duration::from_secs(self.config.proof_timeout_secs);
+        let mut handles = Vec::new();
 
         let witness_service = WitnessService::new(
             self.el_client,
@@ -119,6 +124,7 @@ impl zkBoostServer {
             self.config.witness_cache_size,
         );
         handles.push(witness_service.spawn(shutdown_token.clone(), witness_service_rx));
+
         info!("witness service started");
 
         let mut worker_input_txs = HashMap::new();
@@ -134,11 +140,6 @@ impl zkBoostServer {
             )));
         }
 
-        let completed_proofs = Arc::new(RwLock::new(LruCache::new(
-            NonZeroUsize::new(self.config.proof_cache_size)
-                .expect("proof_cache_size must be non-zero"),
-        )));
-
         let proof_service = ProofService::new(
             self.chain_config,
             completed_proofs.clone(),
@@ -146,17 +147,13 @@ impl zkBoostServer {
             witness_service_tx,
             witness_timeout,
         );
-        let proof_shutdown = shutdown_token.clone();
-        handles.push(tokio::spawn(async move {
-            proof_service
-                .run(
-                    proof_shutdown,
-                    proof_service_rx,
-                    worker_output_rx,
-                    worker_input_txs,
-                )
-                .await;
-        }));
+        handles.push(tokio::spawn(proof_service.run(
+            shutdown_token.clone(),
+            proof_service_rx,
+            worker_output_rx,
+            worker_input_txs,
+        )));
+
         info!("proof service started");
 
         let app_state = Arc::new(AppState::new(
@@ -168,18 +165,16 @@ impl zkBoostServer {
         ));
         let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, self.config.port)).await?;
         let addr = listener.local_addr()?;
-        info!(port = addr.port(), "http server listening");
-
-        let shutdown_for_server = shutdown_token.clone();
-        let server_handle = tokio::spawn(async move {
+        handles.push(tokio::spawn(async move {
             if let Err(error) = axum::serve(listener, router(app_state))
-                .with_graceful_shutdown(shutdown_for_server.cancelled_owned())
+                .with_graceful_shutdown(shutdown_token.cancelled_owned())
                 .await
             {
                 error!(error = %error, "http server error");
             }
-        });
-        handles.push(server_handle);
+        }));
+
+        info!(port = self.config.port, "http server listening");
 
         Ok((addr, handles))
     }

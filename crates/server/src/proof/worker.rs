@@ -1,4 +1,5 @@
-//! Per-zkVM worker loop.
+//! Per-zkVM worker loop that processes proof requests sequentially within a single backend, with
+//! configurable timeout and graceful cancellation on shutdown.
 
 use std::{
     sync::Arc,
@@ -18,6 +19,7 @@ use crate::{
 };
 
 /// Input sent to a per-zkVM worker for proof generation.
+#[allow(missing_debug_implementations)]
 pub(crate) struct WorkerInput {
     pub(crate) payload: Arc<NewPayloadRequestWithWitness>,
     pub(crate) new_payload_request_root: Hash256,
@@ -25,6 +27,7 @@ pub(crate) struct WorkerInput {
 }
 
 /// Output returned by a worker after a proof attempt.
+#[derive(Debug)]
 pub(crate) struct WorkerOutput {
     pub(crate) new_payload_request_root: Hash256,
     pub(crate) proof_type: ProofType,
@@ -32,9 +35,13 @@ pub(crate) struct WorkerOutput {
 }
 
 /// Result of a single proof generation attempt.
+#[derive(Debug)]
 pub(crate) enum ProofResult {
+    /// Proof generated successfully.
     Success(Bytes),
+    /// Proof generation failed with an error message.
     Failure(String),
+    /// Proof generation exceeded the configured timeout.
     Timeout,
 }
 
@@ -52,7 +59,9 @@ pub(crate) async fn run_worker(
     loop {
         let input = tokio::select! {
             biased;
+
             _ = shutdown.cancelled() => break,
+
             input = worker_input_rx.recv() => match input {
                 Some(input) => input,
                 None => break,
@@ -69,19 +78,13 @@ pub(crate) async fn run_worker(
 
         let start = Instant::now();
 
-        let proof_result = tokio::select! {
-            biased;
-
-            result = timeout(proof_timeout, zkvm.prove(&input.payload)) => {
-                match result {
-                    Err(_) => ProofResult::Timeout,
-                    Ok(Ok((_, Proof::Compressed(proof), _))) => ProofResult::Success(Bytes::from(proof)),
-                    Ok(Ok((_, proof, _))) => {
-                        ProofResult::Failure(format!("unexpected proof kind: {:?}", proof.kind()))
-                    }
-                    Ok(Err(e)) => ProofResult::Failure(format!("{e}")),
-                }
+        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.payload)).await {
+            Err(_) => ProofResult::Timeout,
+            Ok(Ok((_, Proof::Compressed(proof), _))) => ProofResult::Success(Bytes::from(proof)),
+            Ok(Ok((_, proof, _))) => {
+                ProofResult::Failure(format!("unexpected proof kind: {:?}", proof.kind()))
             }
+            Ok(Err(e)) => ProofResult::Failure(format!("{e}")),
         };
 
         let duration = start.elapsed();

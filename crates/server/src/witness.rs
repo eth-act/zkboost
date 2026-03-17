@@ -1,7 +1,7 @@
 //! Witness fetching service.
 //!
-//! This module provides [`WitnessService`], which is responsible for fetching execution witness
-//! data from the EL client. It responds to [`WitnessServiceMessage::FetchWitness`] requests from
+//! This module provides `WitnessService`, which is responsible for fetching execution witness
+//! data from the EL client. It responds to `WitnessServiceMessage::FetchWitness` requests from
 //! the proof service, retrying failed fetches every second until success or timeout.
 
 use std::{
@@ -30,10 +30,12 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 /// Messages consumed by the witness service event loop.
 #[derive(Debug)]
 pub(crate) enum WitnessServiceMessage {
+    /// Request to fetch the execution witness for the given block hash.
     FetchWitness { block_hash: Hash256 },
 }
 
 /// Fetches execution witness data from the EL client on demand.
+#[allow(missing_debug_implementations)]
 pub(crate) struct WitnessService {
     el_client: Arc<ElClient>,
     proof_service_tx: mpsc::Sender<ProofServiceMessage>,
@@ -92,31 +94,6 @@ impl WitnessService {
                     break;
                 }
 
-                _ = cleanup_interval.tick() => {
-                    let timeout = self.witness_timeout;
-                    unresolved.retain(|block_hash, created_at| {
-                        let is_stale = created_at.elapsed() >= timeout;
-                        if is_stale {
-                            warn!(
-                                block_hash = %block_hash,
-                                elapsed_secs = created_at.elapsed().as_secs(),
-                                "pending fetch timed out"
-                            );
-                        }
-                        !is_stale
-                    });
-                }
-
-                _ = retry_interval.tick() => {
-                    for &block_hash in unresolved.keys() {
-                        if !in_flight.contains(&block_hash) {
-                            in_flight.insert(block_hash);
-                            let el_client = self.el_client.clone();
-                            tasks.spawn(fetch_witness_task(el_client, block_hash));
-                        }
-                    }
-                }
-
                 Some(result) = tasks.join_next() => {
                     match result {
                         Ok((block_hash, Some(witness))) => {
@@ -161,6 +138,32 @@ impl WitnessService {
                             tasks.spawn(fetch_witness_task(el_client, block_hash));
                         }
                     }
+                }
+
+                // Re-dispatch all unresolved witnesses that are not currently in flight.
+                _ = retry_interval.tick() => {
+                    for &block_hash in unresolved.keys() {
+                        if !in_flight.contains(&block_hash) {
+                            in_flight.insert(block_hash);
+                            let el_client = self.el_client.clone();
+                            tasks.spawn(fetch_witness_task(el_client, block_hash));
+                        }
+                    }
+                }
+
+                _ = cleanup_interval.tick() => {
+                    let timeout = self.witness_timeout;
+                    unresolved.retain(|block_hash, created_at| {
+                        let is_stale = created_at.elapsed() >= timeout;
+                        if is_stale {
+                            warn!(
+                                block_hash = %block_hash,
+                                elapsed_secs = created_at.elapsed().as_secs(),
+                                "pending fetch timed out"
+                            );
+                        }
+                        !is_stale
+                    });
                 }
             }
         }

@@ -1,4 +1,5 @@
-//! Proof generation service.
+//! Proof generation service managing the proof lifecycle: pending (waiting for witness), enqueued
+//! (dispatched to per-zkVM worker), and completed (cached in LRU, broadcast via SSE).
 
 pub mod input;
 pub mod worker;
@@ -37,10 +38,12 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(12);
 /// Messages consumed by the proof service event loop.
 #[derive(Debug)]
 pub(crate) enum ProofServiceMessage {
+    /// A new proof has been requested for the given payload and proof types.
     RequestProof {
         new_payload_request: Arc<NewPayloadRequest<MainnetEthSpec>>,
         proof_types: Vec<ProofType>,
     },
+    /// An execution witness has been fetched and is ready for proof generation.
     WitnessAvailable {
         block_hash: Hash256,
         witness: Arc<ExecutionWitness>,
@@ -55,6 +58,7 @@ struct PendingRequest {
 }
 
 /// Manages proof lifecycle: pending, enqueued, and completed proof requests.
+#[allow(missing_debug_implementations)]
 pub(crate) struct ProofService {
     chain_config: Arc<ChainConfig>,
     completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
@@ -107,11 +111,11 @@ impl ProofService {
                     break;
                 }
 
-                _ = cleanup_interval.tick() => self.cleanup_stale_requests(),
-
                 Some(output) = worker_output_rx.recv() => self.handle_worker_output(output).await,
 
                 Some(msg) = proof_service_rx.recv() => self.handle_message(msg, &worker_input_txs).await,
+
+                _ = cleanup_interval.tick() => self.cleanup_stale_requests(),
 
                 else => break,
             }
@@ -143,8 +147,10 @@ impl ProofService {
                         .into(),
                     );
                 }
+                // Removes timeout requests
                 !is_stale
             });
+            // Removes empty groups
             !entries.is_empty()
         });
     }

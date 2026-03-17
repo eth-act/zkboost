@@ -1,4 +1,5 @@
-//! HTTP service: AppState, router, and v1 API handlers.
+//! HTTP service: `AppState`, Axum router with v1 API handlers, Prometheus metrics middleware, and
+//! request tracing.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -24,6 +25,7 @@ use crate::{
 mod v1;
 
 /// Shared application state for all HTTP handlers.
+#[allow(missing_debug_implementations)]
 pub(crate) struct AppState {
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     pub(crate) completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,

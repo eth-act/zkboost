@@ -1,4 +1,9 @@
-//! v1 API handlers.
+//! v1 API handlers:
+//!
+//! - `POST /execution_proof_requests`
+//! - `GET /execution_proof_requests` (SSE)
+//! - `GET /execution_proofs/{new_payload_request_root}/{type}`
+//! - `POST /execution_proof_verifications`
 
 use axum::{Json, http::StatusCode};
 

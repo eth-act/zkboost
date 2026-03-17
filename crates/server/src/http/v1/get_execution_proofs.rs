@@ -7,10 +7,12 @@ use axum::{
     http::{StatusCode, header::CONTENT_TYPE},
     response::IntoResponse,
 };
+use tracing::instrument;
 use zkboost_types::{Hash256, ProofType};
 
 use crate::http::{AppState, v1::error_response};
 
+#[instrument(skip_all)]
 pub(crate) async fn get_execution_proofs(
     State(state): State<Arc<AppState>>,
     Path((new_payload_request_root, proof_type)): Path<(Hash256, ProofType)>,

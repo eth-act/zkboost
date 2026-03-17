@@ -7,10 +7,12 @@ use axum::{
     response::sse::{Event, KeepAlive, Sse},
 };
 use tokio_stream::{Stream, StreamExt, wrappers::BroadcastStream};
+use tracing::instrument;
 use zkboost_types::{ProofComplete, ProofEvent, ProofEventQuery};
 
 use crate::http::AppState;
 
+#[instrument(skip_all)]
 pub(crate) async fn get_execution_proof_requests(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ProofEventQuery>,
@@ -21,6 +23,8 @@ pub(crate) async fn get_execution_proof_requests(
 
     let merged: Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>> =
         if let Some(new_payload_request_root) = params.new_payload_request_root {
+            // Emit already-completed proofs from cache so the client does not miss events that
+            // completed before subscribing.
             let catch_up_events = {
                 let cache = state.completed_proofs.read().await;
                 cache

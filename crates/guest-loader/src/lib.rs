@@ -1,4 +1,4 @@
-//! Guest program loader, loading and verifying guest program ELF and signature
+//! Guest program loader, loading and verifying guest program ELF and signature.
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
@@ -62,7 +62,7 @@ pub async fn load_and_verify_with_url(
 }
 
 /// Verifies the signature using the public key.
-/// This is empolyed when program and signature have been download already
+/// This is employed when program and signature have been downloaded already.
 pub fn verify_program_and_signature(
     program_bytes: &[u8],
     signature: &str,
@@ -98,7 +98,7 @@ pub async fn fetch_string_with_url(url: &str, client: &impl HttpClient) -> Resul
     Ok(response)
 }
 
-/// Fetched bytes with Path
+/// Fetches bytes from a file path.
 pub async fn fetch_bytes_with_path(path: &PathBuf) -> Result<Vec<u8>> {
     let bytes: Vec<u8> = tokio::fs::read(path)
         .await
@@ -106,7 +106,7 @@ pub async fn fetch_bytes_with_path(path: &PathBuf) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Fetched string with Path
+/// Fetches a string from a file path.
 pub async fn fetch_string_with_path(path: &PathBuf) -> Result<String> {
     let text: String = tokio::fs::read_to_string(path)
         .await
@@ -118,9 +118,10 @@ pub async fn fetch_string_with_path(path: &PathBuf) -> Result<String> {
 mod tests {
     use std::io::Cursor;
 
+    use anyhow::{Result, anyhow};
     use minisign::KeyPair;
 
-    use super::*;
+    use crate::{HttpClient, load_and_verify_with_url, verify_program_and_signature};
 
     struct MockHttpClient {
         bytes_responses: std::collections::HashMap<String, Vec<u8>>,

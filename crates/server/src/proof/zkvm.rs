@@ -1,4 +1,5 @@
-//! zkVM instance management and initialization.
+//! zkVM instance management and initialization, supporting external Ere servers via HTTP and
+//! in-process mock instances for testing.
 
 use std::{ops::Deref, sync::Arc, time::Duration};
 
@@ -23,14 +24,16 @@ use crate::{config::zkVMConfig, proof::input::NewPayloadRequestWithWitness};
 #[derive(Debug, thiserror::Error)]
 #[allow(non_camel_case_types)]
 pub(crate) enum zkVMError {
+    /// The proof could not be verified by the zkVM backend.
     #[error("proof verification failed: {0}")]
     VerificationFailed(String),
+    /// The public values do not match the expected values.
     #[error("public values mismatch")]
     PublicValuesMismatch,
 }
 
 /// zkVM instance, either a remote ere-server or a mock.
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, missing_debug_implementations)]
 #[derive(Clone)]
 pub(crate) enum zkVMInstance {
     /// External Ere server that provides zkVM functionalities via HTTP endpoints.
@@ -136,7 +139,7 @@ impl zkVMInstance {
 }
 
 /// Serializable mock proof used by `MockzkVM` for testing.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct MockProof {
     public_values: PublicValues,
     proof: Vec<u8>,
@@ -216,6 +219,7 @@ impl MockzkVM {
     }
 }
 
+// Runs the guest program on the host to compute expected public values.
 fn execute(el_kind: ElKind, input: &Input) -> anyhow::Result<[u8; 32]> {
     struct Host;
 

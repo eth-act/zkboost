@@ -1,4 +1,5 @@
-//! Execution layer types and proof-type mapping functions.
+//! Converts a `NewPayloadRequest` and its `ExecutionWitness` into zkVM `Input` for Reth or Ethrex
+//! guest programs.
 
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ pub use reth_stateless::StatelessInput;
 
 /// Combines a `NewPayloadRequest` with its execution witness and chain config, eagerly computing
 /// the `StatelessInput`.
+#[derive(Debug)]
 pub(crate) struct NewPayloadRequestWithWitness {
     new_payload_request_root: Hash256,
     stateless_input: StatelessInput,
@@ -141,7 +143,7 @@ fn new_payload_request_to_execution_data(
                 blob_gas_used: inner.execution_payload.blob_gas_used,
                 excess_blob_gas: inner.execution_payload.excess_blob_gas,
             };
-            let versioned_hashes: Vec<B256> = inner
+            let versioned_hashes = inner
                 .versioned_hashes
                 .iter()
                 .map(|versioned_hash| B256::from(versioned_hash.0))
@@ -164,7 +166,7 @@ fn new_payload_request_to_execution_data(
                 blob_gas_used: inner.execution_payload.blob_gas_used,
                 excess_blob_gas: inner.execution_payload.excess_blob_gas,
             };
-            let versioned_hashes: Vec<B256> = inner
+            let versioned_hashes = inner
                 .versioned_hashes
                 .iter()
                 .map(|versioned_hash| B256::from(versioned_hash.0))
@@ -189,7 +191,7 @@ fn new_payload_request_to_execution_data(
                 blob_gas_used: inner.execution_payload.blob_gas_used,
                 excess_blob_gas: inner.execution_payload.excess_blob_gas,
             };
-            let versioned_hashes: Vec<B256> = inner
+            let versioned_hashes = inner
                 .versioned_hashes
                 .iter()
                 .map(|versioned_hash| B256::from(versioned_hash.0))
@@ -214,7 +216,7 @@ fn new_payload_request_to_execution_data(
                 blob_gas_used: inner.execution_payload.blob_gas_used,
                 excess_blob_gas: inner.execution_payload.excess_blob_gas,
             };
-            let versioned_hashes: Vec<B256> = inner
+            let versioned_hashes = inner
                 .versioned_hashes
                 .iter()
                 .map(|versioned_hash| B256::from(versioned_hash.0))

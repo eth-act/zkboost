@@ -1,4 +1,5 @@
-//! EL JSON-RPC client.
+//! EL JSON-RPC client wrapping `debug_chainConfig`, `eth_getBlockByHash`, and
+//! `debug_executionWitnessByBlockHash` RPC methods.
 
 use alloy_genesis::ChainConfig;
 use reth_ethereum_primitives::{Block, TransactionSigned};
