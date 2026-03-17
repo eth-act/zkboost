@@ -4,7 +4,7 @@ set -euo pipefail
 # Download and verify a guest program from eth-act/ere-guests releases.
 #
 # Usage: ./download-ere-guest.sh --tag <release-tag> --guest <guest-name> --output-dir <dir>
-# Example: ./download-ere-guest.sh --tag v0.6.0 --guest reth-sp1 --output-dir ./programs/
+# Example: ./download-ere-guest.sh --tag v0.6.0 --guest stateless-validator-reth-zisk --output-dir ./programs/
 
 PUB_KEY="RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy"
 
@@ -13,7 +13,7 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --tag         Release tag (e.g. v0.6.0)"
-    echo "  --guest       Guest program name (e.g. reth-sp1)"
+    echo "  --guest       Guest program name (e.g. stateless-validator-reth-zisk)"
     echo "  --output-dir  Directory to save the downloaded program"
     exit 1
 }
