@@ -2,8 +2,9 @@ port = 3000
 el_endpoint = "http://host.docker.internal:32003"
 
 [[zkvm]]
-kind = "external"
-endpoint = "http://ethrex-zisk:3000"
+kind = "mock"
+mock_proving_time_ms = 5000
+mock_proof_size = 1024
 proof_type = "ethrex-zisk"
 
 [[zkvm]]
