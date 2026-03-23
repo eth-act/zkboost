@@ -102,13 +102,13 @@ impl MockAttestor {
                     }
                 }
                 ProofEvent::ProofFailure(proof_failure) => {
-                    warn!(%new_payload_request_root, proof_type = %proof_failure.proof_type, error = %proof_failure.error, "proof failed")
-                }
-                ProofEvent::WitnessTimeout(witness_timeout) => {
-                    warn!(%new_payload_request_root, proof_type = %witness_timeout.proof_type, "witness timeout")
-                }
-                ProofEvent::ProofTimeout(proof_timeout) => {
-                    warn!(%new_payload_request_root, proof_type = %proof_timeout.proof_type, "proof timeout")
+                    warn!(
+                        %new_payload_request_root,
+                        proof_type = %proof_failure.proof_type,
+                        reason = ?proof_failure.reason,
+                        error = %proof_failure.error,
+                        "proof failed"
+                    )
                 }
             }
         }

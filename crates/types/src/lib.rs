@@ -92,10 +92,6 @@ pub enum ProofEvent {
     ProofComplete(ProofComplete),
     /// A proof failed.
     ProofFailure(ProofFailure),
-    /// Witness fetch timed out.
-    WitnessTimeout(WitnessTimeout),
-    /// Proof generation timed out.
-    ProofTimeout(ProofTimeout),
 }
 
 impl ProofEvent {
@@ -109,8 +105,6 @@ impl ProofEvent {
         match self {
             Self::ProofComplete(inner) => inner.new_payload_request_root,
             Self::ProofFailure(inner) => inner.new_payload_request_root,
-            Self::WitnessTimeout(inner) => inner.new_payload_request_root,
-            Self::ProofTimeout(inner) => inner.new_payload_request_root,
         }
     }
 
@@ -119,8 +113,6 @@ impl ProofEvent {
         match self {
             Self::ProofComplete(inner) => inner.proof_type,
             Self::ProofFailure(inner) => inner.proof_type,
-            Self::WitnessTimeout(inner) => inner.proof_type,
-            Self::ProofTimeout(inner) => inner.proof_type,
         }
     }
 
@@ -129,8 +121,6 @@ impl ProofEvent {
         match self {
             Self::ProofComplete(_) => "proof_complete",
             Self::ProofFailure(_) => "proof_failure",
-            Self::WitnessTimeout(_) => "witness_timeout",
-            Self::ProofTimeout(_) => "proof_timeout",
         }
     }
 
@@ -139,8 +129,6 @@ impl ProofEvent {
         let data = match self {
             Self::ProofComplete(inner) => serde_json::to_string(inner),
             Self::ProofFailure(inner) => serde_json::to_string(inner),
-            Self::WitnessTimeout(inner) => serde_json::to_string(inner),
-            Self::ProofTimeout(inner) => serde_json::to_string(inner),
         }
         .expect("ProofEvent serialization is infallible");
         (self.event_name(), data)
@@ -151,8 +139,6 @@ impl ProofEvent {
         match name {
             "proof_complete" => Ok(Self::ProofComplete(serde_json::from_str(data)?)),
             "proof_failure" => Ok(Self::ProofFailure(serde_json::from_str(data)?)),
-            "witness_timeout" => Ok(Self::WitnessTimeout(serde_json::from_str(data)?)),
-            "proof_timeout" => Ok(Self::ProofTimeout(serde_json::from_str(data)?)),
             other => Err(ProofEventParseError::UnknownEvent(other.to_string())),
         }
     }
@@ -167,18 +153,6 @@ impl From<ProofComplete> for ProofEvent {
 impl From<ProofFailure> for ProofEvent {
     fn from(inner: ProofFailure) -> Self {
         Self::ProofFailure(inner)
-    }
-}
-
-impl From<WitnessTimeout> for ProofEvent {
-    fn from(inner: WitnessTimeout) -> Self {
-        Self::WitnessTimeout(inner)
-    }
-}
-
-impl From<ProofTimeout> for ProofEvent {
-    fn from(inner: ProofTimeout) -> Self {
-        Self::ProofTimeout(inner)
     }
 }
 
@@ -224,26 +198,22 @@ pub struct ProofFailure {
     pub new_payload_request_root: Hash256,
     /// Proof type.
     pub proof_type: ProofType,
-    /// Error message.
+    /// Structured reason for the failure.
+    pub reason: FailureReason,
+    /// Human-readable error message with details about the failure.
     pub error: String,
 }
 
-/// Payload for a witness timeout event.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct WitnessTimeout {
-    /// Beacon-level identifier for this payload.
-    pub new_payload_request_root: Hash256,
-    /// Proof type.
-    pub proof_type: ProofType,
-}
-
-/// Payload for a proof generation timeout event.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ProofTimeout {
-    /// Beacon-level identifier for this payload.
-    pub new_payload_request_root: Hash256,
-    /// Proof type.
-    pub proof_type: ProofType,
+/// Failure reason of a proof request.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureReason {
+    /// The execution witness could not be fetched within the configured timeout.
+    WitnessTimeout,
+    /// Proof generation did not complete within the configured timeout.
+    ProvingTimeout,
+    /// A general error occurred during proving.
+    ProvingError,
 }
 
 /// Custom serde for comma-separated `Vec<ProofType>` in query strings.

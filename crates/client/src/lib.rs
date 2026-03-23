@@ -36,9 +36,9 @@ use url::Url;
 pub use {
     error::Error,
     zkboost_types::{
-        Encode, Hash256, MainnetEthSpec,
+        Encode, FailureReason, Hash256, MainnetEthSpec,
         NewPayloadRequest, ProofComplete, ProofEvent, ProofFailure, ProofRequestResponse,
-        ProofStatus, ProofTimeout, ProofType, ProofVerificationResponse, WitnessTimeout,
+        ProofStatus, ProofType, ProofVerificationResponse,
         ProofEventParseError,
     },
 };

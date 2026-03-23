@@ -146,6 +146,7 @@ impl zkBoostServer {
             proof_event_tx,
             witness_service_tx,
             witness_timeout,
+            proof_timeout,
         );
         handles.push(tokio::spawn(proof_service.run(
             shutdown_token.clone(),

@@ -21,8 +21,8 @@ use zkboost_server::{
     server::zkBoostServer,
 };
 use zkboost_types::{
-    Decode, Hash256, NewPayloadRequest, ProofEvent, ProofEventKind, ProofStatus, ProofType,
-    TreeHash,
+    Decode, FailureReason, Hash256, NewPayloadRequest, ProofEvent, ProofEventKind, ProofFailure,
+    ProofStatus, ProofType, TreeHash,
 };
 
 struct Fixture {
@@ -226,7 +226,11 @@ impl TestHarness {
         proof_event
     }
 
-    async fn assert_proof_event(&self, proof_event_kind: ProofEventKind) {
+    async fn assert_proof_event(
+        &self,
+        proof_event_kind: ProofEventKind,
+        failure_reason: Option<FailureReason>,
+    ) {
         let proof_event = self.wait_for_event().await;
 
         assert_eq!(proof_event.kind(), proof_event_kind);
@@ -235,6 +239,22 @@ impl TestHarness {
             proof_event.new_payload_request_root(),
             self.fixture.new_payload_request_root
         );
+        if let Some(failure_reason) = failure_reason {
+            assert!(matches!(
+                proof_event,
+                ProofEvent::ProofFailure(ProofFailure { reason, .. }) if reason == failure_reason
+            ))
+        }
+    }
+
+    async fn assert_proof_complete(&self) {
+        self.assert_proof_event(ProofEventKind::ProofComplete, None)
+            .await
+    }
+
+    async fn assert_proof_failure(&self, failure_reason: FailureReason) {
+        self.assert_proof_event(ProofEventKind::ProofFailure, Some(failure_reason))
+            .await
     }
 
     async fn assert_get_proof_is_valid(&self) {
@@ -278,14 +298,10 @@ async fn test_proof_complete() {
     let harness = TestHarness::new(Behavior::default()).await;
 
     harness.request_proof().await;
-    harness
-        .assert_proof_event(ProofEventKind::ProofComplete)
-        .await;
+    harness.assert_proof_complete().await;
     harness.assert_get_proof_is_valid().await;
 
-    harness
-        .assert_proof_event(ProofEventKind::ProofComplete)
-        .await;
+    harness.assert_proof_complete().await;
 }
 
 #[tokio::test]
@@ -297,9 +313,7 @@ async fn test_proof_complete_with_witness_delay() {
     let harness = TestHarness::new(behavior).await;
 
     harness.request_proof().await;
-    harness
-        .assert_proof_event(ProofEventKind::ProofComplete)
-        .await;
+    harness.assert_proof_complete().await;
     harness.assert_get_proof_is_valid().await;
 }
 
@@ -313,7 +327,7 @@ async fn test_proof_failure() {
 
     harness.request_proof().await;
     harness
-        .assert_proof_event(ProofEventKind::ProofFailure)
+        .assert_proof_failure(FailureReason::ProvingError)
         .await;
     harness.assert_get_proof_not_found().await;
 }
@@ -328,7 +342,7 @@ async fn test_witness_timeout() {
 
     harness.request_proof().await;
     harness
-        .assert_proof_event(ProofEventKind::WitnessTimeout)
+        .assert_proof_failure(FailureReason::WitnessTimeout)
         .await;
     harness.assert_get_proof_not_found().await;
 }
@@ -343,7 +357,7 @@ async fn test_proof_timeout() {
 
     harness.request_proof().await;
     harness
-        .assert_proof_event(ProofEventKind::ProofTimeout)
+        .assert_proof_failure(FailureReason::ProvingTimeout)
         .await;
     harness.assert_get_proof_not_found().await;
 }
