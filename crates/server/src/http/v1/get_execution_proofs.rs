@@ -3,14 +3,17 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::{StatusCode, header::CONTENT_TYPE},
     response::IntoResponse,
 };
 use tracing::instrument;
 use zkboost_types::{Hash256, ProofType};
 
-use crate::http::{AppState, v1::error_response};
+use crate::http::{
+    AppState,
+    v1::{ErrorResponse, Path},
+};
 
 #[instrument(skip_all)]
 pub(crate) async fn get_execution_proofs(
@@ -29,10 +32,9 @@ pub(crate) async fn get_execution_proofs(
             proof.clone(),
         )
             .into_response(),
-        None => error_response(
-            StatusCode::NOT_FOUND,
-            format!("proof not found for root {new_payload_request_root} and type {proof_type}"),
-        )
+        None => ErrorResponse::not_found(format!(
+            "proof not found for root {new_payload_request_root} and type {proof_type}"
+        ))
         .into_response(),
     }
 }
@@ -81,7 +83,8 @@ mod tests {
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(json.get("error").is_some());
+        assert_eq!(json["code"], 404);
+        assert!(json.get("message").is_some());
     }
 
     #[tokio::test]

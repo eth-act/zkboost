@@ -28,7 +28,9 @@ pub mod error;
 
 use bytes::Bytes;
 use futures::stream::Stream;
+use reqwest::{Response, StatusCode, header::CONTENT_TYPE};
 use reqwest_eventsource::{Event, EventSource};
+use serde::de::DeserializeOwned;
 use tokio_stream::StreamExt;
 use url::Url;
 
@@ -42,6 +44,8 @@ pub use {
         ProofEventParseError,
     },
 };
+
+const APPLICATION_OCTET_STREAM: &str = "application/octet-stream";
 
 /// HTTP client for the zkboost Proof Node API.
 #[derive(Debug, Clone)]
@@ -85,7 +89,7 @@ impl zkBoostClient {
         let response = self
             .http_client
             .post(url)
-            .header("content-type", "application/octet-stream")
+            .header(CONTENT_TYPE, APPLICATION_OCTET_STREAM)
             .body(new_payload_request.as_ssz_bytes())
             .send()
             .await?;
@@ -167,7 +171,7 @@ impl zkBoostClient {
         let response = self
             .http_client
             .post(url)
-            .header("content-type", "application/octet-stream")
+            .header(CONTENT_TYPE, APPLICATION_OCTET_STREAM)
             .body(proof.to_vec())
             .send()
             .await?;
@@ -176,7 +180,7 @@ impl zkBoostClient {
     }
 }
 
-async fn error_for_status(response: reqwest::Response) -> Result<reqwest::Response, Error> {
+async fn error_for_status(response: Response) -> Result<Response, Error> {
     if response.status().is_success() {
         return Ok(response);
     }
@@ -184,11 +188,11 @@ async fn error_for_status(response: reqwest::Response) -> Result<reqwest::Respon
     let raw_body = response.text().await.map_err(Error::Transport)?;
     let message = serde_json::from_str::<serde_json::Value>(&raw_body)
         .ok()
-        .and_then(|v| v.get("error")?.as_str().map(String::from))
+        .and_then(|v| v.get("message")?.as_str().map(String::from))
         .unwrap_or(raw_body);
     match status {
-        reqwest::StatusCode::NOT_FOUND => Err(Error::NotFound(message)),
-        reqwest::StatusCode::BAD_REQUEST => Err(Error::BadRequest(message)),
+        StatusCode::NOT_FOUND => Err(Error::NotFound(message)),
+        StatusCode::BAD_REQUEST => Err(Error::BadRequest(message)),
         _ => Err(Error::ServerError {
             status: status.as_u16(),
             body: message,
@@ -196,9 +200,7 @@ async fn error_for_status(response: reqwest::Response) -> Result<reqwest::Respon
     }
 }
 
-async fn handle_json_response<T: serde::de::DeserializeOwned>(
-    response: reqwest::Response,
-) -> Result<T, Error> {
+async fn handle_json_response<T: DeserializeOwned>(response: Response) -> Result<T, Error> {
     let response = error_for_status(response).await?;
     Ok(response.json().await?)
 }

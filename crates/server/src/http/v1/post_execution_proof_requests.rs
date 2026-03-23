@@ -2,11 +2,7 @@
 
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::{Query, State},
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 use bytes::Bytes;
 use tracing::instrument;
 use zkboost_types::{
@@ -16,7 +12,7 @@ use zkboost_types::{
 use crate::{
     http::{
         AppState,
-        v1::{ErrorResponse, error_response},
+        v1::{ErrorResponse, Query},
     },
     proof::ProofServiceMessage,
 };
@@ -26,18 +22,17 @@ pub(crate) async fn post_execution_proof_requests(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ProofRequestQuery>,
     body: Bytes,
-) -> Result<(StatusCode, Json<ProofRequestResponse>), (StatusCode, Json<ErrorResponse>)> {
+) -> Result<(StatusCode, Json<ProofRequestResponse>), ErrorResponse> {
     let new_payload_request = NewPayloadRequest::<MainnetEthSpec>::from_ssz_bytes(&body)
-        .map_err(|e| error_response(StatusCode::BAD_REQUEST, format!("invalid SSZ body: {e:?}")))?;
+        .map_err(|e| ErrorResponse::bad_request(format!("invalid SSZ body: {e:?}")))?;
 
     let new_payload_request_root = new_payload_request.tree_hash_root();
 
     for proof_type in &params.proof_types {
         if !state.zkvms.contains_key(proof_type) {
-            return Err(error_response(
-                StatusCode::BAD_REQUEST,
-                format!("no zkVM configured for proof type '{proof_type}'"),
-            ));
+            return Err(ErrorResponse::bad_request(format!(
+                "no zkVM configured for proof type '{proof_type}'"
+            )));
         }
     }
 
@@ -49,10 +44,7 @@ pub(crate) async fn post_execution_proof_requests(
         })
         .await
         .map_err(|e| {
-            error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to enqueue proof: {e}"),
-            )
+            ErrorResponse::internal_server_error(format!("failed to enqueue proof: {e}"))
         })?;
 
     Ok((

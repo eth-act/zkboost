@@ -3,14 +3,14 @@
 use std::{convert::Infallible, pin::Pin, sync::Arc, time::Duration};
 
 use axum::{
-    extract::{Query, State},
+    extract::State,
     response::sse::{Event, KeepAlive, Sse},
 };
 use tokio_stream::{Stream, StreamExt, wrappers::BroadcastStream};
 use tracing::instrument;
 use zkboost_types::{ProofComplete, ProofEvent, ProofEventQuery};
 
-use crate::http::AppState;
+use crate::http::{AppState, v1::Query};
 
 #[instrument(skip_all)]
 pub(crate) async fn get_execution_proof_requests(

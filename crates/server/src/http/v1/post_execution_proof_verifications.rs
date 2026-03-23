@@ -2,11 +2,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use axum::{
-    Json,
-    extract::{Query, State},
-    http::StatusCode,
-};
+use axum::{Json, extract::State};
 use bytes::Bytes;
 use tracing::{instrument, warn};
 use zkboost_types::{ProofStatus, ProofVerificationQuery, ProofVerificationResponse};
@@ -14,7 +10,7 @@ use zkboost_types::{ProofStatus, ProofVerificationQuery, ProofVerificationRespon
 use crate::{
     http::{
         AppState,
-        v1::{ErrorResponse, error_response},
+        v1::{ErrorResponse, Query},
     },
     metrics::record_verify,
 };
@@ -24,16 +20,13 @@ pub(crate) async fn post_execution_proof_verifications(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ProofVerificationQuery>,
     body: Bytes,
-) -> Result<Json<ProofVerificationResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<ProofVerificationResponse>, ErrorResponse> {
     let start = Instant::now();
     let proof_type = params.proof_type;
 
     let zkvm = state.zkvms.get(&proof_type).ok_or_else(|| {
         record_verify(proof_type, false, start.elapsed());
-        error_response(
-            StatusCode::NOT_FOUND,
-            format!("unknown proof_type: {proof_type}"),
-        )
+        ErrorResponse::not_found(format!("unknown proof_type: {proof_type}"))
     })?;
 
     let status = match zkvm
