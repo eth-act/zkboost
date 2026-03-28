@@ -13,15 +13,15 @@ use alloy_rpc_types_engine::{
     PraguePayloadFields,
 };
 use ere_zkvm_interface::Input;
-use reth_stateless::ExecutionWitness;
+use stateless::ExecutionWitness;
 use stateless_validator_ethrex::guest::{
     StatelessValidatorEthrexInput, StatelessValidatorEthrexIo,
 };
-use stateless_validator_reth::guest::{Io, StatelessValidatorRethInput, StatelessValidatorRethIo};
+use stateless_validator_reth::{
+    guest::{Io, StatelessValidatorRethInput, StatelessValidatorRethIo},
+    host::StatelessInput,
+};
 use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest, TreeHash};
-
-#[rustfmt::skip]
-pub use reth_stateless::StatelessInput;
 
 /// Combines a `NewPayloadRequest` with its execution witness and chain config, eagerly computing
 /// the `StatelessInput`.

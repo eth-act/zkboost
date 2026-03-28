@@ -42,7 +42,7 @@ alloy-rpc-types-eth.workspace = true
 
 # reth
 reth-ethereum-primitives.workspace = true
-reth-stateless.workspace = true
+stateless.workspace = true
 
 # ere
 ere-server.workspace = true

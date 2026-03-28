@@ -15,7 +15,7 @@ use alloy_genesis::ChainConfig;
 use bytes::Bytes;
 use input::NewPayloadRequestWithWitness;
 use lru::LruCache;
-use reth_stateless::ExecutionWitness;
+use stateless::ExecutionWitness;
 use tokio::{
     sync::{RwLock, broadcast, mpsc, mpsc::error::TrySendError},
     time::interval,

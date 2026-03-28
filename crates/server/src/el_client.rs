@@ -3,8 +3,8 @@
 
 use alloy_genesis::ChainConfig;
 use reth_ethereum_primitives::{Block, TransactionSigned};
-use reth_stateless::ExecutionWitness;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use stateless::ExecutionWitness;
 use url::Url;
 use zkboost_types::Hash256;
 

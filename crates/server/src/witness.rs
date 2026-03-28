@@ -12,7 +12,7 @@ use std::{
 };
 
 use lru::LruCache;
-use reth_stateless::ExecutionWitness;
+use stateless::ExecutionWitness;
 use tokio::{
     sync::mpsc,
     task::{JoinHandle, JoinSet},

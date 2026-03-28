@@ -13,7 +13,7 @@ use axum::{Json, extract::State};
 use bytes::Bytes;
 use futures::StreamExt;
 use metrics_exporter_prometheus::PrometheusBuilder;
-use reth_stateless::ExecutionWitness;
+use stateless::ExecutionWitness;
 use tokio::net::TcpListener;
 use zkboost_client::{MainnetEthSpec, zkBoostClient};
 use zkboost_server::{

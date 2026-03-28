@@ -76,16 +76,16 @@ alloy-rpc-types-engine = "1"
 alloy-rpc-types-eth = "1"
 
 # reth
-reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.10.2", default-features = false }
-reth-stateless = { git = "https://github.com/paradigmxyz/reth", tag = "v1.10.2", default-features = false }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.11.0", default-features = false }
+stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "ed189a51931e8589102f3139d48fdbb3bbe4c1f7", default-features = false }
 
 # ere
-ere-server = { git = "https://github.com/eth-act/ere", tag = "v0.3.0" }
-ere-zkvm-interface = { git = "https://github.com/eth-act/ere", tag = "v0.3.0" }
+ere-server = { git = "https://github.com/eth-act/ere", tag = "v0.6.1" }
+ere-zkvm-interface = { git = "https://github.com/eth-act/ere", tag = "v0.6.1" }
 
 # ere-guests
-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.6.0", features = ["host"] }
-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.6.0", features = ["host"] }
+stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.7.0", features = ["host"] }
+stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.7.0", features = ["host"] }
 
 # local
 zkboost-client = { path = "crates/client" }

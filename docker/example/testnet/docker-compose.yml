@@ -10,8 +10,8 @@ services:
           exit 0
         fi
         apk add --no-cache curl minisign bash
-        bash /scripts/download-ere-guest.sh --tag v0.6.0 --guest stateless-validator-ethrex-zisk --output-dir /programs
-        bash /scripts/download-ere-guest.sh --tag v0.6.0 --guest stateless-validator-reth-zisk --output-dir /programs
+        bash /scripts/download-ere-guest.sh --tag v0.7.0 --guest stateless-validator-ethrex-zisk --output-dir /programs
+        bash /scripts/download-ere-guest.sh --tag v0.7.0 --guest stateless-validator-reth-zisk --output-dir /programs
     volumes:
       - programs:/programs
       - ../../../scripts/download-ere-guest.sh:/scripts/download-ere-guest.sh:ro
@@ -84,7 +84,7 @@ services:
 
 volumes:
   programs:
-    name: programs-v0.6.0
+    name: programs-v0.7.0
 
 networks:
   zkboost:
