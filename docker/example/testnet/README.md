@@ -1,28 +1,28 @@
-# Local Testnet with EWS
+# Local Testnet with zkboost
 
-This example shows how to run a small local testnet with 3 normal nodes, and 3 optional-proofs nodes, with zkboost generating EL execution proofs, and EWS (Execution Witness Sentry) publish the proofs (configured to have 2 proof types `ethrex-zisk` and `reth-zisk`).
+This example runs a local Ethereum testnet (via Kurtosis) alongside the zkboost with 2 Ere GPU provers, configured for `ethrex-zisk` and `reth-zisk` proof types.
 
 ```mermaid
 sequenceDiagram
-    participant CL as CL
-    participant EL as EL
-    participant CLOptionalProofs as CL <br> (optional-proofs)
-    participant EWS as EWS
+    participant CL as CL <br> (Kurtosis)
     participant zkboost as zkboost <br> server
-    participant ere as Ere <br> server(s)
-    CL->>EWS: New head <br> (SSE)
-    EL->>EWS: Fetch block + witness
-    EWS->>zkboost: Request proof
-    zkboost->>EWS: Response proof_gen_id
-    zkboost->>ere: Request proof
-    ere->>zkboost: Response proof
-    zkboost->>EWS: Send proof + proof_gen_id
-    EWS->>CLOptionalProofs: Submit proof
+    participant EL as EL <br> (Kurtosis)
+    participant Ere as Ere <br> server(s)
+    CL->>zkboost: POST /v1/execution_proof_requests <br> (SSZ NewPayloadRequest)
+    zkboost->>CL:
+    CL->>zkboost: GET /v1/execution_proof_requests?new_payload_request_root=0x... <br> (SSE stream)
+    zkboost->>EL: Fetch ExecutionWitness
+    EL->>zkboost:
+    zkboost->>Ere: Request proof
+    Ere->>zkboost:
+    zkboost->>CL: proof_complete or proof_failure SSE
+    CL->>zkboost: GET /v1/execution_proofs/{new_payload_request_root}/{type}
+    zkboost->>CL:
 ```
 
 ## Installation
 
-1. Install [Docker](https://docs.docker.com/get-docker/). Verify that Docker has been successfully installed by running `sudo docker run hello-world`. 
+1. Install [Docker](https://docs.docker.com/get-docker/). Verify that Docker has been successfully installed by running `sudo docker run hello-world`.
 
 1. Install [Kurtosis](https://docs.kurtosis.com/install/). Verify that Kurtosis has been successfully installed by running `kurtosis version` which should display the version.
 
@@ -56,7 +56,7 @@ This produces `ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda`, which is referen
 In `zkboost` repo:
 
 ```
-./docker/example/testnet/start_local_testnet.sh -n ./docker/example/testnet/network_params_mixed_proof_gen_verify.yaml
+./docker/example/testnet/start_local_testnet.sh
 ```
 
 ## Start zkboost and EWS
@@ -78,7 +78,7 @@ In `zkboost` repo:
 ./docker/example/testnet/stop_local_testnet.sh
 ```
 
-## Stop zkboost and EWS
+## Stop zkboost
 
 In `zkboost` repo:
 

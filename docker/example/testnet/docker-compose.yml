@@ -17,7 +17,7 @@ services:
       - ../../../scripts/download-ere-guest.sh:/scripts/download-ere-guest.sh:ro
 
   ethrex-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.6.0-cuda
     command: ["--port", "3000", "--program-path", "/programs/stateless-validator-ethrex-zisk", "gpu"]
     depends_on:
       download-programs:
@@ -30,7 +30,7 @@ services:
         soft: -1
         hard: -1
     networks:
-      - testnet-ews
+      - zkboost
     environment:
       - RUST_LOG=info
       - ERE_ZISK_SETUP_ON_INIT=1
@@ -72,9 +72,8 @@ services:
     volumes:
       - ./config/zkboost-server.toml:/app/config.toml:ro
     networks:
-      - testnet-ews
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - zkboost
+      - kurtosis
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -88,5 +87,8 @@ volumes:
     name: programs-v0.6.0
 
 networks:
-  testnet-ews:
-    name: testnet-ews
+  zkboost:
+    name: zkboost-local-testnet
+  kurtosis:
+    external: true
+    name: kt-local-testnet
