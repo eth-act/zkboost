@@ -30,26 +30,26 @@ sequenceDiagram
 
 ## (Optional) Build image locally with GPU acceleration
 
-The pre-built ZisK prover image (`ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda`) supports Blackwell GPUs only (ZisK only supports single architecture codegen). If you have a Blackwell GPU, e.g. RTX 50 series or RTX PRO 6000, skip this section.
+The pre-built ZisK prover image (`ghcr.io/eth-act/ere/ere-server-zisk:0.6.0-cuda`) supports Blackwell GPUs only (ZisK only supports single architecture codegen). If you have a Blackwell GPU, e.g. RTX 50 series or RTX PRO 6000, skip this section.
 
 Build the image with the compute capability of local GPU:
 
 ```bash
-git clone --depth 1 --branch v0.3.0 https://github.com/eth-act/ere
+git clone --depth 1 --branch v0.6.0 https://github.com/eth-act/ere
 cd ere
 CUDA_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
 echo "Building for CUDA architecture: $CUDA_ARCH"
 bash .github/scripts/build-image.sh \
     --registry ghcr.io/eth-act/ere \
     --zkvm zisk \
-    --tag 0.3.0-cuda \
+    --tag 0.6.0-cuda \
     --base \
     --server \
     --cuda \
     --cuda-archs "$CUDA_ARCH"
 ```
 
-This produces `ghcr.io/eth-act/ere/ere-server-zisk:0.3.0-cuda`, which is referenced by the `./docker/example/testnet/docker-compose.yml`.
+This produces `ghcr.io/eth-act/ere/ere-server-zisk:0.6.0-cuda`, which is referenced by the `./docker/example/testnet/docker-compose.yml`.
 
 ## Start local testnet
 
