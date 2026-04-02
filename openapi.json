@@ -3,7 +3,7 @@
     "info": {
         "title": "Proof Node API",
         "description": "HTTP API for CL to request execution proof generation/verification of different EL/zkVM combinations. Proofs are generated asynchronously; Server-Sent Events notify when a proof request completes or fails.",
-        "version": "0.3.0"
+        "version": "0.1.0"
     },
     "servers": [
         {
