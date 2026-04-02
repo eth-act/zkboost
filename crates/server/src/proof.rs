@@ -29,6 +29,7 @@ use zkboost_types::{
 };
 
 use crate::{
+    metrics::record_prove,
     proof::worker::{ProofResult, WorkerOutput},
     witness::WitnessServiceMessage,
 };
@@ -141,6 +142,7 @@ impl ProofService {
                         elapsed_secs = request.created_at.elapsed().as_secs(),
                         "pending request timed out"
                     );
+
                     in_flight.remove(&(request.new_payload_request_root, request.proof_type));
                     let _ = proof_event_tx.send(
                         ProofFailure {
@@ -154,6 +156,7 @@ impl ProofService {
                         }
                         .into(),
                     );
+                    record_prove(request.proof_type, "timeout", Duration::ZERO, 0);
                 }
                 // Removes timeout requests
                 !is_stale
@@ -169,46 +172,37 @@ impl ProofService {
         self.in_flight
             .remove(&(new_payload_request_root, proof_type));
 
-        match output.proof_result {
+        let proof_event = match output.proof_result {
             ProofResult::Success(proof) => {
                 self.completed_proofs
                     .write()
                     .await
                     .put((new_payload_request_root, proof_type), proof);
-                let _ = self.proof_event_tx.send(
-                    ProofComplete {
-                        new_payload_request_root,
-                        proof_type,
-                    }
-                    .into(),
-                );
+                ProofComplete {
+                    new_payload_request_root,
+                    proof_type,
+                }
+                .into()
             }
-            ProofResult::Failure(error) => {
-                let _ = self.proof_event_tx.send(
-                    ProofFailure {
-                        new_payload_request_root,
-                        proof_type,
-                        reason: FailureReason::ProvingError,
-                        error,
-                    }
-                    .into(),
-                );
+            ProofResult::Failure(error) => ProofFailure {
+                new_payload_request_root,
+                proof_type,
+                reason: FailureReason::ProvingError,
+                error,
             }
-            ProofResult::Timeout => {
-                let _ = self.proof_event_tx.send(
-                    ProofFailure {
-                        new_payload_request_root,
-                        proof_type,
-                        reason: FailureReason::ProvingTimeout,
-                        error: format!(
-                            "proving timeout after {} seconds",
-                            self.proof_timeout.as_secs()
-                        ),
-                    }
-                    .into(),
-                );
+            .into(),
+            ProofResult::Timeout => ProofFailure {
+                new_payload_request_root,
+                proof_type,
+                reason: FailureReason::ProvingTimeout,
+                error: format!(
+                    "proving timeout after {} seconds",
+                    self.proof_timeout.as_secs()
+                ),
             }
-        }
+            .into(),
+        };
+        let _ = self.proof_event_tx.send(proof_event);
     }
 
     async fn handle_message(
@@ -289,6 +283,7 @@ impl ProofService {
                                 }
                                 .into(),
                             );
+                            record_prove(request.proof_type, "error", Duration::ZERO, 0);
                         }
                     }
                 }
@@ -326,6 +321,7 @@ impl ProofService {
                                 }
                                 .into(),
                             );
+                            record_prove(request.proof_type, "error", Duration::ZERO, 0);
                         }
                         return;
                     }
@@ -365,15 +361,11 @@ fn dispatch_to_worker(
             }
             .into(),
         );
+        record_prove(proof_type, "error", Duration::ZERO, 0);
         return;
     };
 
-    let worker_input = WorkerInput {
-        payload,
-        new_payload_request_root,
-        proof_type,
-    };
-
+    let worker_input = WorkerInput { payload };
     match tx.try_send(worker_input) {
         Ok(()) => {
             debug!(proof_type = %proof_type, "proof dispatched");
@@ -393,6 +385,7 @@ fn dispatch_to_worker(
                 }
                 .into(),
             );
+            record_prove(proof_type, "error", Duration::ZERO, 0);
         }
     }
 }

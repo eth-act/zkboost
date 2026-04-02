@@ -5,9 +5,11 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use ere_server::client::zkVMClient;
-use ere_zkvm_interface::{Input, ProgramProvingReport, Proof, ProofKind, PublicValues};
+use ere_zkvm_interface::{Input, Proof, ProofKind, PublicValues};
+use rand::{Rng, rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use stateless_validator_common::new_payload_request::NewPayloadRequest;
 use stateless_validator_ethrex::guest::{
     StatelessValidatorEthrexGuest, StatelessValidatorEthrexIo,
 };
@@ -15,12 +17,15 @@ use stateless_validator_reth::guest::{
     Guest, Io, Platform, StatelessValidatorOutput, StatelessValidatorRethGuest,
     StatelessValidatorRethIo,
 };
-use tokio::time::{Instant, sleep, sleep_until};
+use tokio::time::{Instant, sleep_until};
 use tracing::warn;
 use url::Url;
 use zkboost_types::{ElKind, Hash256, ProofType};
 
-use crate::{config::zkVMConfig, proof::input::NewPayloadRequestWithWitness};
+use crate::{
+    config::{MockProvingTime, zkVMConfig},
+    proof::input::NewPayloadRequestWithWitness,
+};
 
 #[derive(Debug, thiserror::Error)]
 #[allow(non_camel_case_types)]
@@ -34,8 +39,8 @@ pub(crate) enum zkVMError {
 }
 
 /// zkVM instance, either a remote ere-server or a mock.
-#[allow(non_camel_case_types, missing_debug_implementations)]
-#[derive(Clone)]
+#[allow(non_camel_case_types)]
+#[derive(Clone, Debug)]
 pub(crate) enum zkVMInstance {
     /// External Ere server that provides zkVM functionalities via HTTP endpoints.
     External {
@@ -74,14 +79,14 @@ impl zkVMInstance {
             }
             zkVMConfig::Mock {
                 proof_type,
-                mock_proving_time_ms,
+                mock_proving_time,
                 mock_proof_size,
                 mock_failure,
             } => Ok(Self::Mock {
                 proof_type: *proof_type,
                 vm: MockzkVM::new(
                     proof_type.el_kind(),
-                    *mock_proving_time_ms,
+                    mock_proving_time.clone(),
                     *mock_proof_size,
                     *mock_failure,
                 ),
@@ -89,16 +94,22 @@ impl zkVMInstance {
         }
     }
 
-    /// Generates a compressed proof for the given payload.
+    /// Generates a compressed proof for the given payload, returning raw proof bytes.
     pub(crate) async fn prove(
         &self,
         new_payload_request_with_witness: &NewPayloadRequestWithWitness,
-    ) -> anyhow::Result<(PublicValues, Proof, ProgramProvingReport)> {
+    ) -> anyhow::Result<Vec<u8>> {
         let el_kind = self.proof_type().el_kind();
         let input = new_payload_request_with_witness.to_zkvm_input(el_kind)?;
         match self {
-            Self::External { client, .. } => Ok(client.prove(input, ProofKind::Compressed).await?),
-            Self::Mock { vm, .. } => vm.prove(&input, ProofKind::Compressed).await,
+            Self::External { client, .. } => {
+                let (_, proof, _) = client.prove(input, ProofKind::Compressed).await?;
+                match proof {
+                    Proof::Compressed(bytes) => Ok(bytes),
+                    _ => anyhow::bail!("unexpected proof kind: {:?}", proof.kind()),
+                }
+            }
+            Self::Mock { vm, .. } => vm.prove(&input).await,
         }
     }
 
@@ -108,10 +119,9 @@ impl zkVMInstance {
         new_payload_request_root: Hash256,
         proof: Vec<u8>,
     ) -> Result<(), zkVMError> {
-        let proof = Proof::Compressed(proof);
         let public_values = match self {
             Self::External { client, .. } => client
-                .verify(proof)
+                .verify(Proof::Compressed(proof))
                 .await
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
             Self::Mock { vm, .. } => vm
@@ -167,7 +177,7 @@ impl MockProof {
 #[derive(Debug, Clone)]
 pub(crate) struct MockzkVM {
     el_kind: ElKind,
-    mock_proving_time: Duration,
+    mock_proving_time: MockProvingTime,
     mock_proof_size: u64,
     failure: bool,
 }
@@ -176,47 +186,55 @@ impl MockzkVM {
     /// Construct a `MockzkVM`.
     pub(crate) fn new(
         el_kind: ElKind,
-        mock_proving_time_ms: u64,
+        mock_proving_time: MockProvingTime,
         mock_proof_size: u64,
         failure: bool,
     ) -> Self {
         Self {
             el_kind,
-            mock_proving_time: Duration::from_millis(mock_proving_time_ms),
+            mock_proving_time,
             mock_proof_size,
             failure,
         }
     }
 
-    /// Simulate proof generation with configurable delay.
-    pub(crate) async fn prove(
-        &self,
-        input: &Input,
-        proof_kind: ProofKind,
-    ) -> anyhow::Result<(PublicValues, Proof, ProgramProvingReport)> {
+    /// Simulate proof generation with configurable delay, returning raw proof bytes.
+    pub(crate) async fn prove(&self, input: &Input) -> anyhow::Result<Vec<u8>> {
         let start = Instant::now();
-        let public_values = execute(self.el_kind, input)?.to_vec();
-        sleep_until(start + self.mock_proving_time).await;
+
+        let (hash, gas_used) = execute(self.el_kind, input)?;
+        let public_values = hash.to_vec();
+
+        let duration = match &self.mock_proving_time {
+            MockProvingTime::Constant { ms } => Duration::from_millis(*ms),
+            MockProvingTime::Random { min_ms, max_ms } => {
+                Duration::from_millis(rng().random_range(*min_ms..=*max_ms))
+            }
+            MockProvingTime::Linear { ms_per_mgas } => {
+                Duration::from_millis(ms_per_mgas * gas_used / 1_000_000)
+            }
+        };
+        sleep_until(start + duration).await;
+
         if self.failure {
             anyhow::bail!("proof generation failure");
         }
-        Ok((
-            public_values.clone(),
-            Proof::new(
-                proof_kind,
-                bincode::serialize(&MockProof::new(public_values, self.mock_proof_size))?,
-            ),
-            ProgramProvingReport {
-                proving_time: self.mock_proving_time,
-            },
-        ))
+
+        Ok(bincode::serialize(&MockProof::new(
+            public_values,
+            self.mock_proof_size,
+        ))?)
     }
 
     /// Simulate proof verification by checking proof size.
-    pub(crate) async fn verify(&self, proof: &Proof) -> anyhow::Result<PublicValues> {
-        let verification_time = Duration::from_millis(10);
-        sleep(verification_time).await;
-        let mock_proof: MockProof = bincode::deserialize(proof.as_bytes())?;
+    pub(crate) async fn verify(&self, proof: &[u8]) -> anyhow::Result<PublicValues> {
+        let start = Instant::now();
+
+        let mock_proof: MockProof = bincode::deserialize(proof)?;
+
+        let duration = Duration::from_millis(10);
+        sleep_until(start + duration).await;
+
         if mock_proof.proof.len() == self.mock_proof_size as usize {
             Ok(mock_proof.public_values)
         } else {
@@ -225,8 +243,7 @@ impl MockzkVM {
     }
 }
 
-// Runs the guest program on the host to compute expected public values.
-fn execute(el_kind: ElKind, input: &Input) -> anyhow::Result<[u8; 32]> {
+fn execute(el_kind: ElKind, input: &Input) -> anyhow::Result<([u8; 32], u64)> {
     struct Host;
 
     impl Platform for Host {
@@ -239,20 +256,35 @@ fn execute(el_kind: ElKind, input: &Input) -> anyhow::Result<[u8; 32]> {
         fn print(_: &str) {}
     }
 
-    fn run<G: Guest>(input: &Input) -> anyhow::Result<[u8; 32]> {
-        let (_, input) = input
-            .stdin
-            .split_at_checked(4)
-            .ok_or_else(|| anyhow::anyhow!("stdin should have length prefixed"))?;
-        let input = G::Io::deserialize_input(input)?;
-        let output = G::compute::<Host>(input);
-        let serialized = G::Io::serialize_output(&output)?;
-        Ok(Sha256::digest(serialized).into())
-    }
+    let (_, stdin) = input
+        .stdin
+        .split_at_checked(4)
+        .ok_or_else(|| anyhow::anyhow!("stdin should have length prefixed"))?;
 
     match el_kind {
-        ElKind::Ethrex => run::<StatelessValidatorEthrexGuest>(input),
-        ElKind::Reth => run::<StatelessValidatorRethGuest>(input),
+        ElKind::Ethrex => {
+            let input = StatelessValidatorEthrexIo::deserialize_input(stdin)?;
+            let gas_used = gas_used(&input.new_payload_request);
+            let output = StatelessValidatorEthrexGuest::compute::<Host>(input);
+            let serialized = StatelessValidatorEthrexIo::serialize_output(&output)?;
+            Ok((Sha256::digest(serialized).into(), gas_used))
+        }
+        ElKind::Reth => {
+            let input = StatelessValidatorRethIo::deserialize_input(stdin)?;
+            let gas_used = gas_used(&input.new_payload_request);
+            let output = StatelessValidatorRethGuest::compute::<Host>(input);
+            let serialized = StatelessValidatorRethIo::serialize_output(&output)?;
+            Ok((Sha256::digest(serialized).into(), gas_used))
+        }
+    }
+}
+
+fn gas_used(req: &NewPayloadRequest) -> u64 {
+    match req {
+        NewPayloadRequest::Bellatrix(r) => r.execution_payload.gas_used,
+        NewPayloadRequest::Capella(r) => r.execution_payload.gas_used,
+        NewPayloadRequest::Deneb(r) => r.execution_payload.gas_used,
+        NewPayloadRequest::ElectraFulu(r) => r.execution_payload.gas_used,
     }
 }
 

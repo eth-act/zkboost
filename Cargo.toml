@@ -84,6 +84,7 @@ ere-server = { git = "https://github.com/eth-act/ere", tag = "v0.6.1" }
 ere-zkvm-interface = { git = "https://github.com/eth-act/ere", tag = "v0.6.1" }
 
 # ere-guests
+stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.7.0" }
 stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.7.0", features = ["host"] }
 stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.7.0", features = ["host"] }
 

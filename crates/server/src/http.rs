@@ -97,7 +97,7 @@ pub(crate) mod tests {
     use zkboost_types::{ProofEvent, ProofType};
 
     use crate::{
-        config::zkVMConfig,
+        config::{MockProvingTime, zkVMConfig},
         http::{AppState, router},
         proof::{ProofServiceMessage, zkvm::zkVMInstance},
     };
@@ -110,7 +110,7 @@ pub(crate) mod tests {
 
         let mock_config = zkVMConfig::Mock {
             proof_type: ProofType::RethZisk,
-            mock_proving_time_ms: 10,
+            mock_proving_time: MockProvingTime::Constant { ms: 10 },
             mock_proof_size: 64,
             mock_failure: false,
         };

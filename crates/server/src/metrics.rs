@@ -76,15 +76,19 @@ fn record_request_end(endpoint: &str, method: &str, status: u16, duration: Durat
 }
 
 /// Record a prove operation result.
-pub fn record_prove(proof_type: ProofType, success: bool, duration: Duration, proof_size: usize) {
-    let status = if success { "success" } else { "error" };
+pub fn record_prove(
+    proof_type: ProofType,
+    status: &'static str,
+    duration: Duration,
+    proof_size: usize,
+) {
     counter!(
         "zkboost_prove_total",
         "proof_type" => proof_type.to_string(),
         "status" => status
     )
     .increment(1);
-    if success {
+    if status == "success" {
         histogram!(
             "zkboost_prove_duration_seconds",
             "proof_type" => proof_type.to_string(),

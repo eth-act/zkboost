@@ -171,7 +171,7 @@ impl TestHarness {
         let proof_type = ProofType::EthrexZisk;
         let zkvm_config = zkVMConfig::Mock {
             proof_type,
-            mock_proving_time_ms: 3000,
+            mock_proving_time: zkboost_server::config::MockProvingTime::Constant { ms: 3000 },
             mock_proof_size: 1024,
             mock_failure: behavior.proof_failure,
         };

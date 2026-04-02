@@ -49,6 +49,7 @@ ere-server.workspace = true
 ere-zkvm-interface.workspace = true
 
 # ere-guests
+stateless-validator-common.workspace = true
 stateless-validator-ethrex.workspace = true
 stateless-validator-reth.workspace = true
 
