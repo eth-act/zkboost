@@ -10,7 +10,11 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
-use zkboost_server::{config::Config, metrics::init_metrics, server::zkBoostServer};
+use zkboost_server::{
+    config::Config,
+    metrics::{init_metrics, spawn_upkeep},
+    server::zkBoostServer,
+};
 
 #[derive(Parser)]
 struct Cli {
@@ -22,12 +26,14 @@ struct Cli {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
+        .compact()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
     let cli = Cli::parse();
 
     let metrics = init_metrics();
+    spawn_upkeep(metrics.clone());
 
     let config = Config::load(&cli.config)?;
     info!(

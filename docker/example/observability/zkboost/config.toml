@@ -1,0 +1,24 @@
+port = 3000
+el_endpoint = "http://host.docker.internal:32003"
+
+[[zkvm]]
+kind = "mock"
+proof_type = "ethrex-zisk"
+mock_proving_time = { kind = "random", min_ms = 2000, max_ms = 8000 }
+mock_proof_size = 1024
+
+[[zkvm]]
+kind = "mock"
+proof_type = "reth-zisk"
+mock_proving_time = { kind = "random", min_ms = 3000, max_ms = 9000 }
+mock_proof_size = 1024
+
+[[zkvm]]
+kind = "mock"
+proof_type = "reth-sp1"
+mock_failure = true
+
+[[zkvm]]
+kind = "mock"
+proof_type = "reth-risc0"
+mock_proving_time = { kind = "random", min_ms = 8000, max_ms = 16000 }

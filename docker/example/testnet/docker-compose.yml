@@ -57,8 +57,8 @@ services:
               device_ids: ['4', '5', '6', '7']
               capabilities: [gpu]
 
-  zkboost-server:
-    image: zkboost-server:local
+  zkboost:
+    image: zkboost:local
     build:
       context: ../../..
       dockerfile: ./docker/Dockerfile
@@ -69,7 +69,7 @@ services:
       reth-zisk:
         condition: service_healthy
     volumes:
-      - ./config/zkboost-server.toml:/app/config.toml:ro
+      - ./zkboost/config.toml:/app/config.toml:ro
     networks:
       - zkboost
       - kurtosis

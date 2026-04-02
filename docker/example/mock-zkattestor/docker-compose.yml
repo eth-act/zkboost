@@ -1,14 +1,16 @@
 services:
-  zkboost-server:
-    image: zkboost-server:local
+  zkboost:
+    image: zkboost:local
     build:
       context: ../../..
       dockerfile: ./docker/Dockerfile
     command: ["--config", "/app/config.toml"]
+    ports:
+      - "3000:3000"
     volumes:
-      - ./config/zkboost-server.toml:/app/config.toml:ro
+      - ./zkboost/config.toml:/app/config.toml:ro
     networks:
-      - mock-zkattestor
+      - zkboost
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -20,26 +22,26 @@ services:
       start_interval: 1s
 
   mock-zkattestor:
-    image: zkboost-server:local
+    image: zkboost:local
     entrypoint: ["/usr/local/bin/mock-zkattestor"]
     command:
       - "--cl-endpoint"
       - "http://host.docker.internal:33001"
       - "--zkboost-endpoint"
-      - "http://zkboost-server:3000"
+      - "http://zkboost:3000"
       - "--proof-types"
       - "ethrex-zisk,reth-zisk"
     networks:
-      - mock-zkattestor
+      - zkboost
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
     depends_on:
-      zkboost-server:
+      zkboost:
         condition: service_healthy
 
 networks:
-  mock-zkattestor:
-    name: mock-zkattestor
+  zkboost:
+    name: zkboost-mock-zkattestor

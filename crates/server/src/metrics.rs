@@ -1,6 +1,9 @@
 //! Prometheus metrics registration, recording helpers, and HTTP middleware.
 
-use std::time::{Duration, Instant};
+use std::{
+    array::from_fn,
+    time::{Duration, Instant},
+};
 
 use axum::{
     extract::{MatchedPath, Request},
@@ -8,15 +11,25 @@ use axum::{
     response::Response,
 };
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 use zkboost_types::ProofType;
+
+const DEFAULT_BUCKETS: &[f64] = &[
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
 
 /// Initialize the Prometheus metrics exporter and register metric descriptions.
 ///
 /// Returns a handle that can be used to render metrics for the `/metrics` endpoint.
 pub fn init_metrics() -> PrometheusHandle {
-    let builder = PrometheusBuilder::new();
-    let handle = builder
+    let handle = PrometheusBuilder::new()
+        .set_buckets(DEFAULT_BUCKETS)
+        .unwrap()
+        .set_buckets_for_metric(
+            Matcher::Full("zkboost_prove_duration_seconds".to_owned()),
+            &from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5),
+        )
+        .unwrap()
         .install_recorder()
         .expect("failed to install Prometheus recorder");
 
@@ -48,6 +61,16 @@ pub fn init_metrics() -> PrometheusHandle {
     describe_gauge!("zkboost_build_info", "build info");
 
     handle
+}
+
+/// Spawn a background task that calls `run_upkeep()` every 5 seconds.
+pub fn spawn_upkeep(handle: PrometheusHandle) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            handle.run_upkeep();
+        }
+    });
 }
 
 /// Record an HTTP request start (increment in-flight gauge).

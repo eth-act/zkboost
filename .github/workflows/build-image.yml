@@ -35,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/zkboost-server
+          images: ghcr.io/${{ github.repository }}/zkboost
           tags: |
             type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
             type=semver,pattern={{version}}
@@ -50,16 +50,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build zkboost-server image
+      - name: Build zkboost image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
           push: ${{ github.event_name == 'push' }}
           platforms: linux/${{ matrix.arch }}
-          tags: ghcr.io/${{ github.repository }}/zkboost-server:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
-          cache-from: type=gha,scope=zkboost-server-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=zkboost-server-${{ matrix.arch }}
+          tags: ghcr.io/${{ github.repository }}/zkboost:${{ steps.meta.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=zkboost-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=zkboost-${{ matrix.arch }}
 
   merge-manifests:
     permissions:
@@ -81,12 +81,12 @@ jobs:
 
       - name: Create and push multi-arch manifest
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }} \
-            ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }}-amd64 \
-            ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }}-arm64
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }} \
+            ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-amd64 \
+            ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-arm64
 
       - name: Tag latest
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost-server:latest \
-            ghcr.io/${{ github.repository }}/zkboost-server:${{ needs.build-images.outputs.version }}
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:latest \
+            ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}

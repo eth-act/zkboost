@@ -1,4 +1,4 @@
-//! Integration test for zkboost-server.
+//! Integration test for zkboost.
 
 use std::{
     collections::HashMap,
