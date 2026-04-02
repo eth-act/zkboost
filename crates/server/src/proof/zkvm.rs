@@ -123,7 +123,11 @@ impl zkVMInstance {
         let expected = expected_public_values(new_payload_request_root, el_kind)
             .map_err(|error| zkVMError::VerificationFailed(error.to_string()))?;
 
-        if public_values == expected {
+        // For zkVM with fixed size public values, ensure all padding are zeros.
+        if public_values.len() >= 32
+            && public_values[..32] == expected
+            && public_values[32..].iter().all(|byte| *byte == 0)
+        {
             Ok(())
         } else {
             Err(zkVMError::PublicValuesMismatch)
