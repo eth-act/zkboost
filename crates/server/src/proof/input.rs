@@ -21,7 +21,7 @@ use stateless_validator_reth::{
     guest::{Io, StatelessValidatorRethInput, StatelessValidatorRethIo},
     host::StatelessInput,
 };
-use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest, TreeHash};
+use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest};
 
 /// Combines a `NewPayloadRequest` with its execution witness and chain config, eagerly computing
 /// the `StatelessInput`.
@@ -35,10 +35,10 @@ impl NewPayloadRequestWithWitness {
     /// Constructs a new instance by eagerly computing the `StatelessInput`.
     pub(crate) fn new(
         new_payload_request: &NewPayloadRequest<MainnetEthSpec>,
+        new_payload_request_root: Hash256,
         witness: Arc<ExecutionWitness>,
         chain_config: Arc<ChainConfig>,
     ) -> anyhow::Result<Self> {
-        let new_payload_request_root = new_payload_request.tree_hash_root();
         let execution_data = new_payload_request_to_execution_data(new_payload_request)?;
         let block = execution_data
             .payload
