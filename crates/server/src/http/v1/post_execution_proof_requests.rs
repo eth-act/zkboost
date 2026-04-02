@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{Json, extract::State};
 use bytes::Bytes;
 use tracing::instrument;
 use zkboost_types::{
@@ -22,7 +22,7 @@ pub(crate) async fn post_execution_proof_requests(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ProofRequestQuery>,
     body: Bytes,
-) -> Result<(StatusCode, Json<ProofRequestResponse>), ErrorResponse> {
+) -> Result<Json<ProofRequestResponse>, ErrorResponse> {
     let new_payload_request = NewPayloadRequest::<MainnetEthSpec>::from_ssz_bytes(&body)
         .map_err(|e| ErrorResponse::bad_request(format!("invalid SSZ body: {e:?}")))?;
 
@@ -39,6 +39,7 @@ pub(crate) async fn post_execution_proof_requests(
     state
         .proof_service_tx
         .send(ProofServiceMessage::RequestProof {
+            new_payload_request_root,
             new_payload_request: Arc::new(new_payload_request),
             proof_types: params.proof_types,
         })
@@ -47,12 +48,9 @@ pub(crate) async fn post_execution_proof_requests(
             ErrorResponse::internal_server_error(format!("failed to enqueue proof: {e}"))
         })?;
 
-    Ok((
-        StatusCode::OK,
-        Json(ProofRequestResponse {
-            new_payload_request_root,
-        }),
-    ))
+    Ok(Json(ProofRequestResponse {
+        new_payload_request_root,
+    }))
 }
 
 #[cfg(test)]

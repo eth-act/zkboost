@@ -17,9 +17,9 @@ pub(crate) async fn get_execution_proof_requests(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ProofEventQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let proof_event_receiver = state.proof_event_receiver.resubscribe();
+    let proof_event_rx = state.proof_event_rx.resubscribe();
 
-    let live_stream = BroadcastStream::new(proof_event_receiver).filter_map(|result| result.ok());
+    let live_stream = BroadcastStream::new(proof_event_rx).filter_map(|result| result.ok());
 
     let merged: Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>> =
         if let Some(new_payload_request_root) = params.new_payload_request_root {

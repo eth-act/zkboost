@@ -25,7 +25,7 @@ use tracing::{debug, error, info, warn};
 use worker::WorkerInput;
 use zkboost_types::{
     FailureReason, Hash256, MainnetEthSpec, NewPayloadRequest, ProofComplete, ProofEvent,
-    ProofFailure, ProofType, TreeHash,
+    ProofFailure, ProofType,
 };
 
 use crate::{
@@ -41,6 +41,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(12);
 pub(crate) enum ProofServiceMessage {
     /// A new proof has been requested for the given payload and proof types.
     RequestProof {
+        new_payload_request_root: Hash256,
         new_payload_request: Arc<NewPayloadRequest<MainnetEthSpec>>,
         proof_types: Vec<ProofType>,
     },
@@ -212,11 +213,11 @@ impl ProofService {
     ) {
         match message {
             ProofServiceMessage::RequestProof {
+                new_payload_request_root,
                 new_payload_request,
                 proof_types,
             } => {
                 let block_hash = new_payload_request.block_hash();
-                let new_payload_request_root = new_payload_request.tree_hash_root();
                 let mut fetch_witness = false;
 
                 for proof_type in proof_types {

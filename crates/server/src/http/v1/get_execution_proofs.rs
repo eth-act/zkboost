@@ -2,11 +2,7 @@
 
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::{StatusCode, header::CONTENT_TYPE},
-    response::IntoResponse,
-};
+use axum::{extract::State, response::IntoResponse};
 use tracing::instrument;
 use zkboost_types::{Hash256, ProofType};
 
@@ -19,23 +15,17 @@ use crate::http::{
 pub(crate) async fn get_execution_proofs(
     State(state): State<Arc<AppState>>,
     Path((new_payload_request_root, proof_type)): Path<(Hash256, ProofType)>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, ErrorResponse> {
     match state
         .completed_proofs
         .read()
         .await
         .peek(&(new_payload_request_root, proof_type))
     {
-        Some(proof) => (
-            StatusCode::OK,
-            [(CONTENT_TYPE, "application/octet-stream")],
-            proof.clone(),
-        )
-            .into_response(),
-        None => ErrorResponse::not_found(format!(
+        Some(proof) => Ok(proof.clone()),
+        None => Err(ErrorResponse::not_found(format!(
             "proof not found for root {new_payload_request_root} and type {proof_type}"
-        ))
-        .into_response(),
+        ))),
     }
 }
 
@@ -80,6 +70,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), 404);
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(content_type.contains("application/json"));
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -111,6 +108,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), 200);
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(content_type.contains("application/octet-stream"));
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(body.as_ref(), &[42u8; 64]);
