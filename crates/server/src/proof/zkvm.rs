@@ -16,6 +16,7 @@ use stateless_validator_reth::guest::{
     StatelessValidatorRethIo,
 };
 use tokio::time::{Instant, sleep, sleep_until};
+use tracing::warn;
 use url::Url;
 use zkboost_types::{ElKind, Hash256, ProofType};
 
@@ -130,6 +131,7 @@ impl zkVMInstance {
         {
             Ok(())
         } else {
+            warn!(?public_values, ?expected, "unexpected public values");
             Err(zkVMError::PublicValuesMismatch)
         }
     }
