@@ -1,10 +1,12 @@
 //! Configuration types.
 
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
 
+use anyhow::ensure;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use zkboost_types::ProofType;
@@ -135,7 +137,40 @@ impl Config {
     /// Load configuration from a TOML file at the given path.
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let content = fs::read_to_string(path.as_ref())?;
-        Ok(toml_edit::de::from_str(&content)?)
+        let config: Self = toml_edit::de::from_str(&content)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.zkvm.is_empty(),
+            "at least one [[zkvm]] entry is required"
+        );
+        ensure!(self.proof_cache_size > 0, "proof_cache_size must be > 0");
+        ensure!(
+            self.witness_cache_size > 0,
+            "witness_cache_size must be > 0"
+        );
+        let mut proof_types = HashSet::new();
+        for zkvm in &self.zkvm {
+            let proof_type = zkvm.proof_type();
+            ensure!(
+                proof_types.insert(proof_type),
+                "duplicate proof_type: {proof_type}"
+            );
+            if let zkVMConfig::Mock {
+                mock_proving_time: MockProvingTime::Random { min_ms, max_ms },
+                ..
+            } = zkvm
+            {
+                ensure!(
+                    min_ms <= max_ms,
+                    "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
+                );
+            }
+        }
+        Ok(())
     }
 }
 
@@ -173,46 +208,16 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_size_defaults() {
+    fn test_defaults() {
         let toml = r#"
             el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"
-            mock_proving_time = { kind = "constant", ms = 10 }
-            mock_proof_size = 64
         "#;
         let config: Config = toml_edit::de::from_str(toml).unwrap();
         assert_eq!(config.proof_cache_size, 128);
         assert_eq!(config.witness_cache_size, 128);
-    }
-
-    #[test]
-    fn test_cache_size_overrides() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            proof_cache_size = 256
-            witness_cache_size = 64
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-            mock_proving_time = { kind = "constant", ms = 10 }
-            mock_proof_size = 64
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert_eq!(config.proof_cache_size, 256);
-        assert_eq!(config.witness_cache_size, 64);
-    }
-
-    #[test]
-    fn test_mock_defaults() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
         assert!(matches!(
             config.zkvm[0],
             zkVMConfig::Mock {
@@ -221,5 +226,69 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_empty_zkvm_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            zkvm = []
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_zero_proof_cache_size_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            proof_cache_size = 0
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_zero_witness_cache_size_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            witness_cache_size = 0
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_random_proving_time_min_gt_max_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+            mock_proving_time = { kind = "random", min_ms = 1000, max_ms = 50 }
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_duplicate_proof_type_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
     }
 }

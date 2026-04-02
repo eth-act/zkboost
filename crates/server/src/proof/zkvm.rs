@@ -211,7 +211,7 @@ impl MockzkVM {
                 Duration::from_millis(rng().random_range(*min_ms..=*max_ms))
             }
             MockProvingTime::Linear { ms_per_mgas } => {
-                Duration::from_millis(ms_per_mgas * gas_used / 1_000_000)
+                Duration::from_millis(ms_per_mgas.saturating_mul(gas_used).div_ceil(1_000_000))
             }
         };
         sleep_until(start + duration).await;
