@@ -32,9 +32,8 @@ services:
     networks:
       - zkboost
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=info,asm_runner=warn,executor=warn,mem_planner_cpp=warn,proofman=warn,rom_setup=warn,sm_rom=warn,zisk=warn
       - ERE_ZISK_SETUP_ON_INIT=1
-      - ERE_ZISK_START_SERVER_TIMEOUT_SEC=10
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
