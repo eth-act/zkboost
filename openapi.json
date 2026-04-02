@@ -1,0 +1,398 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Proof Node API",
+        "description": "HTTP API for CL to request execution proof generation/verification of different EL/zkVM combinations. Proofs are generated asynchronously; Server-Sent Events notify when a proof request completes or fails.",
+        "version": "0.3.0"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:3000",
+            "description": "Default local server"
+        }
+    ],
+    "paths": {
+        "/v1/execution_proof_requests": {
+            "post": {
+                "operationId": "postExecutionProofRequests",
+                "summary": "Submit an execution proof request",
+                "description": "Accepts an SSZ-encoded NewPayloadRequest and enqueues proof generation for the specified proof types. Returns the tree-hash root computed from the submitted payload.",
+                "parameters": [
+                    {
+                        "name": "proof_types",
+                        "in": "query",
+                        "required": true,
+                        "description": "Comma-separated list of proof types to generate. Must contain at least one valid value. Whitespace around commas is trimmed.",
+                        "schema": {
+                            "type": "string",
+                            "examples": [
+                                "reth-sp1",
+                                "reth-sp1,ethrex-risc0"
+                            ]
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "description": "SSZ-encoded NewPayloadRequest (transparent union across fork variants). The Content-Type header SHOULD be set to application/octet-stream, but the server does not enforce it.",
+                    "content": {
+                        "application/octet-stream": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Proof request accepted.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProofRequestResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid SSZ body, empty or missing proof_types, or unconfigured proof type.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "examples": {
+                                    "invalid_ssz": {
+                                        "summary": "Invalid SSZ body",
+                                        "value": {
+                                            "code": 400,
+                                            "message": "invalid SSZ body: OffsetOutOfBounds(0)"
+                                        }
+                                    },
+                                    "unconfigured_proof_type": {
+                                        "summary": "Unconfigured proof type",
+                                        "value": {
+                                            "code": 400,
+                                            "message": "no zkVM configured for proof type 'reth-sp1'"
+                                        }
+                                    },
+                                    "empty_proof_types": {
+                                        "summary": "Empty proof_types",
+                                        "value": {
+                                            "code": 400,
+                                            "message": "proof_types must contain at least one valid value"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal queue failure.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "code": 500,
+                                    "message": "failed to enqueue proof: channel closed"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "operationId": "getExecutionProofRequests",
+                "summary": "Subscribe to execution proof events via SSE",
+                "description": "Opens a Server-Sent Events stream for proof completion and failure notifications.\n\nThe server sends SSE comment lines (`:` prefix, per SSE spec) every 15 seconds as keep-alive. These are not events and should be ignored by conforming SSE clients.\n\nWhen `new_payload_request_root` is provided, the server first emits cached `proof_complete` events for cached proofs that completed before the subscription started (catch-up), then streams live events filtered to that root.\n\nCompleted proofs are held in a bounded LRU cache. Clients should download proofs promptly after receiving a `proof_complete` event, as proofs may be evicted under memory pressure.\n\n**Event types:**\n- `proof_complete` - Data payload: ProofCompleteEvent (JSON)\n- `proof_failure` - Data payload: ProofFailureEvent (JSON)",
+                "parameters": [
+                    {
+                        "name": "new_payload_request_root",
+                        "in": "query",
+                        "required": false,
+                        "description": "Filter events to only this root. When omitted, all events are streamed.",
+                        "schema": {
+                            "$ref": "#/components/schemas/Hash256"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE event stream opened. Events are delivered as `text/event-stream`.",
+                        "content": {
+                            "text/event-stream": {
+                                "schema": {
+                                    "description": "SSE stream. Each message has an `event` field (event type name) and a `data` field (JSON payload). See the SSE event schemas for the payload format of each event type.",
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/execution_proofs/{new_payload_request_root}/{proof_type}": {
+            "get": {
+                "operationId": "getExecutionProofs",
+                "summary": "Download a completed execution proof",
+                "description": "Returns the raw proof bytes for a completed proof identified by its root and proof type.",
+                "parameters": [
+                    {
+                        "name": "new_payload_request_root",
+                        "in": "path",
+                        "required": true,
+                        "description": "The root from the original proof request response.",
+                        "schema": {
+                            "$ref": "#/components/schemas/Hash256"
+                        }
+                    },
+                    {
+                        "name": "proof_type",
+                        "in": "path",
+                        "required": true,
+                        "description": "The proof type to download.",
+                        "schema": {
+                            "$ref": "#/components/schemas/ProofType"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Raw proof bytes.",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": {
+                                    "type": "string",
+                                    "format": "binary"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Proof not yet available or does not exist.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "code": 404,
+                                    "message": "proof not found for root 0xabcd...1234 and type reth-sp1"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/execution_proof_verifications": {
+            "post": {
+                "operationId": "postExecutionProofVerifications",
+                "summary": "Verify an execution proof",
+                "description": "Verifies proof bytes against the server's configured zkVM backend. A 200 response with `INVALID` status means verification ran successfully but the proof did not pass. HTTP error codes (4xx, 5xx) mean the request itself was malformed or the server could not process it.",
+                "parameters": [
+                    {
+                        "name": "new_payload_request_root",
+                        "in": "query",
+                        "required": true,
+                        "description": "The tree hash root of the NewPayloadRequest the proof was generated for. The server passes this value to the zkVM verifier to check that the proof's public values match the expected payload root.",
+                        "schema": {
+                            "$ref": "#/components/schemas/Hash256"
+                        }
+                    },
+                    {
+                        "name": "proof_type",
+                        "in": "query",
+                        "required": true,
+                        "description": "The proof type to verify.",
+                        "schema": {
+                            "$ref": "#/components/schemas/ProofType"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "description": "Raw proof bytes. The Content-Type header SHOULD be set to application/octet-stream, but the server does not enforce it.",
+                    "content": {
+                        "application/octet-stream": {
+                            "schema": {
+                                "type": "string",
+                                "format": "binary"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Verification result.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProofVerificationResponse"
+                                },
+                                "examples": {
+                                    "valid": {
+                                        "summary": "Proof is valid",
+                                        "value": {
+                                            "status": "VALID"
+                                        }
+                                    },
+                                    "invalid": {
+                                        "summary": "Proof is invalid",
+                                        "value": {
+                                            "status": "INVALID"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "The requested proof type is not configured on this server.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "code": 404,
+                                    "message": "unknown proof_type: reth-sp1"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Hash256": {
+                "type": "string",
+                "pattern": "^0x[0-9a-f]{64}$",
+                "minLength": 66,
+                "maxLength": 66,
+                "description": "A 32-byte hash represented as a 0x-prefixed lowercase hex string (66 characters total). The 0x prefix is required in both requests and responses.",
+                "examples": [
+                    "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                ]
+            },
+            "ProofType": {
+                "type": "string",
+                "enum": [
+                    "ethrex-risc0",
+                    "ethrex-sp1",
+                    "ethrex-zisk",
+                    "reth-openvm",
+                    "reth-risc0",
+                    "reth-sp1",
+                    "reth-zisk"
+                ],
+                "description": "Case-sensitive identifier for an EL/zkVM combination."
+            },
+            "ProofStatus": {
+                "type": "string",
+                "enum": [
+                    "VALID",
+                    "INVALID"
+                ],
+                "description": "Verification result. VALID means the proof passed verification. INVALID means verification ran but the proof did not pass."
+            },
+            "ProofRequestResponse": {
+                "type": "object",
+                "required": [
+                    "new_payload_request_root"
+                ],
+                "properties": {
+                    "new_payload_request_root": {
+                        "$ref": "#/components/schemas/Hash256"
+                    }
+                },
+                "description": "Response for a successful proof request submission."
+            },
+            "ProofVerificationResponse": {
+                "type": "object",
+                "required": [
+                    "status"
+                ],
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/ProofStatus"
+                    }
+                },
+                "description": "Response for a proof verification request."
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "required": [
+                    "code",
+                    "message"
+                ],
+                "properties": {
+                    "code": {
+                        "type": "integer",
+                        "description": "HTTP status code."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Human-readable error message."
+                    }
+                },
+                "description": "Standard error response returned by all endpoints on failure."
+            },
+            "ProofCompleteEvent": {
+                "type": "object",
+                "required": [
+                    "new_payload_request_root",
+                    "proof_type"
+                ],
+                "properties": {
+                    "new_payload_request_root": {
+                        "$ref": "#/components/schemas/Hash256"
+                    },
+                    "proof_type": {
+                        "$ref": "#/components/schemas/ProofType"
+                    }
+                },
+                "description": "SSE event payload for `proof_complete`. The proof can be downloaded at `/v1/execution_proofs/{new_payload_request_root}/{proof_type}`."
+            },
+            "FailureReason": {
+                "type": "string",
+                "enum": [
+                    "witness_timeout",
+                    "proving_timeout",
+                    "proving_error"
+                ],
+                "description": "Reason a proof request failed. witness_timeout: witness fetch timed out. proving_timeout: proof generation timed out. proving_error: a general error occurred during proving."
+            },
+            "ProofFailureEvent": {
+                "type": "object",
+                "required": [
+                    "new_payload_request_root",
+                    "proof_type",
+                    "reason",
+                    "error"
+                ],
+                "properties": {
+                    "new_payload_request_root": {
+                        "$ref": "#/components/schemas/Hash256"
+                    },
+                    "proof_type": {
+                        "$ref": "#/components/schemas/ProofType"
+                    },
+                    "reason": {
+                        "$ref": "#/components/schemas/FailureReason"
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "Human-readable error message with details about the failure."
+                    }
+                },
+                "description": "SSE event payload for `proof_failure`."
+            }
+        }
+    }
+}
