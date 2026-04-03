@@ -1,31 +1,27 @@
 //! Witness fetching service.
 //!
-//! This module provides `WitnessService`, which is responsible for fetching execution witness
-//! data from the EL client. It responds to `WitnessServiceMessage::FetchWitness` requests from
-//! the proof service, retrying failed fetches every second until success or timeout.
+//! This module provides `WitnessService`, which is responsible for fetching execution witness data
+//! from the EL client. It responds to `WitnessServiceMessage::FetchWitness` requests from the proof
+//! service. Each fetch is a self-contained task that retries until success or the configured
+//! witness timeout elapses.
 
 use std::{
-    collections::{HashMap, HashSet},
-    num::NonZeroUsize,
-    sync::Arc,
-    time::{Duration, Instant},
+    collections::HashSet, num::NonZeroUsize, panic::AssertUnwindSafe, sync::Arc, time::Duration,
 };
 
+use futures::FutureExt;
 use lru::LruCache;
 use stateless::ExecutionWitness;
 use tokio::{
     sync::mpsc,
     task::{JoinHandle, JoinSet},
-    time::interval,
+    time::{Instant, sleep_until, timeout},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use zkboost_types::Hash256;
 
 use crate::{el_client::ElClient, proof::ProofServiceMessage};
-
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(12);
-const RETRY_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Messages consumed by the witness service event loop.
 #[derive(Debug)]
@@ -40,8 +36,10 @@ pub(crate) struct WitnessService {
     el_client: Arc<ElClient>,
     proof_service_tx: mpsc::Sender<ProofServiceMessage>,
     witness_timeout: Duration,
-    witness_cache_size: usize,
+    witness_cache: LruCache<Hash256, Arc<ExecutionWitness>>,
 }
+
+type TaskResult = (Hash256, Option<Arc<ExecutionWitness>>);
 
 impl WitnessService {
     /// Creates a new witness service with the given EL client and proof sender.
@@ -55,7 +53,9 @@ impl WitnessService {
             el_client,
             proof_service_tx,
             witness_timeout,
-            witness_cache_size,
+            witness_cache: LruCache::new(
+                NonZeroUsize::new(witness_cache_size).expect("witness_cache_size must be non-zero"),
+            ),
         }
     }
 
@@ -69,20 +69,12 @@ impl WitnessService {
     }
 
     async fn run(
-        self,
+        mut self,
         shutdown_token: CancellationToken,
         mut witness_service_rx: mpsc::Receiver<WitnessServiceMessage>,
     ) {
-        let mut witness_cache: LruCache<Hash256, Arc<ExecutionWitness>> = LruCache::new(
-            NonZeroUsize::new(self.witness_cache_size)
-                .expect("witness_cache_size must be non-zero"),
-        );
-        let mut unresolved: HashMap<Hash256, Instant> = HashMap::new();
-        let mut in_flight: HashSet<Hash256> = HashSet::new();
-        let mut tasks: JoinSet<(Hash256, Option<ExecutionWitness>)> = JoinSet::new();
-
-        let mut cleanup_interval = interval(CLEANUP_INTERVAL);
-        let mut retry_interval = interval(RETRY_INTERVAL);
+        let mut requested = HashSet::new();
+        let mut tasks: JoinSet<TaskResult> = JoinSet::new();
 
         loop {
             tokio::select! {
@@ -95,94 +87,111 @@ impl WitnessService {
                 }
 
                 Some(result) = tasks.join_next() => {
-                    match result {
-                        Ok((block_hash, Some(witness))) => {
-                            let witness = Arc::new(witness);
-                            witness_cache.put(block_hash, witness.clone());
-                            unresolved.remove(&block_hash);
-                            in_flight.remove(&block_hash);
-                            info!(block_hash = %block_hash, "witness fetched and cached");
-                            if let Err(error) = self.proof_service_tx.send(ProofServiceMessage::WitnessAvailable { block_hash, witness }).await {
-                                error!(error = %error, "witness ready send failed");
-                            }
-                        }
-                        Ok((block_hash, None)) => {
-                            in_flight.remove(&block_hash);
-                        }
-                        Err(error) if error.is_panic() => {
-                            error!(error = ?error, "fetch task panicked");
-                        }
-                        Err(_) => {}
+                    if let Ok((block_hash, witness)) = result {
+                        self.handle_task_result(block_hash, witness, &mut requested)
+                            .await;
                     }
                 }
 
-                Some(message) = witness_service_rx.recv() => {
-                    match message {
-                        WitnessServiceMessage::FetchWitness { block_hash } => {
-                            if let Some(witness) = witness_cache.peek(&block_hash).cloned() {
-                                debug!(block_hash = %block_hash, "witness cache hit");
-                                if let Err(error) = self.proof_service_tx.send(ProofServiceMessage::WitnessAvailable { block_hash, witness }).await {
-                                    error!(error = %error, "witness ready send failed");
-                                }
-                                continue;
-                            }
+                Some(msg) = witness_service_rx.recv() => {
+                    self.handle_message(msg, &mut requested, &mut tasks).await;
+                }
+            }
+        }
+    }
 
-                            if in_flight.contains(&block_hash) {
-                                debug!(block_hash = %block_hash, "witness fetch in flight");
-                                continue;
-                            }
+    async fn handle_task_result(
+        &mut self,
+        block_hash: Hash256,
+        witness: Option<Arc<ExecutionWitness>>,
+        requested: &mut HashSet<Hash256>,
+    ) {
+        requested.remove(&block_hash);
+        match witness {
+            Some(witness) => {
+                self.witness_cache.put(block_hash, witness.clone());
+                info!(%block_hash, "witness fetched and cached");
+                if let Err(error) = self
+                    .proof_service_tx
+                    .send(ProofServiceMessage::WitnessAvailable {
+                        block_hash,
+                        witness,
+                    })
+                    .await
+                {
+                    error!(%error, "witness available send failed");
+                }
+            }
+            None => {
+                warn!(%block_hash, "witness fetch timed out");
+                if let Err(error) = self
+                    .proof_service_tx
+                    .send(ProofServiceMessage::WitnessTimeout { block_hash })
+                    .await
+                {
+                    error!(%error, "witness timeout send failed");
+                }
+            }
+        }
+    }
 
-                            unresolved.entry(block_hash).or_insert_with(Instant::now);
-                            in_flight.insert(block_hash);
-                            let el_client = self.el_client.clone();
-                            tasks.spawn(fetch_witness_task(el_client, block_hash));
-                        }
+    async fn handle_message(
+        &self,
+        message: WitnessServiceMessage,
+        requested: &mut HashSet<Hash256>,
+        tasks: &mut JoinSet<TaskResult>,
+    ) {
+        match message {
+            WitnessServiceMessage::FetchWitness { block_hash } => {
+                if let Some(witness) = self.witness_cache.peek(&block_hash).cloned() {
+                    debug!(%block_hash, "witness cache hit");
+                    if let Err(error) = self
+                        .proof_service_tx
+                        .send(ProofServiceMessage::WitnessAvailable {
+                            block_hash,
+                            witness,
+                        })
+                        .await
+                    {
+                        error!(%error, "witness available send failed");
                     }
+                    return;
                 }
 
-                // Re-dispatch all unresolved witnesses that are not currently in flight.
-                _ = retry_interval.tick() => {
-                    for &block_hash in unresolved.keys() {
-                        if !in_flight.contains(&block_hash) {
-                            in_flight.insert(block_hash);
-                            let el_client = self.el_client.clone();
-                            tasks.spawn(fetch_witness_task(el_client, block_hash));
-                        }
-                    }
+                if !requested.insert(block_hash) {
+                    debug!(%block_hash, "witness already requested");
+                    return;
                 }
 
-                _ = cleanup_interval.tick() => {
-                    let timeout = self.witness_timeout;
-                    unresolved.retain(|block_hash, created_at| {
-                        let is_stale = created_at.elapsed() >= timeout;
-                        if is_stale {
-                            warn!(
-                                block_hash = %block_hash,
-                                elapsed_secs = created_at.elapsed().as_secs(),
-                                "pending fetch timed out"
-                            );
-                        }
-                        !is_stale
-                    });
-                }
+                tasks.spawn(fetch_witness(
+                    self.el_client.clone(),
+                    block_hash,
+                    self.witness_timeout,
+                ));
             }
         }
     }
 }
 
-async fn fetch_witness_task(
+async fn fetch_witness(
     el_client: Arc<ElClient>,
     block_hash: Hash256,
-) -> (Hash256, Option<ExecutionWitness>) {
-    match el_client.get_execution_witness_by_hash(block_hash).await {
-        Ok(Some(witness)) => (block_hash, Some(witness)),
-        Ok(None) => {
-            debug!(block_hash = %block_hash, "witness not found");
-            (block_hash, None)
+    witness_timeout: Duration,
+) -> (Hash256, Option<Arc<ExecutionWitness>>) {
+    const RETRY_INTERVAL: Duration = Duration::from_millis(200);
+    let fut = async {
+        loop {
+            let deadline = Instant::now() + RETRY_INTERVAL;
+            match el_client.get_execution_witness_by_hash(block_hash).await {
+                Ok(Some(witness)) => return Arc::new(witness),
+                Ok(None) => debug!(%block_hash, "witness not found, retrying"),
+                Err(error) => warn!(%block_hash, %error, "witness fetch failed, retrying"),
+            }
+            sleep_until(deadline).await;
         }
-        Err(error) => {
-            warn!(block_hash = %block_hash, error = %error, "witness fetch failed");
-            (block_hash, None)
-        }
+    };
+    match timeout(witness_timeout, AssertUnwindSafe(fut).catch_unwind()).await {
+        Ok(Ok(witness)) => (block_hash, Some(witness)),
+        _ => (block_hash, None),
     }
 }

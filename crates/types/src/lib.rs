@@ -214,6 +214,8 @@ pub enum FailureReason {
     ProvingTimeout,
     /// A general error occurred during proving.
     ProvingError,
+    /// An internal error occurred.
+    InternalError,
 }
 
 /// Custom serde for comma-separated `Vec<ProofType>` in query strings.

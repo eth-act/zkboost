@@ -9,13 +9,10 @@ use std::{
 use bytes::Bytes;
 use tokio::{sync::mpsc, time::timeout};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::info;
 use zkboost_types::{Hash256, ProofType};
 
-use crate::{
-    metrics::record_prove,
-    proof::{input::NewPayloadRequestWithWitness, zkvm::zkVMInstance},
-};
+use crate::proof::{input::NewPayloadRequestWithWitness, zkvm::zkVMInstance};
 
 /// Input sent to a per-zkVM worker for proof generation.
 pub(crate) struct WorkerInput {
@@ -28,6 +25,7 @@ pub(crate) struct WorkerOutput {
     pub(crate) new_payload_request_root: Hash256,
     pub(crate) proof_type: ProofType,
     pub(crate) proof_result: ProofResult,
+    pub(crate) duration: Duration,
 }
 
 /// Result of a single proof generation attempt.
@@ -80,26 +78,12 @@ pub(crate) async fn run_worker(
         };
         let duration = start.elapsed();
 
-        match &proof_result {
-            ProofResult::Success(proof) => {
-                record_prove(proof_type, "success", duration, proof.len());
-                info!(%new_payload_request_root, %proof_type, proof_size = proof.len(), "proof generated");
-            }
-            ProofResult::Failure(error) => {
-                record_prove(proof_type, "error", duration, 0);
-                error!(%new_payload_request_root, %proof_type, %error, "proof generation failed");
-            }
-            ProofResult::Timeout => {
-                record_prove(proof_type, "timeout", duration, 0);
-                error!(%new_payload_request_root, %proof_type, "proof generation timed out");
-            }
-        }
-
         let _ = worker_output_tx
             .send(WorkerOutput {
                 new_payload_request_root,
                 proof_type,
                 proof_result,
+                duration,
             })
             .await;
     }

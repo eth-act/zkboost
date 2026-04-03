@@ -364,9 +364,10 @@
                 "enum": [
                     "witness_timeout",
                     "proving_timeout",
-                    "proving_error"
+                    "proving_error",
+                    "internal_error"
                 ],
-                "description": "Reason a proof request failed. witness_timeout: witness fetch timed out. proving_timeout: proof generation timed out. proving_error: a general error occurred during proving."
+                "description": "Reason a proof request failed. witness_timeout: witness fetch timed out. proving_timeout: proof generation timed out. proving_error: a general error occurred during proving. internal_error: an internal error occurred."
             },
             "ProofFailureEvent": {
                 "type": "object",
