@@ -6,8 +6,7 @@ use axum::{Json, extract::State};
 use bytes::Bytes;
 use tracing::instrument;
 use zkboost_types::{
-    Decode, MainnetEthSpec, NewPayloadRequest, ProofRequestQuery, ProofRequestResponse, ProofType,
-    TreeHash,
+    Decode, MainnetEthSpec, NewPayloadRequest, ProofRequestQuery, ProofRequestResponse, TreeHash,
 };
 
 use crate::{
@@ -24,7 +23,13 @@ pub(crate) async fn post_execution_proof_requests(
     Query(params): Query<ProofRequestQuery>,
     body: Bytes,
 ) -> Result<Json<ProofRequestResponse>, ErrorResponse> {
-    let proof_types: HashSet<ProofType> = params.proof_types.iter().copied().collect();
+    if params.proof_types.is_empty() {
+        return Err(ErrorResponse::bad_request(
+            "empty proof types in request".to_string(),
+        ));
+    }
+
+    let proof_types = HashSet::from_iter(params.proof_types.iter().copied());
     if proof_types.len() != params.proof_types.len() {
         return Err(ErrorResponse::bad_request(
             "duplicate proof types in request".to_string(),
