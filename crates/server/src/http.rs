@@ -29,9 +29,9 @@ mod v1;
 pub(crate) struct AppState {
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     pub(crate) completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+    pub(crate) metrics: PrometheusHandle,
     pub(crate) proof_service_tx: mpsc::Sender<ProofServiceMessage>,
     pub(crate) proof_event_rx: broadcast::Receiver<ProofEvent>,
-    pub(crate) metrics: PrometheusHandle,
 }
 
 impl AppState {
@@ -39,16 +39,16 @@ impl AppState {
     pub(crate) fn new(
         zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
         completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+        metrics: PrometheusHandle,
         proof_service_tx: mpsc::Sender<ProofServiceMessage>,
         proof_event_rx: broadcast::Receiver<ProofEvent>,
-        metrics: PrometheusHandle,
     ) -> Self {
         Self {
             zkvms,
             completed_proofs,
+            metrics,
             proof_service_tx,
             proof_event_rx,
-            metrics,
         }
     }
 }
@@ -122,9 +122,9 @@ pub(crate) mod tests {
         Arc::new(AppState::new(
             zkvms,
             completed_proofs,
+            metrics,
             proof_service_tx,
             proof_event_rx,
-            metrics,
         ))
     }
 

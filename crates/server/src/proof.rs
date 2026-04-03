@@ -43,7 +43,7 @@ pub(crate) enum ProofServiceMessage {
     RequestProof {
         new_payload_request_root: Hash256,
         new_payload_request: Arc<NewPayloadRequest<MainnetEthSpec>>,
-        proof_types: Vec<ProofType>,
+        proof_types: HashSet<ProofType>,
     },
     /// An execution witness has been fetched and is ready for proof generation.
     WitnessAvailable {
@@ -139,7 +139,7 @@ impl ProofService {
                 for &proof_type in &request.proof_types {
                     warn!(
                         block_hash = %block_hash,
-                        proof_type = %proof_type,
+                        %proof_type,
                         elapsed_secs = request.created_at.elapsed().as_secs(),
                         "pending request timed out"
                     );
@@ -211,74 +211,78 @@ impl ProofService {
             ProofServiceMessage::RequestProof {
                 new_payload_request_root,
                 new_payload_request,
-                proof_types,
+                mut proof_types,
             } => {
                 let block_hash = new_payload_request.block_hash();
-                let mut fetch_witness = false;
 
-                for proof_type in proof_types {
-                    {
-                        let cache = self.completed_proofs.read().await;
-                        if cache.contains(&(new_payload_request_root, proof_type)) {
+                // Deduplicate
+                {
+                    let cache = self.completed_proofs.read().await;
+                    proof_types.retain(|proof_type| {
+                        if cache.contains(&(new_payload_request_root, *proof_type)) {
                             debug!(
                                 %new_payload_request_root,
-                                proof_type = %proof_type,
+                                %proof_type,
                                 "proof already completed"
                             );
-                            continue;
+                            return false;
                         }
-                    }
 
-                    if !self
-                        .requested
-                        .insert((new_payload_request_root, proof_type))
-                    {
-                        debug!(
-                            %new_payload_request_root,
-                            proof_type = %proof_type,
-                            "duplicate proof request"
-                        );
-                        continue;
-                    }
+                        if !self
+                            .requested
+                            .insert((new_payload_request_root, *proof_type))
+                        {
+                            debug!(
+                                %new_payload_request_root,
+                                %proof_type,
+                                "duplicate proof request"
+                            );
+                            return false;
+                        }
 
-                    debug!(
-                        %new_payload_request_root,
-                        %block_hash,
-                        proof_type = %proof_type,
-                        "new proof request"
-                    );
-
-                    self.pending
-                        .entry(block_hash)
-                        .and_modify(|r| {
-                            r.proof_types.insert(proof_type);
-                        })
-                        .or_insert_with(|| PendingRequest {
-                            new_payload_request: new_payload_request.clone(),
-                            new_payload_request_root,
-                            proof_types: HashSet::from([proof_type]),
-                            created_at: Instant::now(),
-                        });
-                    fetch_witness = true;
+                        true
+                    });
                 }
 
-                if fetch_witness
+                if proof_types.is_empty() {
+                    return;
+                }
+
+                debug!(
+                    %new_payload_request_root,
+                    %block_hash,
+                    ?proof_types,
+                    "new proof requests"
+                );
+
+                if !self.pending.contains_key(&block_hash)
                     && let Err(error) = self
                         .witness_service_tx
                         .send(WitnessServiceMessage::FetchWitness { block_hash })
                         .await
                 {
-                    error!(error = %error, "witness request send failed");
-                    if let Some(request) = self.pending.remove(&block_hash) {
-                        for &proof_type in &request.proof_types {
-                            self.fail_request(
-                                request.new_payload_request_root,
-                                proof_type,
-                                format!("witness service unavailable: {error}"),
-                            );
-                        }
+                    for &proof_type in &proof_types {
+                        self.fail_request(
+                            new_payload_request_root,
+                            proof_type,
+                            format!("witness service unavailable: {error}"),
+                        );
                     }
+                    error!(error = %error, "fetch witness send failed");
+                    return;
                 }
+
+                self.pending
+                    .entry(block_hash)
+                    .and_modify(|r| {
+                        r.proof_types.extend(proof_types.iter().copied());
+                    })
+                    .or_insert_with(|| PendingRequest {
+                        new_payload_request: new_payload_request.clone(),
+                        new_payload_request_root,
+                        proof_types,
+                        created_at: Instant::now(),
+                    });
             }
             ProofServiceMessage::WitnessAvailable {
                 block_hash,
@@ -340,7 +344,7 @@ impl ProofService {
         let worker_input = WorkerInput { payload };
         match tx.try_send(worker_input) {
             Ok(()) => {
-                debug!(proof_type = %proof_type, "proof dispatched");
+                debug!(%proof_type, "proof dispatched");
             }
             Err(error) => {
                 let reason = match &error {
