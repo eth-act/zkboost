@@ -18,7 +18,7 @@ use lru::LruCache;
 use stateless::ExecutionWitness;
 use tokio::sync::{RwLock, broadcast, mpsc, mpsc::error::TrySendError};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use worker::WorkerInput;
 use zkboost_types::{
     FailureReason, Hash256, MainnetEthSpec, NewPayloadRequest, ProofComplete, ProofEvent,
@@ -26,6 +26,7 @@ use zkboost_types::{
 };
 
 use crate::{
+    dashboard::DashboardMessage,
     metrics::record_prove,
     proof::worker::{ProofResult, WorkerOutput},
     witness::WitnessServiceMessage,
@@ -56,12 +57,12 @@ struct PendingRequest {
 }
 
 /// Manages proof lifecycle: pending, enqueued, and completed proof requests.
-#[allow(missing_debug_implementations)]
 pub(crate) struct ProofService {
     chain_config: Arc<ChainConfig>,
-    completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+    proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
     proof_event_tx: broadcast::Sender<ProofEvent>,
     witness_service_tx: mpsc::Sender<WitnessServiceMessage>,
+    dashboard_service_tx: mpsc::Sender<DashboardMessage>,
     proof_timeout: Duration,
     pending: HashMap<Hash256, PendingRequest>,
     requested: HashSet<(Hash256, ProofType)>,
@@ -71,16 +72,18 @@ impl ProofService {
     /// Creates a new proof service with the given dependencies.
     pub(crate) fn new(
         chain_config: Arc<ChainConfig>,
-        completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+        proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
         proof_event_tx: broadcast::Sender<ProofEvent>,
         witness_service_tx: mpsc::Sender<WitnessServiceMessage>,
+        dashboard_service_tx: mpsc::Sender<DashboardMessage>,
         proof_timeout: Duration,
     ) -> Self {
         Self {
             chain_config,
-            completed_proofs,
+            proof_cache,
             proof_event_tx,
             witness_service_tx,
+            dashboard_service_tx,
             proof_timeout,
             pending: HashMap::new(),
             requested: HashSet::new(),
@@ -95,8 +98,6 @@ impl ProofService {
         mut worker_output_rx: mpsc::Receiver<WorkerOutput>,
         worker_input_txs: HashMap<ProofType, mpsc::Sender<WorkerInput>>,
     ) {
-        info!("proof service started");
-
         loop {
             tokio::select! {
                 biased;
@@ -114,22 +115,30 @@ impl ProofService {
                 else => break,
             }
         }
-
-        info!("proof service stopped");
     }
 
     async fn handle_worker_output(&mut self, output: WorkerOutput) {
-        let new_payload_request_root = output.new_payload_request_root;
-        let proof_type = output.proof_type;
-        let duration = output.duration;
+        let WorkerOutput {
+            new_payload_request_root,
+            block_hash,
+            block_number,
+            proof_type,
+            proof_result,
+            duration,
+        } = output;
+
+        trace!(%block_hash, block_number, "received WorkerOutput");
+
         self.requested
             .remove(&(new_payload_request_root, proof_type));
 
-        match output.proof_result {
-            ProofResult::Success(proof) => {
+        let dashboard_msg = DashboardMessage::prove_end(block_hash, proof_type, &proof_result);
+
+        match proof_result {
+            ProofResult::Ok(proof) => {
                 let proof_size = proof.len();
-                info!(%new_payload_request_root, %proof_type, proof_size, "proof generated");
-                self.completed_proofs
+                info!(%block_hash, block_number, %proof_type, proof_size, "proved");
+                self.proof_cache
                     .write()
                     .await
                     .put((new_payload_request_root, proof_type), proof);
@@ -142,8 +151,8 @@ impl ProofService {
                 );
                 record_prove(proof_type, "success", duration, proof_size);
             }
-            ProofResult::Failure(error) => {
-                error!(%new_payload_request_root, %proof_type, %error, "proof generation failed");
+            ProofResult::Err(error) => {
+                error!(%block_hash, block_number, %proof_type, %error, "proving failed");
                 self.fail_request(
                     new_payload_request_root,
                     proof_type,
@@ -153,19 +162,21 @@ impl ProofService {
                 );
             }
             ProofResult::Timeout => {
-                error!(%new_payload_request_root, %proof_type, "proof generation timed out");
+                error!(%block_hash, block_number, %proof_type, "proving timed out");
                 self.fail_request(
                     new_payload_request_root,
                     proof_type,
                     FailureReason::ProvingTimeout,
                     format!(
-                        "proving timeout after {} seconds",
+                        "proving timed out after {} seconds",
                         self.proof_timeout.as_secs()
                     ),
                     duration,
                 );
             }
         }
+
+        let _ = self.dashboard_service_tx.try_send(dashboard_msg);
     }
 
     async fn handle_message(
@@ -180,16 +191,20 @@ impl ProofService {
                 mut proof_types,
             } => {
                 let block_hash = new_payload_request.block_hash();
+                let block_number = new_payload_request.block_number();
+
+                trace!(%block_hash, block_number, "received ProofServiceMessage::RequestProof");
 
                 // Deduplicate
                 {
-                    let cache = self.completed_proofs.read().await;
+                    let cache = self.proof_cache.read().await;
                     proof_types.retain(|proof_type| {
                         if cache.contains(&(new_payload_request_root, *proof_type)) {
                             debug!(
-                                %new_payload_request_root,
+                                %block_hash,
+                                block_number,
                                 %proof_type,
-                                "proof already completed"
+                                "proof cache hit"
                             );
                             return false;
                         }
@@ -199,9 +214,10 @@ impl ProofService {
                             .insert((new_payload_request_root, *proof_type))
                         {
                             debug!(
-                                %new_payload_request_root,
+                                %block_hash,
+                                block_number,
                                 %proof_type,
-                                "duplicate proof request"
+                                "proof already requested"
                             );
                             return false;
                         }
@@ -214,12 +230,16 @@ impl ProofService {
                     return;
                 }
 
-                debug!(
+                info!(
                     %new_payload_request_root,
                     %block_hash,
+                    block_number,
                     ?proof_types,
-                    "new proof requests"
+                    "received proof request"
                 );
+
+                let dashboard_msg =
+                    DashboardMessage::request_proof(&new_payload_request, &proof_types);
 
                 if !self.pending.contains_key(&block_hash)
                     && let Err(error) = self
@@ -227,7 +247,7 @@ impl ProofService {
                         .send(WitnessServiceMessage::FetchWitness { block_hash })
                         .await
                 {
-                    error!(error = %error, "fetch witness send failed");
+                    error!(%block_hash, block_number, error = %error, "fetch witness send failed");
                     for &proof_type in &proof_types {
                         self.fail_request(
                             new_payload_request_root,
@@ -250,20 +270,18 @@ impl ProofService {
                         new_payload_request_root,
                         proof_types,
                     });
+
+                let _ = self.dashboard_service_tx.try_send(dashboard_msg);
             }
             ProofServiceMessage::WitnessAvailable {
                 block_hash,
                 witness,
             } => {
+                trace!(%block_hash, "received ProofServiceMessage::WitnessAvailable");
+
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
-
-                info!(
-                    %block_hash,
-                    count = request.proof_types.len(),
-                    "dispatching pending requests"
-                );
 
                 let input = match NewPayloadRequestWithWitness::new(
                     &request.new_payload_request,
@@ -287,10 +305,12 @@ impl ProofService {
                 };
 
                 for proof_type in request.proof_types {
-                    self.dispatch_to_worker(worker_input_txs, proof_type, input.clone());
+                    self.send_worker_input(worker_input_txs, proof_type, input.clone());
                 }
             }
             ProofServiceMessage::WitnessTimeout { block_hash } => {
+                trace!(%block_hash, "received ProofServiceMessage::WitnessTimeout");
+
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
@@ -308,13 +328,15 @@ impl ProofService {
         }
     }
 
-    fn dispatch_to_worker(
+    fn send_worker_input(
         &mut self,
         worker_input_txs: &HashMap<ProofType, mpsc::Sender<WorkerInput>>,
         proof_type: ProofType,
         payload: Arc<NewPayloadRequestWithWitness>,
     ) {
         let new_payload_request_root = payload.root();
+        let block_hash = payload.block_hash();
+        let block_number = payload.block_number();
 
         let Some(tx) = worker_input_txs.get(&proof_type) else {
             self.fail_request(
@@ -330,7 +352,7 @@ impl ProofService {
         let worker_input = WorkerInput { payload };
         match tx.try_send(worker_input) {
             Ok(()) => {
-                debug!(%proof_type, "proof dispatched");
+                debug!(%block_hash, block_number, %proof_type, "proof dispatched");
             }
             Err(error) => {
                 let reason = match &error {
@@ -341,7 +363,7 @@ impl ProofService {
                     new_payload_request_root,
                     proof_type,
                     FailureReason::InternalError,
-                    format!("dispatch failed: {reason}"),
+                    format!("worker input send failed: {reason}"),
                     Duration::ZERO,
                 );
             }

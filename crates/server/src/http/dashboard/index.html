@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>zkBoost Dashboard</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "preact": "https://cdn.jsdelivr.net/npm/preact@10.29.1/dist/preact.module.js",
+            "preact/hooks": "https://cdn.jsdelivr.net/npm/preact@10.29.1/hooks/dist/hooks.module.js",
+            "@preact/signals": "https://cdn.jsdelivr.net/npm/@preact/signals@2.9.0/dist/signals.module.js",
+            "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.module.js",
+            "htm": "https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.module.js",
+            "htm/preact": "https://cdn.jsdelivr.net/npm/htm@3.1.1/preact/index.module.js",
+            "chart.js/auto": "https://cdn.jsdelivr.net/npm/chart.js@4.5.1/auto/+esm"
+        }
+    }
+    </script>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0f1117;
+            --bg-card: #181b23;
+            --bg-card-hover: #1e2230;
+            --border: #2a2e3a;
+            --text-1: #e4e6eb;
+            --text-2: #8b8fa3;
+            --green: #22c55e;
+            --yellow: #eab308;
+            --red: #ef4444;
+            --pt-0: #ef4444;
+            --pt-1: #f97316;
+            --pt-2: #eab308;
+            --pt-3: #22c55e;
+            --pt-4: #06b6d4;
+            --pt-5: #3b82f6;
+            --pt-6: #8b5cf6;
+            --gas: #94a3b8;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .main {
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        table {
+            border-collapse: collapse;
+        }
+
+        .table {
+            width: 100%;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25em 0.5em;
+            font-size: 0.75em;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: baseline;
+            border-radius: 50rem;
+
+            &.badge-success {
+                background: color-mix(in srgb, var(--green) 15%, transparent);
+                color: var(--green);
+            }
+
+            &.badge-failure {
+                background: color-mix(in srgb, var(--red) 15%, transparent);
+                color: var(--red);
+            }
+
+            &.badge-timeout {
+                background: color-mix(in srgb, var(--yellow) 15%, transparent);
+                color: var(--yellow);
+            }
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.375rem 0.75rem;
+            font-family: inherit;
+            font-size: 1rem;
+            font-weight: 400;
+            line-height: 1.5;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+            background: transparent;
+            transition: color 0.15s ease-in-out, background 0.15s ease-in-out, border-color 0.15s ease-in-out;
+
+            &.btn-sm {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.875rem;
+                border-radius: 0.25rem;
+            }
+
+            &.btn-outline-secondary {
+                color: var(--text-2);
+                border-color: var(--border);
+
+                &:hover {
+                    color: var(--text-1);
+                    border-color: var(--text-2);
+                    background: color-mix(in srgb, var(--text-1) 5%, transparent);
+                }
+
+                &:disabled {
+                    opacity: 0.5;
+                    pointer-events: none;
+                }
+            }
+        }
+
+        .mono {
+            font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+            font-size: 0.875rem;
+        }
+
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem max(1.5rem, calc((100% - 1400px) / 2 + 1.5rem));
+            position: sticky;
+            top: 0;
+            z-index: 1020;
+
+            .navbar-brand {
+                font-weight: 700;
+                font-size: 1.25rem;
+                letter-spacing: -0.02em;
+            }
+
+            .navbar-status {
+                display: flex;
+                align-items: center;
+            }
+
+            .navbar-connection-label {
+                color: var(--text-2);
+                font-size: 0.875rem;
+            }
+        }
+
+        .connection-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            transition: background-color 0.3s;
+
+            &.connected {
+                background: var(--green);
+                box-shadow: 0 0 6px var(--green);
+            }
+
+            &.disconnected {
+                background: var(--red);
+                box-shadow: 0 0 6px var(--red);
+            }
+        }
+
+        .info-bar {
+            padding: 0.6rem 1.25rem;
+            font-size: 0.875rem;
+            overflow: hidden;
+
+            .info-bar-items {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                row-gap: 0.4rem;
+            }
+
+            .info-item {
+                padding: 0 0.75rem;
+                white-space: nowrap;
+                border-left: 1px solid var(--border);
+
+                &:first-child {
+                    border-left: none;
+                    padding-left: 0;
+                }
+            }
+
+            .info-label {
+                color: var(--text-2);
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                margin-right: 0.4rem;
+            }
+
+            .info-value {
+                font-weight: 700;
+                display: inline-block;
+                min-width: 5ch;
+
+                &.info-value-auto {
+                    min-width: auto;
+                }
+            }
+        }
+
+        .section-title {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-2);
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+
+            &.section-title-flex {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+            }
+
+            .section-title-suffix {
+                font-weight: 400;
+                font-size: 0.75rem;
+                opacity: 0.6;
+            }
+        }
+
+        .chart-wrap {
+            height: 280px;
+        }
+
+        .pager {
+            display: flex;
+            padding-top: 0.75rem;
+            align-items: center;
+            justify-content: space-between;
+
+            .pager-info {
+                font-size: 0.75rem;
+                color: var(--text-2);
+            }
+
+            .pager-btn {
+                font-size: 0.75rem;
+            }
+
+            .pager-btn-next {
+                margin-left: 0.25rem;
+            }
+        }
+
+        .inline-filter {
+            font-size: 0.7rem;
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+            color: var(--text-2);
+        }
+
+        .toggle-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            font-size: 0.7rem;
+            padding: 1px 6px;
+            margin: 0 2px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: inherit;
+
+            &:hover {
+                border-color: var(--text-2);
+                color: var(--text-1);
+            }
+
+            &.active {
+                background: var(--text-2);
+                color: var(--bg);
+                border-color: var(--text-2);
+            }
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .table-dark-custom {
+            background: transparent;
+            color: var(--text-1);
+            font-size: 0.875rem;
+            margin-bottom: 0;
+
+            th,
+            td {
+                padding: 0.8rem 1.2rem;
+                white-space: nowrap;
+                border-bottom: 1px solid var(--border);
+            }
+
+            th {
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                color: var(--text-2);
+                font-weight: 600;
+            }
+
+            td {
+                vertical-align: middle;
+            }
+        }
+
+        .table-dark-custom .col-gap,
+        .table-dark-custom .col-gap-top {
+            width: 1.2rem;
+            min-width: 1.2rem;
+            max-width: 1.2rem;
+            padding: 0;
+
+            &.col-gap-top {
+                border: none;
+                background: var(--bg-card);
+            }
+        }
+
+        .table-dark-custom .col-pad {
+            padding: 0;
+            width: 100%;
+        }
+
+        .th-fill {
+            width: 100%;
+            text-align: left;
+        }
+
+        .th-timestamp {
+            min-width: 16ch;
+        }
+
+        .proof-type-badge {
+            --badge-color: #9ca3af;
+            font-size: 0.75rem;
+            padding: 0.2em 0.6em;
+            border-radius: 4px;
+            font-weight: 600;
+            white-space: nowrap;
+            background: color-mix(in srgb, var(--badge-color) 15%, transparent);
+            color: var(--badge-color);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-2);
+            font-size: 0.875rem;
+        }
+
+        .hash-text {
+            color: var(--text-2);
+        }
+
+        .history-block-header {
+            cursor: pointer;
+            user-select: none;
+
+            &:hover td {
+                background: var(--bg-card-hover);
+            }
+
+            .toggle-arrow {
+                display: inline-block;
+                transition: transform 0.2s;
+                margin-right: 4px;
+                font-size: 0.7rem;
+            }
+
+            &.expanded .toggle-arrow {
+                transform: rotate(90deg);
+            }
+
+            .toggle-arrow-cell {
+                padding: 0 1em;
+            }
+        }
+
+        .cell-left {
+            text-align: left;
+        }
+
+        .cell-right {
+            text-align: right;
+        }
+
+        .cell-center {
+            text-align: center;
+        }
+
+        .table-dark-custom td.sub-table-wrapper {
+            padding: 0 0 2rem 2rem;
+        }
+
+        .history-sub-table {
+            margin: 0;
+
+            td.error-cell {
+                max-width: 50ch;
+                word-break: break-word;
+                white-space: normal;
+                text-align: left;
+            }
+        }
+
+        .chart-legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 4px 14px;
+            padding-bottom: 0.5rem;
+            font-size: 0.75rem;
+
+            .chart-legend-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                cursor: pointer;
+                color: var(--text-1);
+                user-select: none;
+
+                &.legend-hidden {
+                    opacity: 0.35;
+                }
+            }
+
+            .chart-legend-icon {
+                width: 16px;
+                height: 10px;
+                flex-shrink: 0;
+                position: relative;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+
+                .dot {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 50%;
+                    position: relative;
+                    z-index: 1;
+
+                    &.dot-square {
+                        border-radius: 2px;
+                    }
+                }
+
+                .line {
+                    position: absolute;
+                    left: 0;
+                    right: 0;
+                    top: 50%;
+                    height: 2px;
+                    margin-top: -1px;
+                }
+            }
+        }
+
+        .copy-hash-btn {
+            padding: 0 3px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            color: var(--text-2);
+            vertical-align: middle;
+            line-height: 1;
+
+            &:hover {
+                color: var(--text-1);
+            }
+        }
+
+        .event-pending td {
+            opacity: 0.3;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app"></div>
+    <script type="module">
+        import { render, Fragment } from 'preact';
+        import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
+        import { signal, computed, batch } from '@preact/signals';
+        import { html } from 'htm/preact';
+        import { Chart } from 'chart.js/auto';
+
+        // Constants
+
+        const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        const hexToRgb = (hex) => [
+            parseInt(hex.slice(1, 3), 16),
+            parseInt(hex.slice(3, 5), 16),
+            parseInt(hex.slice(5, 7), 16),
+        ];
+
+        const GAS_LIMIT = 60_000_000;
+
+        const PROOF_TYPE_KEYS = [
+            'ethrex-risc0',
+            'ethrex-sp1',
+            'ethrex-zisk',
+            'reth-openvm',
+            'reth-risc0',
+            'reth-sp1',
+            'reth-zisk',
+        ];
+        const PROOF_TYPE_HEX = Object.fromEntries(PROOF_TYPE_KEYS.map((key, i) => [key, cssVar(`--pt-${i}`)]));
+        const PROOF_TYPE_COLORS = Object.fromEntries(
+            Object.entries(PROOF_TYPE_HEX).map(([key, hex]) => [key, hexToRgb(hex)]),
+        );
+
+        const STATUS_LABELS = {
+            success: 'SUCCESS',
+            timeout: 'TIMEOUT',
+            error: 'ERROR',
+        };
+        const STATUS_BADGE_CLASS = {
+            success: 'badge-success',
+            timeout: 'badge-timeout',
+            error: 'badge-failure',
+        };
+        const STATUS_COLOR_VAR = { success: '--green', timeout: '--yellow', error: '--red' };
+
+        const HISTORY_PAGE_SIZE = 10;
+        const HISTOGRAM_BUCKETS = 24;
+        const HISTOGRAM_BUCKET_SIZE = 0.5;
+
+        const AXIS_COLOR = cssVar('--text-2');
+        const GRID_COLOR = `rgba(${hexToRgb(cssVar('--text-1'))},0.05)`;
+        const HOVER_LINE_COLOR = `rgba(${hexToRgb(cssVar('--text-1'))},0.2)`;
+        const MUTED_GAS_COLOR = `rgba(${hexToRgb(cssVar('--gas'))},0.9)`;
+
+        // Pure Helpers
+
+        const proofTypeRgb = (proofType) => PROOF_TYPE_COLORS[proofType] ?? [156, 163, 175];
+        const proofTypeColor = (proofType, alpha = 0.85) => `rgba(${proofTypeRgb(proofType)},${alpha})`;
+        const proofTypeBadgeStyle = (proofType) => `--badge-color:${PROOF_TYPE_HEX[proofType] ?? '#9ca3af'}`;
+
+        const formatDuration = (secs) => {
+            if (secs == null || isNaN(secs)) return '-';
+            return `${secs.toFixed(3)} s`;
+        };
+
+        const formatBytes = (bytes) => {
+            if (bytes == null || isNaN(bytes)) return '-';
+            let formatted;
+            if (bytes < 1024) formatted = `${bytes} B`;
+            else if (bytes < 1024 * 1024) formatted = `${(bytes / 1024).toFixed(1)} KiB`;
+            else if (bytes < 1024 ** 3) formatted = `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+            else formatted = `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
+            return formatted.padStart(9);
+        };
+
+        const formatGas = (gas) => {
+            if (gas == null) return '-';
+            const percentage = ((gas / GAS_LIMIT) * 100).toFixed(2);
+            let formatted;
+            if (gas >= 1e6) formatted = `${(gas / 1e6).toFixed(2)} M`;
+            else if (gas >= 1e3) formatted = `${(gas / 1e3).toFixed(2)} K`;
+            else formatted = String(gas);
+            return `${formatted.padStart(7)} (${percentage}%)`;
+        };
+
+        const truncateHash = (hash) =>
+            !hash || hash.length < 12 ? hash || '-' : `${hash.slice(0, 6)}...${hash.slice(-4)}`;
+        const formatOffset = (offset) => (offset == null || isNaN(offset) ? '-' : `T+${offset.toFixed(3)} s`);
+        const percentile = (sorted, rank) =>
+            sorted.length === 0 ? null : sorted[Math.max(0, Math.ceil(rank * sorted.length) - 1)];
+
+        const classifyProofStatus = (entry) =>
+            entry.status === 'success' ? 'success' : entry.status === 'timeout' ? 'timeout' : 'error';
+
+        const provingSecs = (proof) =>
+            proof.startedS != null && proof.endedS != null ? proof.endedS - proof.startedS : null;
+
+        const proofCounts = (entries) => {
+            const counts = { success: 0, timeout: 0, error: 0 };
+            for (const entry of entries) counts[classifyProofStatus(entry)]++;
+            return counts;
+        };
+
+        const getHistoryGrouped = (blocks, filters, includePending) => {
+            const groups = {};
+            for (const block of blocks) {
+                const blockHash = block.blockHash;
+                const matchingProofs = [];
+                for (const [proofType, proof] of Object.entries(block.proofs)) {
+                    if (proof.status == null) continue;
+                    const classification = classifyProofStatus(proof);
+                    if (filters[classification]) {
+                        matchingProofs.push({ ...proof, proofType, blockHash, blockNumber: block.blockNumber });
+                    }
+                }
+                if (matchingProofs.length > 0) groups[blockHash] = matchingProofs;
+                else if (includePending && Object.keys(block.proofs).length === 0) groups[blockHash] = [];
+            }
+            const blockTimestampOf = (blockHash) => blocks.find((b) => b.blockHash === blockHash)?.blockTimestamp ?? 0;
+            return {
+                groups,
+                order: Object.keys(groups).sort((a, b) => blockTimestampOf(b) - blockTimestampOf(a)),
+            };
+        };
+
+        // Chart Helpers
+
+        const verticalLinePlugin = {
+            id: 'verticalHoverLine',
+            afterDraw(chart) {
+                if (chart.tooltip?._active?.length) {
+                    const x = chart.tooltip._active[0].element.x;
+                    const { top, bottom } = chart.chartArea;
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x, top);
+                    ctx.lineTo(x, bottom);
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = HOVER_LINE_COLOR;
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            },
+        };
+
+        const axisTitle = (text, size = 10) => ({
+            display: true,
+            text,
+            color: AXIS_COLOR,
+            font: { size, weight: 'normal' },
+            padding: 2,
+        });
+
+        const baseChartOptions = (xTitle, yTitle, tooltipCallbacks) => ({
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            layout: { padding: { top: 5 } },
+            scales: {
+                x: {
+                    border: { color: AXIS_COLOR },
+                    grid: { color: GRID_COLOR },
+                    ticks: { color: AXIS_COLOR, font: { size: 10 }, maxRotation: 0 },
+                    title: axisTitle(xTitle),
+                },
+                y: {
+                    border: { color: AXIS_COLOR },
+                    grid: { color: GRID_COLOR, drawTicks: true, tickLength: 4 },
+                    ticks: { color: AXIS_COLOR, font: { size: 10 }, padding: 2 },
+                    title: axisTitle(yTitle),
+                },
+            },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: tooltipCallbacks,
+                },
+            },
+        });
+
+        const buildLineChartData = (blocks, types, blockCount, latestBlockNumber) => {
+            const byHash = {};
+            const ensure = (blockHash, blockNumber, blockTimestamp) => {
+                if (!byHash[blockHash]) byHash[blockHash] = { blockNumber, blockTimestamp, proving: {}, gas: null };
+                if (blockNumber) byHash[blockHash].blockNumber = blockNumber;
+                if (blockTimestamp) byHash[blockHash].blockTimestamp = blockTimestamp;
+            };
+            for (const block of blocks) {
+                if (block.blockNumber) {
+                    ensure(block.blockHash, block.blockNumber, block.blockTimestamp ?? 0);
+                    if (block.gasUsed) byHash[block.blockHash].gas = block.gasUsed / 1e6;
+                    for (const [proofType, proof] of Object.entries(block.proofs)) {
+                        if (proof.status === 'success' && provingSecs(proof) != null)
+                            byHash[block.blockHash].proving[proofType] = provingSecs(proof);
+                    }
+                }
+            }
+            const all = Object.values(byHash).filter((block) => block.blockNumber);
+            all.sort((a, b) => b.blockTimestamp - a.blockTimestamp || b.blockNumber - a.blockNumber);
+            const continuous = [];
+            if (all.length > 0) {
+                continuous.push(all[0]);
+                let expected = all[0].blockNumber - 1;
+                for (let i = 1; i < all.length && continuous.length < blockCount; i++) {
+                    if (all[i].blockNumber === expected) {
+                        continuous.push(all[i]);
+                        expected--;
+                    } else break;
+                }
+            }
+            continuous.reverse();
+            let sorted = continuous.map((block) => block.blockNumber);
+            while (sorted.length < blockCount) sorted.unshift((sorted[0] ?? latestBlockNumber ?? 0) - 1);
+            const blockNumberToProving = {};
+            const blockNumberToGas = {};
+            for (const block of continuous) {
+                blockNumberToProving[block.blockNumber] = block.proving;
+                if (block.gas != null) blockNumberToGas[block.blockNumber] = block.gas;
+            }
+            const datasets = types.map((proofType) => ({
+                label: proofType,
+                data: sorted.map((blockNumber) => blockNumberToProving[blockNumber]?.[proofType] ?? null),
+                borderColor: proofTypeColor(proofType),
+                backgroundColor: proofTypeColor(proofType),
+                fill: false,
+                spanGaps: false,
+                yAxisID: 'y',
+            }));
+            datasets.push({
+                label: 'gas',
+                data: sorted.map((blockNumber) => blockNumberToGas[blockNumber] ?? null),
+                borderColor: MUTED_GAS_COLOR,
+                backgroundColor: MUTED_GAS_COLOR,
+                fill: false,
+                spanGaps: false,
+                yAxisID: 'yGas',
+            });
+            return { labels: sorted.map(String), datasets };
+        };
+
+        const buildHistogramData = (blocks, types) => {
+            const buckets = Object.fromEntries(
+                types.map((proofType) => [proofType, new Array(HISTOGRAM_BUCKETS).fill(0)]),
+            );
+            let maxCount = 0;
+            for (const block of blocks) {
+                for (const [proofType, proof] of Object.entries(block.proofs)) {
+                    if (proof.status === 'success' && buckets[proofType]) {
+                        const bucketIndex = Math.min(
+                            Math.floor((provingSecs(proof) ?? 0) / HISTOGRAM_BUCKET_SIZE),
+                            HISTOGRAM_BUCKETS - 1,
+                        );
+                        buckets[proofType][bucketIndex]++;
+                    }
+                }
+            }
+            const datasets = types.map((proofType) => {
+                for (const count of buckets[proofType]) {
+                    if (count > maxCount) maxCount = count;
+                }
+                return {
+                    label: proofType,
+                    data: buckets[proofType],
+                    backgroundColor: proofTypeColor(proofType),
+                    borderWidth: 0,
+                    barPercentage: 1,
+                    categoryPercentage: 0.8,
+                };
+            });
+            return { datasets, maxCount };
+        };
+
+        // Signals
+
+        const connected = signal(false);
+        const proofTypes = signal([]);
+        const buildVersion = signal('-');
+        const historySize = signal(256);
+        const latestBlockNumber = signal(0);
+        const latestBlockTimestamp = signal(0);
+        const historicalBlocks = signal([]);
+        const latestEvents = signal({ witnessFetch: null, proofs: {} });
+
+        const elapsedTick = signal(0);
+        setInterval(() => {
+            elapsedTick.value++;
+        }, 100);
+
+        const provingStats = computed(() => {
+            return proofTypes.value.map((proofType) => {
+                const durations = [];
+                let success = 0;
+                let timeout = 0;
+                let error = 0;
+                let totalSize = 0;
+                let sizeCount = 0;
+                for (const block of historicalBlocks.value) {
+                    const proof = block.proofs[proofType];
+                    if (!proof || proof.status == null) continue;
+                    const classification = classifyProofStatus(proof);
+                    if (classification === 'success') {
+                        success++;
+                        if (provingSecs(proof) !== null) durations.push(provingSecs(proof));
+                        if (proof.proofSize) {
+                            totalSize += proof.proofSize;
+                            sizeCount++;
+                        }
+                    } else if (classification === 'timeout') timeout++;
+                    else error++;
+                }
+                durations.sort((a, b) => a - b);
+                return {
+                    proofType,
+                    success,
+                    timeout,
+                    error,
+                    p50: percentile(durations, 0.5),
+                    p95: percentile(durations, 0.95),
+                    p99: percentile(durations, 0.99),
+                    avgSize: sizeCount > 0 ? Math.round(totalSize / sizeCount) : null,
+                };
+            });
+        });
+
+        const latestEventsData = computed(() => {
+            const result = { witnessFetch: null, proofs: {} };
+
+            const witnessBlockHash = latestEvents.value.witnessFetch;
+            if (witnessBlockHash) {
+                const block = historicalBlocks.value.find((b) => b.blockHash === witnessBlockHash) ?? {};
+                result.witnessFetch = {
+                    blockHash: witnessBlockHash,
+                    blockNumber: block.blockNumber ?? 0,
+                    blockTimestamp: block.blockTimestamp ?? 0,
+                    witnessRequestedS: Object.values(block.proofs ?? {}).reduce(
+                        (min, p) => (p.requestedS != null && (min == null || p.requestedS < min) ? p.requestedS : min),
+                        null,
+                    ),
+                    witnessStartedS: block.witnessStartedS ?? null,
+                    witnessEndedS: block.witnessEndedS ?? null,
+                    witnessSuccess: block.witnessSuccess ?? false,
+                    witnessSize: block.witnessSize ?? null,
+                    gasUsed: block.gasUsed ?? 0,
+                };
+            }
+
+            for (const proofType of proofTypes.value) {
+                const proofBlockHash = latestEvents.value.proofs[proofType];
+                if (!proofBlockHash) continue;
+                const block = historicalBlocks.value.find((b) => b.blockHash === proofBlockHash) ?? {};
+                const proof = block.proofs?.[proofType] ?? null;
+                const proofData = proof
+                    ? {
+                        ...proof,
+                        proofType,
+                        requestedS: proof.requestedS ?? null,
+                    }
+                    : null;
+                result.proofs[proofType] = {
+                    blockHash: proofBlockHash,
+                    blockNumber: block.blockNumber ?? 0,
+                    blockTimestamp: block.blockTimestamp ?? 0,
+                    proofs: proofData ? { [proofType]: proofData } : {},
+                };
+            }
+
+            return result;
+        });
+
+        // State Helpers
+
+        const withHistoricalBlock = (blockHash, data) => {
+            const blocks = historicalBlocks.value.map((b) => (b.blockHash === blockHash ? { ...b } : b));
+            let entry = blocks.find((b) => b.blockHash === blockHash);
+            if (!entry) {
+                entry = {
+                    blockNumber: 0,
+                    blockHash,
+                    blockTimestamp: 0,
+                    gasUsed: 0,
+                    witnessStartedS: null,
+                    witnessEndedS: null,
+                    witnessSize: null,
+                    witnessSuccess: false,
+                    proofs: {},
+                };
+                blocks.unshift(entry);
+            }
+            if (data.blockNumber) entry.blockNumber = data.blockNumber;
+            if (data.gasUsed) entry.gasUsed = data.gasUsed;
+            if (data.blockTimestamp) entry.blockTimestamp = data.blockTimestamp;
+            if (data.witnessStartedS != null) entry.witnessStartedS = data.witnessStartedS;
+            if (data.witnessEndedS != null) entry.witnessEndedS = data.witnessEndedS;
+            if (data.witnessSuccess != null) entry.witnessSuccess = data.witnessSuccess;
+            if (data.witnessSize != null) entry.witnessSize = data.witnessSize;
+            if (data.proofs) entry.proofs = { ...entry.proofs, ...data.proofs };
+            historicalBlocks.value = blocks;
+        };
+
+        const updateTracking = (blockHash, proofType) => {
+            const currentHash = proofType ? latestEvents.value.proofs[proofType] : latestEvents.value.witnessFetch;
+            if (currentHash === blockHash) return;
+            const currentTimestamp = currentHash
+                ? (historicalBlocks.value.find((b) => b.blockHash === currentHash)?.blockTimestamp ?? 0)
+                : -1;
+            const newTimestamp = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.blockTimestamp ?? 0;
+            if (newTimestamp > currentTimestamp) {
+                latestEvents.value = proofType
+                    ? { ...latestEvents.value, proofs: { ...latestEvents.value.proofs, [proofType]: blockHash } }
+                    : { ...latestEvents.value, witnessFetch: blockHash };
+            }
+        };
+
+        // SSE Handlers
+
+        const handleRequestProof = (event) => {
+            const {
+                blockNumber,
+                blockTimestamp,
+                blockHash,
+                gasUsed,
+                proofTypes: requestedTypes,
+                startedS,
+            } = JSON.parse(event.data);
+            if (blockTimestamp && blockTimestamp > latestBlockTimestamp.value) {
+                latestBlockNumber.value = blockNumber;
+                latestBlockTimestamp.value = blockTimestamp;
+            }
+            const proofs = {};
+            if (requestedTypes) {
+                for (const proofType of requestedTypes) proofs[proofType] = { requestedS: startedS };
+            }
+            withHistoricalBlock(blockHash, { blockNumber, gasUsed, blockTimestamp, proofs });
+        };
+
+        const handleFetchWitnessStart = (event) => {
+            const { blockHash, startedS } = JSON.parse(event.data);
+            withHistoricalBlock(blockHash, { witnessStartedS: startedS });
+            updateTracking(blockHash);
+        };
+
+        const handleFetchWitnessEnd = (event) => {
+            const { blockHash, endedS, witnessSize, success } = JSON.parse(event.data);
+            withHistoricalBlock(blockHash, {
+                witnessEndedS: endedS,
+                witnessSuccess: !!success,
+                witnessSize: witnessSize ?? null,
+            });
+            updateTracking(blockHash);
+        };
+
+        const handleProveStart = (event) => {
+            const { blockHash, proofType, startedS } = JSON.parse(event.data);
+            const existing = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.proofs[proofType];
+            withHistoricalBlock(blockHash, {
+                proofs: {
+                    [proofType]: { requestedS: existing?.requestedS ?? null, startedS },
+                },
+            });
+            updateTracking(blockHash, proofType);
+        };
+
+        const handleProveEnd = (event) => {
+            const { blockHash, proofType, status, endedS, proofSize, error } = JSON.parse(event.data);
+            const existing = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.proofs[proofType];
+            withHistoricalBlock(blockHash, {
+                proofs: {
+                    [proofType]: {
+                        status,
+                        error: error ?? null,
+                        startedS: existing?.startedS ?? null,
+                        endedS,
+                        proofSize: proofSize ?? null,
+                        requestedS: existing?.requestedS ?? null,
+                    },
+                },
+            });
+            updateTracking(blockHash, proofType);
+        };
+
+        const SSE_HANDLERS = {
+            requestProof: handleRequestProof,
+            fetchWitnessStart: handleFetchWitnessStart,
+            fetchWitnessEnd: handleFetchWitnessEnd,
+            proveStart: handleProveStart,
+            proveEnd: handleProveEnd,
+        };
+
+        const applyDashboardState = (state) => {
+            const newHistoricalBlocks = state.historicalBlocks ?? [];
+
+            if (newHistoricalBlocks.length > 0) {
+                const latestBlockTimestampValue = newHistoricalBlocks[0].blockTimestamp ?? 0;
+                if (latestBlockTimestampValue > latestBlockTimestamp.value) {
+                    latestBlockNumber.value = newHistoricalBlocks[0].blockNumber;
+                    latestBlockTimestamp.value = latestBlockTimestampValue;
+                }
+            }
+
+            const newLatestEvents = { witnessFetch: null, proofs: {} };
+            for (const block of newHistoricalBlocks) {
+                if (!newLatestEvents.witnessFetch && (block.witnessStartedS != null || block.witnessEndedS != null))
+                    newLatestEvents.witnessFetch = block.blockHash;
+                for (const [proofType, proof] of Object.entries(block.proofs ?? {})) {
+                    if (!newLatestEvents.proofs[proofType] && (proof.startedS != null || proof.status != null))
+                        newLatestEvents.proofs[proofType] = block.blockHash;
+                }
+            }
+
+            batch(() => {
+                proofTypes.value = state.proofTypes;
+                buildVersion.value = state.buildVersion ?? '-';
+                historySize.value = state.historySize;
+                historicalBlocks.value = newHistoricalBlocks;
+                latestEvents.value = newLatestEvents;
+                connected.value = true;
+            });
+        };
+
+        // Hooks
+
+        const useLegendToggle = () => {
+            const [states, setStates] = useState({});
+            const toggle = useCallback(
+                (label) => setStates((previous) => ({ ...previous, [label]: previous[label] ? 0 : 1 })),
+                [],
+            );
+            return { states, toggle };
+        };
+
+        const useChart = (initChart) => {
+            const canvasRef = useRef(null);
+            const chartRef = useRef(null);
+            const legend = useLegendToggle();
+            useEffect(() => {
+                chartRef.current = initChart(canvasRef.current.getContext('2d'));
+                return () => chartRef.current?.destroy();
+            }, []);
+            return { canvasRef, chartRef, legend };
+        };
+
+        const applyDatasetsToChart = (chart, datasets, legendStates) => {
+            chart.data.datasets = datasets;
+            datasets.forEach((dataset, index) => chart.setDatasetVisibility(index, !legendStates[dataset.label]));
+            chart.update();
+        };
+
+        // Components
+
+        const CopyIcon = () =>
+            html`<svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>`;
+
+        const CheckIcon = () =>
+            html`<svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--green)"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+            </svg>`;
+
+        const ProofTypeBadge = ({ type }) =>
+            html`<span class="proof-type-badge" style=${proofTypeBadgeStyle(type)}>${type}</span>`;
+
+        const StatusBadge = ({ status }) =>
+            html`<span class="badge ${STATUS_BADGE_CLASS[status]}">${STATUS_LABELS[status]}</span>`;
+
+        const MonoCell = ({ children, right, center }) => {
+            const alignment = right ? ' cell-right' : center ? ' cell-center' : '';
+            return html`<td class="mono${alignment}">${children}</td>`;
+        };
+
+        const Gap = () => html`<td class="col-gap"></td>`;
+
+        const CountCell = ({ value, status }) => {
+            const color = value > 0 ? `var(${STATUS_COLOR_VAR[status]})` : `var(--text-2)`;
+            return html`<td class="mono cell-center" style="color:${color}">${value}</td>`;
+        };
+
+        const HashWithCopy = ({ hash }) => {
+            const [copied, setCopied] = useState(false);
+            if (!hash) return '-';
+            const handleCopy = (clickEvent) => {
+                clickEvent.stopPropagation();
+                navigator.clipboard.writeText(hash).catch(() => {});
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1000);
+            };
+            return html`<span class="mono hash-text" title=${hash}>${truncateHash(hash)}</span>${' '}<button
+                    class="copy-hash-btn"
+                    onClick=${handleCopy}
+                    title="Copy hash">
+                    ${copied ? html`<${CheckIcon} />` : html`<${CopyIcon} />`}
+                </button>`;
+        };
+
+        const ElapsedTime = ({ startMs }) => {
+            elapsedTick.value;
+            return formatDuration((Date.now() - startMs) / 1000);
+        };
+
+        const Navbar = () =>
+            html`<nav class="navbar">
+                <span class="navbar-brand">zkBoost Dashboard</span>
+                <div class="navbar-status">
+                    <span class="connection-dot ${connected.value ? 'connected' : 'disconnected'}"></span>
+                    <span class="navbar-connection-label">${connected.value ? 'Connected' : 'Disconnected'}</span>
+                </div>
+            </nav>`;
+
+        const InfoBar = () =>
+            html`<div class="panel info-bar">
+                <div class="info-bar-items">
+                    <div class="info-item">
+                        <span class="info-label">Proof Types:</span>
+                        <span class="info-value info-value-auto mono">${proofTypes.value.length}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Build Version:</span>
+                        <span class="info-value info-value-auto mono">${buildVersion}</span>
+                    </div>
+                </div>
+            </div>`;
+
+        const PendingRow = ({ label }) =>
+            html`<tr class="event-pending">
+                <td>${label}</td>
+                <${MonoCell}>-<//>
+                <${MonoCell} right>-<//>
+                <${MonoCell} right>-<//>
+                <${MonoCell} right>-<//>
+                <${MonoCell} right>-<//>
+                <${MonoCell}>-<//>
+            </tr>`;
+
+        const WitnessStatusRow = ({ block }) => {
+            if (!block) return html`<${PendingRow} label="Witness fetch" />`;
+            const started = block.witnessStartedS;
+            const ended = block.witnessEndedS;
+            const blockTimestamp = block.blockTimestamp;
+            const duration =
+                started != null && ended != null
+                    ? formatDuration(ended - started)
+                    : started != null && blockTimestamp
+                    ? html`<${ElapsedTime} startMs=${(blockTimestamp + started) * 1000} />`
+                    : '-';
+            const gasStr = block.gasUsed ? formatGas(block.gasUsed) : '-';
+            const witnessStr =
+                ended != null && !block.witnessSuccess
+                    ? html`<span style="color:var(--yellow)">TIMEOUT</span>`
+                    : ended != null
+                    ? formatBytes(block.witnessSize)
+                    : '-';
+            const note = html`${gasStr} / ${witnessStr}`;
+            return html`<tr>
+                <td>Witness fetch</td>
+                <${MonoCell}>
+                    ${block.blockNumber}${' '}
+                    <${HashWithCopy} hash=${block.blockHash ?? ''} />
+                <//>
+                <${MonoCell} right>${formatOffset(block.witnessRequestedS)}<//>
+                <${MonoCell} right> ${formatOffset(started)}<//>
+                <${MonoCell} right> ${formatOffset(ended)}<//>
+                <${MonoCell} right> ${duration}<//>
+                <${MonoCell}> ${note}<//>
+            </tr>`;
+        };
+
+        const ProvingStatusRow = ({ proofType, block }) => {
+            const label = html`Proving ${' '}<${ProofTypeBadge} type=${proofType} />`;
+            if (!block) return html`<${PendingRow} label=${label} />`;
+            const proof = block.proofs[proofType];
+            if (!proof) return html`<${PendingRow} label=${label} />`;
+            const started = proof.startedS;
+            const ended = proof.endedS;
+            const blockTimestamp = block.blockTimestamp;
+            const duration =
+                started != null && ended != null
+                    ? formatDuration(ended - started)
+                    : provingSecs(proof) != null
+                    ? formatDuration(provingSecs(proof))
+                    : started != null && blockTimestamp
+                        ? html`<${ElapsedTime} startMs=${(blockTimestamp + started) * 1000} />`
+                        : '-';
+            const note =
+                proof.status == null
+                    ? '-'
+                    : (() => {
+                        const statusClass =
+                            proof.status === 'success' ? 'success' : proof.status === 'timeout' ? 'timeout' : 'error';
+                        return html`<span style="color:var(${STATUS_COLOR_VAR[statusClass]})"
+                            >${statusClass.toUpperCase()}</span
+                        >`;
+                    })();
+            const requested = proof.requestedS != null ? formatOffset(proof.requestedS) : '-';
+            return html`<tr>
+                <td>${label}</td>
+                <${MonoCell}>
+                    ${block.blockNumber}${' '}
+                    <${HashWithCopy} hash=${block.blockHash ?? ''} />
+                <//>
+                <${MonoCell} right> ${requested}<//>
+                <${MonoCell} right> ${formatOffset(started)}<//>
+                <${MonoCell} right> ${formatOffset(ended)}<//>
+                <${MonoCell} right> ${duration}<//>
+                <${MonoCell}> ${note}<//>
+            </tr>`;
+        };
+
+        const LatestEvents = () => {
+            return html`<div class="panel">
+                <div class="section-title">Latest Events</div>
+                <div class="table-responsive">
+                    <table class="table table-dark-custom">
+                        <thead>
+                            <tr>
+                                <th class="cell-left">Event</th>
+                                <th>Block</th>
+                                <th class="th-timestamp">Requested</th>
+                                <th class="th-timestamp">Started</th>
+                                <th class="th-timestamp">Ended</th>
+                                <th>Duration</th>
+                                <th class="th-fill">Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <${WitnessStatusRow} block=${latestEventsData.value.witnessFetch} />
+                            ${proofTypes.value.map(
+                                (proofType) =>
+                                    html`<${ProvingStatusRow}
+                                        key=${proofType}
+                                        proofType=${proofType}
+                                        block=${latestEventsData.value.proofs[proofType] ?? null} />`,
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>`;
+        };
+
+        const ProvingSummary = () => {
+            return html`<div class="panel">
+                <div class="section-title">
+                    Proving Summary${' '}
+                    <span class="section-title-suffix"> (Last ${historySize} Blocks)</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-dark-custom" style="display:${provingStats.value.length ? '' : 'none'}">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">Type</th>
+                                <th colspan="3" class="text-center">Proofs</th>
+                                <th class="col-gap-top"></th>
+                                <th colspan="3" class="text-center">Proving Time</th>
+                                <th rowspan="2" class="text-center">Proof Size<br />Avg</th>
+                                <th class="col-pad" rowspan="2"></th>
+                            </tr>
+                            <tr>
+                                <th class="cell-center">Success</th>
+                                <th class="cell-center">Timeout</th>
+                                <th class="cell-center">Error</th>
+                                <th class="col-gap"></th>
+                                <th>P50</th>
+                                <th>P95</th>
+                                <th>P99</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${provingStats.value.map(
+                                (stat) => html`
+                                    <tr>
+                                        <td>
+                                            <${ProofTypeBadge} type=${stat.proofType} />
+                                        </td>
+                                        <${CountCell} value=${stat.success} status="success" />
+                                        <${CountCell} value=${stat.timeout} status="timeout" />
+                                        <${CountCell} value=${stat.error} status="error" />
+                                        <${Gap} />
+                                        <${MonoCell} right> ${formatDuration(stat.p50)}<//>
+                                        <${MonoCell} right> ${formatDuration(stat.p95)}<//>
+                                        <${MonoCell} right> ${formatDuration(stat.p99)}<//>
+                                        <${MonoCell} right> ${formatBytes(stat.avgSize)}<//>
+                                        <td class="col-pad"></td>
+                                    </tr>
+                                `,
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                ${!provingStats.value.length && html`<div class="empty-state">No proving data yet.</div>`}
+            </div>`;
+        };
+
+        const ChartLegend = ({ items, states, onToggle, showLine, squareDots }) => {
+            if (!items.length) return null;
+            return html`<div class="chart-legend">
+                ${items.map((legendItem) => {
+                    const isHidden = !!states[legendItem.label];
+                    const dotClass = squareDots ? 'dot dot-square' : 'dot';
+                    return html`<span
+                        class="chart-legend-item${isHidden ? ' legend-hidden' : ''}"
+                        onClick=${() => onToggle(legendItem.label)}>
+                        <span class="chart-legend-icon">
+                            <span class=${dotClass} style="background:${legendItem.color}"></span>
+                            ${showLine && html`<span class="line" style="background:${legendItem.color}"></span>`}
+                        </span>
+                        ${legendItem.label}
+                    </span>`;
+                })}
+            </div>`;
+        };
+
+        const ProvingTimeChart = () => {
+            const [blockCount, setBlockCount] = useState(128);
+            const { canvasRef, chartRef, legend } = useChart((bindingContext) => {
+                const chartOptions = baseChartOptions('BLOCK NUMBER', 'TIME (s)', {
+                    title: (items) => (items.length ? `Block ${items[0].label}` : ''),
+                    label: (context) => {
+                        const value = context.parsed.y;
+                        if (value == null) return '';
+                        return context.dataset.yAxisID === 'yGas'
+                            ? `${context.dataset.label}: ${value.toFixed(1)} M`
+                            : `${context.dataset.label}: ${value.toFixed(3)} s`;
+                    },
+                });
+                chartOptions.elements = {
+                    point: { radius: 0, hitRadius: 6, hoverRadius: 4 },
+                    line: { borderWidth: 1.5, tension: 0.1 },
+                };
+                chartOptions.scales.x.ticks.autoSkip = true;
+                chartOptions.scales.x.ticks.maxTicksLimit = 20;
+                chartOptions.scales.x.ticks.callback = function (value) {
+                    const label = this.getLabelForValue(value);
+                    return Number(label) > 0 ? label : '';
+                };
+                chartOptions.scales.y.position = 'left';
+                chartOptions.scales.y.min = 0;
+                chartOptions.scales.y.max = 12;
+                chartOptions.scales.y.ticks.stepSize = 2;
+                chartOptions.scales.yGas = {
+                    position: 'right',
+                    min: 0,
+                    max: 60,
+                    border: { color: AXIS_COLOR },
+                    grid: { display: false, drawTicks: true, tickLength: 4 },
+                    ticks: {
+                        color: AXIS_COLOR,
+                        font: { size: 10 },
+                        stepSize: 10,
+                        padding: 2,
+                        callback: (value) => (value === 0 ? '0' : value),
+                    },
+                    title: axisTitle('GAS (M)'),
+                };
+                return new Chart(bindingContext, {
+                    type: 'line',
+                    data: { labels: [], datasets: [] },
+                    plugins: [verticalLinePlugin],
+                    options: chartOptions,
+                });
+            });
+
+            useEffect(() => {
+                const chart = chartRef.current;
+                if (!chart) return;
+                const { labels, datasets } = buildLineChartData(
+                    historicalBlocks.value,
+                    proofTypes.value,
+                    blockCount,
+                    latestBlockNumber.value,
+                );
+                chart.data.labels = labels;
+                applyDatasetsToChart(chart, datasets, legend.states);
+            }, [historicalBlocks.value, proofTypes.value, blockCount, legend.states]);
+
+            const legendItems = useMemo(
+                () => [
+                    ...proofTypes.value.map((proofType) => ({ label: proofType, color: proofTypeColor(proofType) })),
+                    { label: 'gas', color: MUTED_GAS_COLOR },
+                ],
+                [proofTypes.value],
+            );
+
+            return html`<div class="panel">
+                <div class="section-title section-title-flex">
+                    <span>Proving Time</span>
+                    <span class="inline-filter"
+                        >Last${' '}${[32, 64, 128, 256].map(
+                            (size) =>
+                                html`<button
+                                    class="toggle-btn ${blockCount === size ? 'active' : ''}"
+                                    onClick=${() => setBlockCount(size)}>
+                                    ${size}
+                                </button>`,
+                        )}${' '}blocks</span
+                    >
+                </div>
+                <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} showLine />
+                <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+            </div>`;
+        };
+
+        const ProvingTimeDistribution = () => {
+            const { canvasRef, chartRef, legend } = useChart((bindingContext) => {
+                const bucketLabels = Array.from({ length: HISTOGRAM_BUCKETS }, (_, index) =>
+                    ((index + 1) * HISTOGRAM_BUCKET_SIZE).toFixed(1),
+                );
+                const chartOptions = baseChartOptions('PROVING TIME (s)', 'COUNT', {
+                    title: (items) => {
+                        if (!items.length) return '';
+                        const bucketIndex = items[0].dataIndex;
+                        const lowerBound = (bucketIndex * HISTOGRAM_BUCKET_SIZE).toFixed(1);
+                        const upperBound = ((bucketIndex + 1) * HISTOGRAM_BUCKET_SIZE).toFixed(1);
+                        return `${lowerBound}s - ${upperBound}s`;
+                    },
+                    label: (context) => (context.parsed.y === 0 ? '' : `${context.dataset.label}: ${context.parsed.y}`),
+                });
+                chartOptions.scales.y.beginAtZero = true;
+                chartOptions.scales.y.ticks.precision = 0;
+                chartOptions.scales.y.ticks.callback = (value) => (Number.isInteger(value) ? value : '');
+                return new Chart(bindingContext, {
+                    type: 'bar',
+                    data: { labels: bucketLabels, datasets: [] },
+                    options: chartOptions,
+                });
+            });
+
+            useEffect(() => {
+                const chart = chartRef.current;
+                if (!chart) return;
+                const { datasets, maxCount } = buildHistogramData(historicalBlocks.value, proofTypes.value);
+                chart.options.scales.y.max = maxCount > 0 ? maxCount + 1 : 10;
+                applyDatasetsToChart(chart, datasets, legend.states);
+            }, [historicalBlocks.value, proofTypes.value, legend.states]);
+
+            const legendItems = useMemo(
+                () =>
+                    proofTypes.value.map((proofType) => ({
+                        label: proofType,
+                        color: proofTypeColor(proofType),
+                    })),
+                [proofTypes.value],
+            );
+
+            return html`<div class="panel">
+                <div class="section-title">
+                    Proving Time Distribution${' '}
+                    <span class="section-title-suffix"> (Last ${historySize} Blocks)</span>
+                </div>
+                <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} squareDots />
+                <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+            </div>`;
+        };
+
+        const ProofSubTable = ({ entries }) => {
+            const sorted = entries.slice().sort((a, b) => {
+                const indexA = proofTypes.value.indexOf(a.proofType);
+                const indexB = proofTypes.value.indexOf(b.proofType);
+                return (indexA === -1 ? 9999 : indexA) - (indexB === -1 ? 9999 : indexB);
+            });
+            return html`<tr class="history-sub-row">
+                <td colspan="12" class="sub-table-wrapper">
+                    <table class="table table-dark-custom history-sub-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Requested</th>
+                                <th>Started</th>
+                                <th>Ended</th>
+                                <th>Duration</th>
+                                <th>Size</th>
+                                <th class="cell-center">Status</th>
+                                <th class="th-fill">Error</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sorted.map((entry) => {
+                                const classification = classifyProofStatus(entry);
+                                return html`<tr>
+                                    <td><${ProofTypeBadge} type=${entry.proofType} /></td>
+                                    <${MonoCell} right> ${formatOffset(entry.requestedS)}<//>
+                                    <${MonoCell} right> ${formatOffset(entry.startedS)}<//>
+                                    <${MonoCell} right> ${formatOffset(entry.endedS)}<//>
+                                    <${MonoCell} right> ${formatDuration(provingSecs(entry))}<//>
+                                    <${MonoCell} right> ${formatBytes(entry.proofSize)}<//>
+                                    <${MonoCell} center> <${StatusBadge} status=${classification} /><//>
+                                    ${entry.error
+                                        ? html`<td class="mono error-cell" title=${entry.error}>${entry.error}</td>`
+                                        : html`<td class="error-cell"></td>`}
+                                </tr>`;
+                            })}
+                        </tbody>
+                    </table>
+                </td>
+            </tr>`;
+        };
+
+        const HistoryBlockRow = ({ blockHash, entries, blockMeta: meta, expanded, onToggle }) => {
+            const witnessDuration =
+                meta.witnessStartedS != null && meta.witnessEndedS != null
+                    ? meta.witnessEndedS - meta.witnessStartedS
+                    : null;
+            const counts = proofCounts(entries);
+            return html`<${Fragment}>
+                <tr class="history-block-header${expanded ? ' expanded' : ''}" onClick=${onToggle}>
+                    <td class="toggle-arrow-cell">
+                        <span class="toggle-arrow"> ${'\u25B6'}</span>
+                    </td>
+                    <${MonoCell}>
+                        ${meta.blockNumber ?? '-'}${' '}
+                        <${HashWithCopy} hash=${blockHash} />
+                    <//>
+                    <${MonoCell} right> ${formatGas(meta.gasUsed)}<//>
+                    <${MonoCell} right> ${formatOffset(meta.witnessStartedS)}<//>
+                    <${MonoCell} right> ${formatOffset(meta.witnessEndedS)}<//>
+                    <${MonoCell} right> ${formatDuration(witnessDuration)}<//>
+                    <${MonoCell} right> ${formatBytes(meta.witnessSize)}<//>
+                    <${Gap} />
+                    <${CountCell} value=${counts.success} status="success" />
+                    <${CountCell} value=${counts.timeout} status="timeout" />
+                    <${CountCell} value=${counts.error} status="error" />
+                    <td class="col-pad"></td>
+                </tr>
+                ${expanded && html`<${ProofSubTable} entries=${entries} />`}
+            <//>`;
+        };
+
+        const ProvingHistory = () => {
+            const [page, setPage] = useState(0);
+            const [filters, setFilters] = useState({
+                success: true,
+                timeout: true,
+                error: true,
+            });
+            const [expanded, setExpanded] = useState({});
+
+            const allFiltersActive = filters.success && filters.timeout && filters.error;
+            const grouped = useMemo(
+                () => getHistoryGrouped(historicalBlocks.value, filters, allFiltersActive),
+                [historicalBlocks.value, filters, allFiltersActive],
+            );
+            const total = grouped.order.length;
+            const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
+            const safePage = Math.min(page, pages - 1);
+            const pagedOrder = grouped.order.slice(safePage * HISTORY_PAGE_SIZE, (safePage + 1) * HISTORY_PAGE_SIZE);
+
+            const toggleFilter = useCallback(
+                (filterName) => {
+                    if (filterName === 'all') {
+                        setFilters({
+                            success: !allFiltersActive,
+                            timeout: !allFiltersActive,
+                            error: !allFiltersActive,
+                        });
+                    } else {
+                        setFilters((prev) => ({ ...prev, [filterName]: !prev[filterName] }));
+                    }
+                    setPage(0);
+                },
+                [allFiltersActive],
+            );
+
+            return html`<div class="panel">
+                <div class="section-title section-title-flex">
+                    <span
+                        >Proving History${' '}<span class="section-title-suffix"
+                            >(Last ${historySize} Blocks)</span
+                        ></span
+                    >
+                    <span class="inline-filter">
+                        ${['all', 'success', 'timeout', 'error'].map(
+                            (filterName) => html`
+                                <button
+                                    class="toggle-btn ${(filterName === 'all' ? allFiltersActive : filters[filterName])
+                                        ? 'active'
+                                        : ''}"
+                                    onClick=${() => toggleFilter(filterName)}>
+                                    ${filterName[0].toUpperCase() + filterName.slice(1)}
+                                </button>
+                            `,
+                        )}
+                    </span>
+                </div>
+                ${total === 0
+                    ? html`<div class="empty-state">No proof history yet.</div>`
+                    : html`
+                        <div class="table-responsive">
+                            <table class="table table-dark-custom">
+                                <thead>
+                                    <tr>
+                                        <th rowspan="2"></th>
+                                        <th rowspan="2">Block</th>
+                                        <th rowspan="2">Gas Used</th>
+                                        <th colspan="4" class="text-center">Witness</th>
+                                        <th class="col-gap-top"></th>
+                                        <th colspan="3" class="text-center">Proofs</th>
+                                        <th class="col-pad" rowspan="2"></th>
+                                    </tr>
+                                    <tr>
+                                        <th>Started</th>
+                                        <th>Ended</th>
+                                        <th>Duration</th>
+                                        <th>Size</th>
+                                        <th class="col-gap"></th>
+                                        <th class="cell-center">Success</th>
+                                        <th class="cell-center">Timeout</th>
+                                        <th class="cell-center">Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${pagedOrder.map(
+                                        (blockHash) => html`
+                                            <${HistoryBlockRow}
+                                                key=${blockHash}
+                                                blockHash=${blockHash}
+                                                entries=${grouped.groups[blockHash] ?? []}
+                                                blockMeta=${historicalBlocks.value.find(
+                                                    (b) => b.blockHash === blockHash,
+                                                ) ?? {}}
+                                                expanded=${!!expanded[blockHash]}
+                                                onToggle=${() =>
+                                                    setExpanded((prev) => ({
+                                                        ...prev,
+                                                        [blockHash]: !prev[blockHash],
+                                                    }))} />
+                                        `,
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        ${total > HISTORY_PAGE_SIZE &&
+                        html`
+                            <div class="pager">
+                                <span class="mono pager-info">
+                                    Page ${safePage + 1} of ${pages} (${total} blocks)</span
+                                >
+                                <div>
+                                    <button
+                                        class="btn btn-sm btn-outline-secondary pager-btn"
+                                        disabled=${safePage === 0}
+                                        onClick=${() => setPage((currentPage) => currentPage - 1)}>
+                                        Prev
+                                    </button>
+                                    <button
+                                        class="btn btn-sm btn-outline-secondary pager-btn pager-btn-next"
+                                        disabled=${safePage >= pages - 1}
+                                        onClick=${() => setPage((currentPage) => currentPage + 1)}>
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        `}
+                    `}
+            </div>`;
+        };
+
+        const App = () => {
+            const eventSourceRef = useRef(null);
+            const sseBufferRef = useRef([]);
+            const isLiveRef = useRef(false);
+
+            const fetchInitialState = useCallback(() => {
+                fetch('/dashboard/state')
+                    .then((response) => {
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return response.json();
+                    })
+                    .then((state) => {
+                        applyDashboardState(state);
+                        for (const { eventName, data } of sseBufferRef.current) SSE_HANDLERS[eventName]?.({ data });
+                        sseBufferRef.current = [];
+                        isLiveRef.current = true;
+                    })
+                    .catch(() => {
+                        setTimeout(fetchInitialState, 3000);
+                    });
+            }, []);
+
+            const connectSSE = useCallback(() => {
+                if (eventSourceRef.current) eventSourceRef.current.close();
+                sseBufferRef.current = [];
+                isLiveRef.current = false;
+                const eventSource = new EventSource('/dashboard/events');
+                eventSourceRef.current = eventSource;
+                eventSource.onopen = () => {
+                    connected.value = true;
+                };
+                eventSource.onerror = () => {
+                    connected.value = false;
+                    isLiveRef.current = false;
+                    eventSource.close();
+                    eventSourceRef.current = null;
+                    setTimeout(connectSSE, 3000);
+                };
+                for (const [eventName, handler] of Object.entries(SSE_HANDLERS)) {
+                    eventSource.addEventListener(eventName, (event) => {
+                        if (isLiveRef.current) handler(event);
+                        else sseBufferRef.current.push({ eventName, data: event.data });
+                    });
+                }
+                fetchInitialState();
+            }, [fetchInitialState]);
+
+            useEffect(() => {
+                connectSSE();
+                return () => {
+                    if (eventSourceRef.current) eventSourceRef.current.close();
+                };
+            }, [connectSSE]);
+
+            return html`<${Navbar} />
+                <div class="main">
+                    <${InfoBar} />
+                    <${LatestEvents} />
+                    <${ProvingSummary} />
+                    <${ProvingTimeChart} />
+                    <${ProvingTimeDistribution} />
+                    <${ProvingHistory} />
+                </div>`;
+        };
+
+        render(html`<${App} />`, document.getElementById('app'));
+    </script>
+</body>
+
+</html>

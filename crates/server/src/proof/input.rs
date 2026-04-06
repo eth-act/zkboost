@@ -29,6 +29,7 @@ use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest};
 pub(crate) struct NewPayloadRequestWithWitness {
     new_payload_request_root: Hash256,
     stateless_input: StatelessInput,
+    block_hash: Hash256,
 }
 
 impl NewPayloadRequestWithWitness {
@@ -39,6 +40,7 @@ impl NewPayloadRequestWithWitness {
         witness: Arc<ExecutionWitness>,
         chain_config: Arc<ChainConfig>,
     ) -> anyhow::Result<Self> {
+        let block_hash = new_payload_request.block_hash();
         let execution_data = new_payload_request_to_execution_data(new_payload_request)?;
         let block = execution_data
             .payload
@@ -51,12 +53,28 @@ impl NewPayloadRequestWithWitness {
         Ok(Self {
             new_payload_request_root,
             stateless_input,
+            block_hash,
         })
     }
 
     /// Returns tree hash root of `NewPayloadRequest`.
     pub(crate) fn root(&self) -> Hash256 {
         self.new_payload_request_root
+    }
+
+    /// Returns stateless input.
+    pub(crate) fn stateless_input(&self) -> &StatelessInput {
+        &self.stateless_input
+    }
+
+    /// Returns the block hash.
+    pub(crate) fn block_hash(&self) -> Hash256 {
+        self.block_hash
+    }
+
+    /// Returns the block number.
+    pub(crate) fn block_number(&self) -> u64 {
+        self.stateless_input.block.number
     }
 
     /// Generates zkVM input for the given EL kind.

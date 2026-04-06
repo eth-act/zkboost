@@ -17,7 +17,7 @@ use stateless::ExecutionWitness;
 use tokio::net::TcpListener;
 use zkboost_client::{MainnetEthSpec, zkBoostClient};
 use zkboost_server::{
-    config::{Config, zkVMConfig},
+    config::{Config, DashboardConfig, zkVMConfig},
     server::zkBoostServer,
 };
 use zkboost_types::{
@@ -138,6 +138,7 @@ async fn start_zkboost_server(
         proof_timeout_secs,
         proof_cache_size: 128,
         witness_cache_size: 128,
+        dashboard: DashboardConfig::default(),
         zkvm: zkvm_configs,
     };
     let metrics = PrometheusBuilder::new().build_recorder().handle();

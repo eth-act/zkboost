@@ -9,10 +9,13 @@ use std::{
 use bytes::Bytes;
 use tokio::{sync::mpsc, time::timeout};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{error, info};
 use zkboost_types::{Hash256, ProofType};
 
-use crate::proof::{input::NewPayloadRequestWithWitness, zkvm::zkVMInstance};
+use crate::{
+    dashboard::DashboardMessage,
+    proof::{input::NewPayloadRequestWithWitness, zkvm::zkVMInstance},
+};
 
 /// Input sent to a per-zkVM worker for proof generation.
 pub(crate) struct WorkerInput {
@@ -23,6 +26,8 @@ pub(crate) struct WorkerInput {
 #[derive(Debug)]
 pub(crate) struct WorkerOutput {
     pub(crate) new_payload_request_root: Hash256,
+    pub(crate) block_hash: Hash256,
+    pub(crate) block_number: u64,
     pub(crate) proof_type: ProofType,
     pub(crate) proof_result: ProofResult,
     pub(crate) duration: Duration,
@@ -32,9 +37,9 @@ pub(crate) struct WorkerOutput {
 #[derive(Debug)]
 pub(crate) enum ProofResult {
     /// Proof generated successfully.
-    Success(Bytes),
+    Ok(Bytes),
     /// Proof generation failed with an error message.
-    Failure(String),
+    Err(String),
     /// Proof generation exceeded the configured timeout.
     Timeout,
 }
@@ -45,6 +50,7 @@ pub(crate) async fn run_worker(
     shutdown: CancellationToken,
     mut worker_input_rx: mpsc::Receiver<WorkerInput>,
     worker_output_tx: mpsc::Sender<WorkerOutput>,
+    dashboard_service_tx: mpsc::Sender<DashboardMessage>,
     proof_timeout: Duration,
 ) {
     let proof_type = zkvm.proof_type();
@@ -63,29 +69,35 @@ pub(crate) async fn run_worker(
         };
 
         let new_payload_request_root = input.payload.root();
+        let block_hash = input.payload.block_hash();
+        let block_number = input.payload.block_number();
 
-        info!(
-            %new_payload_request_root,
-            %proof_type,
-            "proving"
-        );
+        info!(%block_hash, %proof_type, "proving");
+
+        let _ =
+            dashboard_service_tx.try_send(DashboardMessage::prove_start(block_hash, proof_type));
 
         let start = Instant::now();
         let proof_result = match timeout(proof_timeout, zkvm.prove(&input.payload)).await {
-            Ok(Ok(proof)) => ProofResult::Success(Bytes::from(proof)),
-            Ok(Err(error)) => ProofResult::Failure(error.to_string()),
+            Ok(Ok(proof)) => ProofResult::Ok(Bytes::from(proof)),
+            Ok(Err(error)) => ProofResult::Err(error.to_string()),
             Err(_) => ProofResult::Timeout,
         };
         let duration = start.elapsed();
 
-        let _ = worker_output_tx
+        if let Err(error) = worker_output_tx
             .send(WorkerOutput {
                 new_payload_request_root,
+                block_hash,
+                block_number,
                 proof_type,
                 proof_result,
                 duration,
             })
-            .await;
+            .await
+        {
+            error!(%block_hash, %proof_type, %error, "worker output send failed");
+        }
     }
 
     info!(%proof_type, "zkvm worker stopped");

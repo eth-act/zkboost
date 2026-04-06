@@ -28,6 +28,7 @@ use zkboost_types::ProofType;
 
 use crate::{
     config::Config,
+    dashboard::{DashboardService, DashboardState},
     el_client::ElClient,
     http::{AppState, router},
     metrics::{set_build_info, set_programs_loaded},
@@ -105,21 +106,24 @@ impl zkBoostServer {
         let witness_timeout = Duration::from_secs(self.config.witness_timeout_secs);
         let proof_timeout = Duration::from_secs(self.config.proof_timeout_secs);
 
-        let completed_proofs = Arc::new(RwLock::new(LruCache::new(
+        let proof_cache = Arc::new(RwLock::new(LruCache::new(
             NonZeroUsize::new(self.config.proof_cache_size)
                 .expect("proof_cache_size must be non-zero"),
         )));
 
         let (proof_service_tx, proof_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (witness_service_tx, witness_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let (dashboard_service_tx, dashboard_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (worker_output_tx, worker_output_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (proof_event_tx, proof_event_rx) = broadcast::channel(CHANNEL_CAPACITY);
+        let (dashboard_event_tx, dashboard_event_rx) = broadcast::channel(CHANNEL_CAPACITY);
 
         let mut handles = Vec::new();
 
         let witness_service = WitnessService::new(
             self.el_client,
             proof_service_tx.clone(),
+            dashboard_service_tx.clone(),
             witness_timeout,
             self.config.witness_cache_size,
         );
@@ -136,15 +140,17 @@ impl zkBoostServer {
                 shutdown_token.clone(),
                 worker_input_rx,
                 worker_output_tx.clone(),
+                dashboard_service_tx.clone(),
                 proof_timeout,
             )));
         }
 
         let proof_service = ProofService::new(
             self.chain_config,
-            completed_proofs.clone(),
+            proof_cache.clone(),
             proof_event_tx,
             witness_service_tx,
+            dashboard_service_tx.clone(),
             proof_timeout,
         );
         handles.push(tokio::spawn(proof_service.run(
@@ -156,12 +162,34 @@ impl zkBoostServer {
 
         info!("proof service started");
 
+        let dashboard = if self.config.dashboard.enabled {
+            let dashboard = Arc::new(RwLock::new(DashboardState::new(
+                self.zkvms.keys().copied(),
+                self.config.dashboard.history_size,
+            )));
+
+            let dashboard_service =
+                DashboardService::new(dashboard.clone(), dashboard_event_tx.clone());
+            handles.push(tokio::spawn(
+                dashboard_service.run(shutdown_token.clone(), dashboard_service_rx),
+            ));
+
+            info!("dashboard service started");
+
+            Some(dashboard)
+        } else {
+            drop(dashboard_service_rx);
+            None
+        };
+
         let app_state = Arc::new(AppState::new(
             self.zkvms.clone(),
-            completed_proofs,
+            proof_cache,
             self.metrics,
+            dashboard,
             proof_service_tx,
             proof_event_rx,
+            dashboard_event_rx,
         ));
         let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, self.config.port)).await?;
         let addr = listener.local_addr()?;

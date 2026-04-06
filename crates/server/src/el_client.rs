@@ -37,7 +37,7 @@ impl ElClient {
         &self,
         method: &'static str,
         params: P,
-    ) -> Result<Option<R>, Error> {
+    ) -> Result<Option<(R, usize)>, Error> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0",
             method,
@@ -47,7 +47,7 @@ impl ElClient {
 
         let response = self
             .http_client
-            .post(self.url.clone())
+            .post(self.url.as_str())
             .json(&request)
             .send()
             .await?;
@@ -59,7 +59,9 @@ impl ElClient {
             });
         }
 
-        let rpc_response: JsonRpcResponse<R> = response.json().await?;
+        let bytes = response.bytes().await?;
+        let response_size = bytes.len();
+        let rpc_response: JsonRpcResponse<R> = serde_json::from_slice(&bytes)?;
 
         if let Some(error) = rpc_response.error {
             return Err(Error::Rpc {
@@ -69,29 +71,30 @@ impl ElClient {
         }
 
         match rpc_response.result {
-            Some(value) => Ok(Some(value)),
+            Some(value) => Ok(Some((value, response_size))),
             None => Ok(None),
         }
     }
 
     /// Fetch chain config.
     pub async fn get_chain_config(&self) -> Result<Option<ChainConfig>, Error> {
-        self.request("debug_chainConfig", ()).await
+        let result = self.request("debug_chainConfig", ()).await?;
+        Ok(result.map(|(chain_config, _)| chain_config))
     }
 
     /// Fetch a block by hash.
     pub async fn get_block_by_hash(&self, block_hash: Hash256) -> Result<Option<Block>, Error> {
-        let block: Option<alloy_rpc_types_eth::Block<TransactionSigned>> = self
+        let result: Option<(alloy_rpc_types_eth::Block<TransactionSigned>, _)> = self
             .request("eth_getBlockByHash", (block_hash, true))
             .await?;
-        Ok(block.map(|block| block.into_consensus()))
+        Ok(result.map(|(block, _)| block.into_consensus()))
     }
 
-    /// Fetch execution witness for a block.
+    /// Fetch execution witness for a block, returning the witness and the raw response size.
     pub async fn get_execution_witness_by_hash(
         &self,
         block_hash: Hash256,
-    ) -> Result<Option<ExecutionWitness>, Error> {
+    ) -> Result<Option<(ExecutionWitness, usize)>, Error> {
         self.request("debug_executionWitnessByBlockHash", (block_hash,))
             .await
     }
@@ -130,6 +133,9 @@ pub enum Error {
     /// HTTP transport error.
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
+    /// Response deserialization error.
+    #[error("deserialize error: {0}")]
+    Deserialize(#[from] serde_json::Error),
     /// JSON-RPC level error returned by the node.
     #[error("RPC error {code}: {message}")]
     Rpc {

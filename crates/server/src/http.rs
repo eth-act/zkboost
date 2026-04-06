@@ -18,44 +18,52 @@ use tower_http::trace::TraceLayer;
 use zkboost_types::{Hash256, ProofEvent, ProofType};
 
 use crate::{
+    dashboard::{DashboardEvent, DashboardState},
     metrics::http_metrics_middleware,
     proof::{ProofServiceMessage, zkvm::zkVMInstance},
 };
 
+mod dashboard;
 mod v1;
 
 /// Shared application state for all HTTP handlers.
-#[allow(missing_debug_implementations)]
 pub(crate) struct AppState {
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
-    pub(crate) completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+    pub(crate) proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
     pub(crate) metrics: PrometheusHandle,
+    pub(crate) dashboard: Option<Arc<RwLock<DashboardState>>>,
     pub(crate) proof_service_tx: mpsc::Sender<ProofServiceMessage>,
     pub(crate) proof_event_rx: broadcast::Receiver<ProofEvent>,
+    pub(crate) dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
 }
 
 impl AppState {
     /// Creates shared application state for the HTTP handlers.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
-        completed_proofs: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+        proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
         metrics: PrometheusHandle,
+        dashboard: Option<Arc<RwLock<DashboardState>>>,
         proof_service_tx: mpsc::Sender<ProofServiceMessage>,
         proof_event_rx: broadcast::Receiver<ProofEvent>,
+        dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
     ) -> Self {
         Self {
             zkvms,
-            completed_proofs,
+            proof_cache,
             metrics,
+            dashboard,
             proof_service_tx,
             proof_event_rx,
+            dashboard_event_rx,
         }
     }
 }
 
 /// Builds the Axum router with all endpoints and middleware.
 pub(crate) fn router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let api = Router::new()
         .route(
             "/v1/execution_proof_requests",
             post(v1::post_execution_proof_requests).get(v1::get_execution_proof_requests),
@@ -68,13 +76,23 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             "/v1/execution_proof_verifications",
             post(v1::post_execution_proof_verifications),
         )
-        .route("/health", get(StatusCode::OK))
-        .route("/metrics", get(get_metrics))
         .fallback(fallback_handler)
-        .with_state(state)
+        .with_state(state.clone())
         .layer(middleware::from_fn(http_metrics_middleware))
         .layer(TraceLayer::new_for_http())
-        .layer(DefaultBodyLimit::max(1 << 30))
+        .layer(DefaultBodyLimit::max(1 << 30));
+
+    let mut infra = Router::new()
+        .route("/health", get(StatusCode::OK))
+        .route("/metrics", get(get_metrics));
+    if state.dashboard.is_some() {
+        infra = infra
+            .route("/dashboard", get(dashboard::get_dashboard))
+            .route("/dashboard/state", get(dashboard::get_dashboard_state))
+            .route("/dashboard/events", get(dashboard::get_dashboard_events));
+    }
+
+    api.merge(infra.with_state(state))
 }
 
 async fn fallback_handler() -> v1::ErrorResponse {
@@ -94,37 +112,43 @@ pub(crate) mod tests {
     use metrics_exporter_prometheus::PrometheusBuilder;
     use tokio::sync::{RwLock, broadcast, mpsc};
     use tower::ServiceExt;
-    use zkboost_types::{ProofEvent, ProofType};
+    use zkboost_types::ProofType;
 
     use crate::{
         config::{MockProvingTime, zkVMConfig},
+        dashboard::DashboardState,
         http::{AppState, router},
-        proof::{ProofServiceMessage, zkvm::zkVMInstance},
+        proof::zkvm::zkVMInstance,
     };
 
     pub(crate) async fn mock_app_state() -> Arc<AppState> {
-        let completed_proofs =
-            Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
-        let (_, proof_event_rx) = broadcast::channel::<ProofEvent>(16);
-        let (proof_service_tx, _) = mpsc::channel::<ProofServiceMessage>(16);
-
+        let proof_type = ProofType::RethZisk;
         let mock_config = zkVMConfig::Mock {
-            proof_type: ProofType::RethZisk,
+            proof_type,
             mock_proving_time: MockProvingTime::Constant { ms: 10 },
             mock_proof_size: 64,
             mock_failure: false,
         };
         let zkvm = zkVMInstance::new(&mock_config).await.unwrap();
-        let zkvms = Arc::new(HashMap::from_iter([(ProofType::RethZisk, zkvm)]));
+        let zkvms = Arc::new(HashMap::from_iter([(proof_type, zkvm)]));
+
+        let proof_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
 
         let metrics = PrometheusBuilder::new().build_recorder().handle();
+        let dashboard = Arc::new(RwLock::new(DashboardState::new(vec![proof_type], 256))).into();
+
+        let (proof_service_tx, _) = mpsc::channel(16);
+        let (_, proof_event_rx) = broadcast::channel(16);
+        let (_, dashboard_event_rx) = broadcast::channel(16);
 
         Arc::new(AppState::new(
             zkvms,
-            completed_proofs,
+            proof_cache,
             metrics,
+            dashboard,
             proof_service_tx,
             proof_event_rx,
+            dashboard_event_rx,
         ))
     }
 

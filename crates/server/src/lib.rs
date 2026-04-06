@@ -4,6 +4,7 @@
 //! can share the same code.
 
 pub mod config;
+pub(crate) mod dashboard;
 pub mod el_client;
 pub mod http;
 pub mod metrics;
