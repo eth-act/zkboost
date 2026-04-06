@@ -36,11 +36,6 @@ pub(crate) async fn post_execution_proof_requests(
         ));
     }
 
-    let new_payload_request = NewPayloadRequest::<MainnetEthSpec>::from_ssz_bytes(&body)
-        .map_err(|e| ErrorResponse::bad_request(format!("invalid SSZ body: {e:?}")))?;
-
-    let new_payload_request_root = new_payload_request.tree_hash_root();
-
     for proof_type in &proof_types {
         if !state.zkvms.contains_key(proof_type) {
             return Err(ErrorResponse::bad_request(format!(
@@ -49,11 +44,17 @@ pub(crate) async fn post_execution_proof_requests(
         }
     }
 
+    let new_payload_request = NewPayloadRequest::<MainnetEthSpec>::from_ssz_bytes(&body)
+        .map(Arc::new)
+        .map_err(|e| ErrorResponse::bad_request(format!("invalid SSZ body: {e:?}")))?;
+
+    let new_payload_request_root = new_payload_request.tree_hash_root();
+
     state
         .proof_service_tx
         .send(ProofServiceMessage::RequestProof {
             new_payload_request_root,
-            new_payload_request: Arc::new(new_payload_request),
+            new_payload_request,
             proof_types,
         })
         .await

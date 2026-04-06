@@ -55,13 +55,12 @@ mod tests {
         http::Request,
         routing::post,
     };
-    use bytes::Bytes;
     use tower::ServiceExt;
     use zkboost_types::{ElKind, Hash256, ProofStatus, ProofVerificationResponse};
 
     use crate::{
         http::{AppState, tests::mock_app_state, v1::post_execution_proof_verifications},
-        proof::zkvm::{MockProof, expected_public_values},
+        proof::zkvm::expected_public_values,
     };
 
     fn test_router(state: Arc<AppState>) -> Router {
@@ -141,10 +140,10 @@ mod tests {
         assert_eq!(resp.status, ProofStatus::Invalid);
     }
 
-    fn mock_proof(new_payload_request_root: Hash256, mock_proof_size: u64) -> Bytes {
+    fn mock_proof(new_payload_request_root: Hash256, mock_proof_size: u64) -> Vec<u8> {
+        let mut proof = vec![0; mock_proof_size as usize];
         let public_values = expected_public_values(new_payload_request_root, ElKind::Reth).unwrap();
-        bincode::serialize(&MockProof::new(public_values.to_vec(), mock_proof_size))
-            .unwrap()
-            .into()
+        proof[..32].copy_from_slice(&public_values);
+        proof
     }
 }

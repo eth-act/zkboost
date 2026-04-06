@@ -69,4 +69,40 @@ impl<E: EthSpec> NewPayloadRequest<E> {
             Self::Gloas(inner) => inner.execution_payload.block_hash.0,
         }
     }
+
+    /// Returns the block number from the execution payload.
+    pub fn block_number(&self) -> u64 {
+        match self {
+            Self::Bellatrix(inner) => inner.execution_payload.block_number,
+            Self::Capella(inner) => inner.execution_payload.block_number,
+            Self::Deneb(inner) => inner.execution_payload.block_number,
+            Self::Electra(inner) => inner.execution_payload.block_number,
+            Self::Fulu(inner) => inner.execution_payload.block_number,
+            Self::Gloas(inner) => inner.execution_payload.block_number,
+        }
+    }
+
+    /// Returns the timestamp from the execution payload.
+    pub fn timestamp(&self) -> u64 {
+        match self {
+            Self::Bellatrix(inner) => inner.execution_payload.timestamp,
+            Self::Capella(inner) => inner.execution_payload.timestamp,
+            Self::Deneb(inner) => inner.execution_payload.timestamp,
+            Self::Electra(inner) => inner.execution_payload.timestamp,
+            Self::Fulu(inner) => inner.execution_payload.timestamp,
+            Self::Gloas(inner) => inner.execution_payload.timestamp,
+        }
+    }
+
+    /// Returns the gas used from the execution payload.
+    pub fn gas_used(&self) -> u64 {
+        match self {
+            Self::Bellatrix(inner) => inner.execution_payload.gas_used,
+            Self::Capella(inner) => inner.execution_payload.gas_used,
+            Self::Deneb(inner) => inner.execution_payload.gas_used,
+            Self::Electra(inner) => inner.execution_payload.gas_used,
+            Self::Fulu(inner) => inner.execution_payload.gas_used,
+            Self::Gloas(inner) => inner.execution_payload.gas_used,
+        }
+    }
 }

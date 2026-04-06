@@ -17,7 +17,7 @@ pub(crate) async fn get_execution_proofs(
     Path((new_payload_request_root, proof_type)): Path<(Hash256, ProofType)>,
 ) -> Result<impl IntoResponse, ErrorResponse> {
     match state
-        .completed_proofs
+        .proof_cache
         .read()
         .await
         .peek(&(new_payload_request_root, proof_type))
@@ -91,7 +91,7 @@ mod tests {
         let proof_type = ProofType::EthrexZisk;
         let proof = Bytes::from(vec![42u8; 64]);
         state
-            .completed_proofs
+            .proof_cache
             .write()
             .await
             .put((new_payload_request_root, proof_type), proof.clone());

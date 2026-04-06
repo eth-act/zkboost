@@ -26,7 +26,7 @@ pub(crate) async fn get_execution_proof_requests(
             // Emit already-completed proofs from cache so the client does not miss events that
             // completed before subscribing.
             let catch_up_events = {
-                let cache = state.completed_proofs.read().await;
+                let cache = state.proof_cache.read().await;
                 cache
                     .iter()
                     .filter(|((cache, _), _)| *cache == new_payload_request_root)

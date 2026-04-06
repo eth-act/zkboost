@@ -17,6 +17,8 @@ const DEFAULT_PROOF_TIMEOUT_SECS: u64 = 12;
 const DEFAULT_PROOF_CACHE_SIZE: usize = 128;
 const DEFAULT_WITNESS_CACHE_SIZE: usize = 128;
 const DEFAULT_MOCK_PROOF_SIZE: u64 = 1024;
+const DEFAULT_DASHBOARD_ENABLED: bool = false;
+const DEFAULT_DASHBOARD_HISTORY_SIZE: usize = 256;
 
 fn default_port() -> u16 {
     DEFAULT_PORT
@@ -46,6 +48,14 @@ fn default_mock_proof_size() -> u64 {
     DEFAULT_MOCK_PROOF_SIZE
 }
 
+fn default_dashboard_enabled() -> bool {
+    DEFAULT_DASHBOARD_ENABLED
+}
+
+fn default_dashboard_history_size() -> usize {
+    DEFAULT_DASHBOARD_HISTORY_SIZE
+}
+
 /// Unified configuration for the zkboost proof node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -69,8 +79,60 @@ pub struct Config {
     /// Maximum number of execution witnesses to keep in the LRU cache.
     #[serde(default = "default_witness_cache_size")]
     pub witness_cache_size: usize,
+    /// Dashboard feature configuration.
+    #[serde(default)]
+    pub dashboard: DashboardConfig,
     /// zkVM backend configurations.
     pub zkvm: Vec<zkVMConfig>,
+}
+
+impl Config {
+    /// Load configuration from a TOML file at the given path.
+    pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let content = fs::read_to_string(path.as_ref())?;
+        let config: Self = toml_edit::de::from_str(&content)?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            !self.zkvm.is_empty(),
+            "at least one [[zkvm]] entry is required"
+        );
+        ensure!(self.proof_cache_size > 0, "proof_cache_size must be > 0");
+        ensure!(
+            self.witness_cache_size > 0,
+            "witness_cache_size must be > 0"
+        );
+        ensure!(
+            self.dashboard.history_size > 0,
+            "dashboard.history_size must be > 0"
+        );
+        let mut proof_types = HashSet::new();
+        for zkvm in &self.zkvm {
+            let proof_type = zkvm.proof_type();
+            ensure!(
+                proof_types.insert(proof_type),
+                "duplicate proof_type: {proof_type}"
+            );
+            if let zkVMConfig::Mock {
+                mock_proving_time,
+                mock_proof_size,
+                ..
+            } = zkvm
+            {
+                ensure!(*mock_proof_size >= 32, "mock_proof_size must be >= 32");
+                if let MockProvingTime::Random { min_ms, max_ms, .. } = mock_proving_time {
+                    ensure!(
+                        min_ms <= max_ms,
+                        "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Mock proving time configuration, supporting constant, random, and gas-proportional modes.
@@ -133,44 +195,23 @@ impl zkVMConfig {
     }
 }
 
-impl Config {
-    /// Load configuration from a TOML file at the given path.
-    pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let content = fs::read_to_string(path.as_ref())?;
-        let config: Self = toml_edit::de::from_str(&content)?;
-        config.validate()?;
-        Ok(config)
-    }
+/// Dashboard feature configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardConfig {
+    /// Whether the live dashboard UI and API endpoints are enabled.
+    #[serde(default = "default_dashboard_enabled")]
+    pub enabled: bool,
+    /// Maximum number of recent block records to keep in the dashboard history.
+    #[serde(default = "default_dashboard_history_size")]
+    pub history_size: usize,
+}
 
-    fn validate(&self) -> anyhow::Result<()> {
-        ensure!(
-            !self.zkvm.is_empty(),
-            "at least one [[zkvm]] entry is required"
-        );
-        ensure!(self.proof_cache_size > 0, "proof_cache_size must be > 0");
-        ensure!(
-            self.witness_cache_size > 0,
-            "witness_cache_size must be > 0"
-        );
-        let mut proof_types = HashSet::new();
-        for zkvm in &self.zkvm {
-            let proof_type = zkvm.proof_type();
-            ensure!(
-                proof_types.insert(proof_type),
-                "duplicate proof_type: {proof_type}"
-            );
-            if let zkVMConfig::Mock {
-                mock_proving_time: MockProvingTime::Random { min_ms, max_ms },
-                ..
-            } = zkvm
-            {
-                ensure!(
-                    min_ms <= max_ms,
-                    "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
-                );
-            }
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_dashboard_enabled(),
+            history_size: default_dashboard_history_size(),
         }
-        Ok(())
     }
 }
 
@@ -256,6 +297,21 @@ mod tests {
         let toml = r#"
             el_endpoint = "http://localhost:8545"
             witness_cache_size = 0
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_zero_dashboard_history_size_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [dashboard]
+            enabled = true
+            history_size = 0
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"
