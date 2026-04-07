@@ -4,7 +4,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use axum::{Json, extract::State};
 use bytes::Bytes;
-use tracing::instrument;
+use tracing::{info_span, instrument};
 use zkboost_types::{
     Decode, MainnetEthSpec, NewPayloadRequest, ProofRequestQuery, ProofRequestResponse, TreeHash,
 };
@@ -49,6 +49,11 @@ pub(crate) async fn post_execution_proof_requests(
         .map_err(|e| ErrorResponse::bad_request(format!("invalid SSZ body: {e:?}")))?;
 
     let new_payload_request_root = new_payload_request.tree_hash_root();
+    let block_number = new_payload_request.block_number();
+    let timestamp = new_payload_request.timestamp();
+    let gas_used = new_payload_request.gas_used();
+
+    let span = info_span!("request_proof", block_number, timestamp, gas_used);
 
     state
         .proof_service_tx
@@ -56,6 +61,7 @@ pub(crate) async fn post_execution_proof_requests(
             new_payload_request_root,
             new_payload_request,
             proof_types,
+            span,
         })
         .await
         .map_err(|e| {

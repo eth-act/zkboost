@@ -68,10 +68,17 @@ impl zkVMInstance {
             } => {
                 let endpoint_url = Url::parse(endpoint)
                     .with_context(|| format!("failed to parse endpoint URL: {endpoint}"))?;
-                let client =
-                    zkVMClient::from_endpoint(endpoint_url.clone()).with_context(|| {
-                        format!("failed to create zkVM client for endpoint: {endpoint_url}")
-                    })?;
+                let client = {
+                    #[cfg(feature = "otel")]
+                    let middlewares = vec![Box::new(ere_server::client::OtelPropagation) as Box<_>];
+                    #[cfg(not(feature = "otel"))]
+                    let middlewares = Vec::new();
+
+                    zkVMClient::new(endpoint_url.clone(), reqwest::Client::new(), middlewares)
+                        .with_context(|| {
+                            format!("failed to create zkVM client for endpoint: {endpoint_url}")
+                        })?
+                };
                 Ok(Self::External {
                     proof_type: *proof_type,
                     client: Arc::new(client),

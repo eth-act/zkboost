@@ -18,7 +18,7 @@ use tokio::{
     time::{Instant, sleep_until, timeout},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Instrument, Span, debug, error, info, info_span, record_all, trace, warn};
 use zkboost_types::Hash256;
 
 use crate::{dashboard::DashboardMessage, el_client::ElClient, proof::ProofServiceMessage};
@@ -27,7 +27,7 @@ use crate::{dashboard::DashboardMessage, el_client::ElClient, proof::ProofServic
 #[derive(Debug)]
 pub(crate) enum WitnessServiceMessage {
     /// Request to fetch the execution witness for the given block hash.
-    FetchWitness { block_hash: Hash256 },
+    FetchWitness { block_hash: Hash256, span: Span },
 }
 
 /// Fetches execution witness data from the EL client on demand.
@@ -153,7 +153,7 @@ impl WitnessService {
 
     async fn handle_message(&mut self, message: WitnessServiceMessage) {
         match message {
-            WitnessServiceMessage::FetchWitness { block_hash } => {
+            WitnessServiceMessage::FetchWitness { block_hash, span } => {
                 trace!(%block_hash, "received WitnessServiceMessage::FetchWitness");
 
                 if let Some(witness) = self.witness_cache.peek(&block_hash).cloned() {
@@ -181,6 +181,7 @@ impl WitnessService {
                     self.dashboard_service_tx.clone(),
                     block_hash,
                     self.witness_timeout,
+                    span,
                 ));
             }
         }
@@ -192,10 +193,18 @@ async fn fetch_witness(
     dashboard_service_tx: mpsc::Sender<DashboardMessage>,
     block_hash: Hash256,
     witness_timeout: Duration,
+    span: Span,
 ) -> TaskResult {
     info!(%block_hash, "fetching witness");
 
     let _ = dashboard_service_tx.try_send(DashboardMessage::fetch_witness_start(block_hash));
+
+    let span = info_span!(
+        parent: span,
+        "fetch_witness",
+        otel.status_code = tracing::field::Empty,
+        error_reason = tracing::field::Empty,
+    );
 
     const RETRY_INTERVAL: Duration = Duration::from_millis(200);
     let fut = async {
@@ -208,9 +217,18 @@ async fn fetch_witness(
             }
             sleep_until(deadline).await;
         }
-    };
+    }
+    .instrument(span.clone());
+
     match timeout(witness_timeout, AssertUnwindSafe(fut).catch_unwind()).await {
         Ok(Ok((witness, witness_size))) => (block_hash, Some((Arc::new(witness), witness_size))),
-        _ => (block_hash, None),
+        Ok(Err(_)) => {
+            record_all!(span, otel.status_code = "ERROR", error_reason = "panic");
+            (block_hash, None)
+        }
+        Err(_) => {
+            record_all!(span, otel.status_code = "ERROR", error_reason = "timeout");
+            (block_hash, None)
+        }
     }
 }

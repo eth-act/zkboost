@@ -12,6 +12,16 @@ path = "src/bin/zkboost.rs"
 [lints]
 workspace = true
 
+[features]
+default = []
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry_sdk",
+    "dep:tracing-opentelemetry",
+    "ere-server/otel",
+]
+
 [dependencies]
 anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
@@ -34,8 +44,12 @@ tokio-stream = { workspace = true, features = ["sync"] }
 tokio-util.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
 tower-http = { workspace = true, features = ["trace", "limit"] }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"], optional = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio"], optional = true }
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-opentelemetry = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "registry"] }
 url.workspace = true
 
 # alloy

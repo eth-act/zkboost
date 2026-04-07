@@ -1187,7 +1187,7 @@
                     : started != null && blockTimestamp
                     ? html`<${ElapsedTime} startMs=${(blockTimestamp + started) * 1000} />`
                     : '-';
-            const gasStr = block.gasUsed ? formatGas(block.gasUsed) : '-';
+            const gasStr = formatGas(block.gasUsed);
             const witnessStr =
                 ended != null && !block.witnessSuccess
                     ? html`<span style="color:var(--yellow)">TIMEOUT</span>`

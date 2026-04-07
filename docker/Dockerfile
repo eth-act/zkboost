@@ -11,7 +11,7 @@ COPY . .
 RUN --mount=type=cache,sharing=locked,target=/app/target/ \
     --mount=type=cache,sharing=locked,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry/ \
-    cargo build --release --bin zkboost --bin mock-zkattestor && \
+    cargo build --release --features otel --bin zkboost --bin mock-zkattestor && \
     cp /app/target/release/zkboost /app/zkboost && \
     cp /app/target/release/mock-zkattestor /app/mock-zkattestor
 

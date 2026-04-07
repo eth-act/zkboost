@@ -756,6 +756,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -772,6 +773,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -786,7 +788,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": 0
               }
             ]
           },
@@ -811,11 +814,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "expr": "sum(rate(zkboost_prove_total[$__rate_interval])) by (proof_type, status)",
@@ -843,6 +847,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -859,6 +864,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -873,7 +879,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": 0
               }
             ]
           },
@@ -899,11 +906,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
@@ -941,6 +949,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -957,6 +966,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -971,7 +981,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": 0
               }
             ]
           },
@@ -997,11 +1008,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, proof_type))",
@@ -1449,6 +1461,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -1465,6 +1478,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1479,7 +1493,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": 0
               }
             ]
           },
@@ -1504,11 +1519,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "expr": "sum(rate(zkboost_verify_total[$__rate_interval])) by (proof_type, verified)",
@@ -1536,6 +1552,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -1552,6 +1569,7 @@
               "type": "linear"
             },
             "showPoints": "never",
+            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1566,7 +1584,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": 0
               }
             ]
           },
@@ -1592,11 +1611,12 @@
           "showLegend": true
         },
         "tooltip": {
+          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "expr": "histogram_quantile(0.50, sum(rate(zkboost_verify_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
@@ -1616,6 +1636,363 @@
       ],
       "title": "Verify Duration",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "id": 103,
+      "panels": [],
+      "title": "Proof Traces",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "${tempo_datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trace ID"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "targetBlank": false,
+                    "title": "show below",
+                    "url": "/d/zkboost-dashboard/zkboost?var-traceId=${__value.raw}&${__url_time_range}"
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 326
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ns"
+              },
+              {
+                "id": "custom.width",
+                "value": 74
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Block"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gas Used"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "unit",
+                "value": "si:"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Start time"
+            },
+            "properties": [
+              {
+                "id": "custom.width"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Request latency"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.width",
+                "value": 124
+              },
+              {
+                "id": "custom.align",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 49
+      },
+      "id": 25,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Start time"
+          }
+        ]
+      },
+      "pluginVersion": "12.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "${tempo_datasource}"
+          },
+          "limit": 500,
+          "metricsQueryType": "range",
+          "query": "{resource.service.name=\"zkboost\" && name=~\"request_proof\"} | select(span.block_number, span.gas_used, span.timestamp)",
+          "queryType": "traceql",
+          "refId": "A",
+          "serviceMapUseNativeHistograms": false,
+          "tableType": "spans"
+        }
+      ],
+      "title": "Recent Proof Traces",
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Trace ID",
+            "mode": "reduceRow",
+            "reduce": {
+              "include": [
+                "traceIdHidden"
+              ],
+              "reducer": "first"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "timestamp_ms",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "timestamp"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "fixed": "1000"
+              }
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "latency_ms",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Start time"
+                }
+              },
+              "operator": "-",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "timestamp_ms"
+                }
+              }
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "Request latency",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "latency_ms"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "1000"
+              }
+            },
+            "mode": "binary",
+            "reduce": {
+              "reducer": "sum"
+            }
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": [
+                "block_number",
+                "gas_used",
+                "Duration",
+                "Trace ID",
+                "Start time",
+                "Request latency"
+              ]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "includeByName": {},
+            "indexByName": {
+              "Duration": 4,
+              "Request latency": 3,
+              "Start time": 5,
+              "Trace ID": 0,
+              "block_number": 1,
+              "gas_used": 2
+            },
+            "renameByName": {
+              "block_number": "Block",
+              "duration": "Duration",
+              "gas_used": "Gas Used",
+              "time": "Start time"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "${tempo_datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 23,
+      "options": {
+        "spanFilters": {
+          "adhocFilters": [],
+          "criticalPathOnly": false,
+          "matchesOnly": false
+        }
+      },
+      "pluginVersion": "12.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "${tempo_datasource}"
+          },
+          "limit": 20,
+          "query": "${traceId}",
+          "queryType": "traceql",
+          "refId": "A",
+          "tableType": "traces"
+        }
+      ],
+      "title": "Proof Trace",
+      "type": "traces"
     }
   ],
   "preload": false,
@@ -1640,6 +2017,35 @@
         "refresh": 1,
         "regex": "",
         "type": "datasource"
+      },
+      {
+        "current": {
+          "text": "Tempo",
+          "value": "Tempo"
+        },
+        "label": "Tempo",
+        "name": "tempo_datasource",
+        "options": [],
+        "query": "tempo",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "label": "Trace ID",
+        "name": "traceId",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "type": "textbox"
       }
     ]
   },
@@ -1651,6 +2057,6 @@
   "timezone": "browser",
   "title": "zkboost",
   "uid": "zkboost-dashboard",
-  "version": 2,
+  "version": 6,
   "weekStart": ""
 }

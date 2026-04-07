@@ -18,7 +18,7 @@ use lru::LruCache;
 use stateless::ExecutionWitness;
 use tokio::sync::{RwLock, broadcast, mpsc, mpsc::error::TrySendError};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Span, debug, error, info, trace, warn};
 use worker::WorkerInput;
 use zkboost_types::{
     FailureReason, Hash256, MainnetEthSpec, NewPayloadRequest, ProofComplete, ProofEvent,
@@ -40,6 +40,7 @@ pub(crate) enum ProofServiceMessage {
         new_payload_request_root: Hash256,
         new_payload_request: Arc<NewPayloadRequest<MainnetEthSpec>>,
         proof_types: HashSet<ProofType>,
+        span: Span,
     },
     /// An execution witness has been fetched and is ready for proof generation.
     WitnessAvailable {
@@ -54,6 +55,7 @@ struct PendingRequest {
     new_payload_request: Arc<NewPayloadRequest<MainnetEthSpec>>,
     new_payload_request_root: Hash256,
     proof_types: HashSet<ProofType>,
+    span: Span,
 }
 
 /// Manages proof lifecycle: pending, enqueued, and completed proof requests.
@@ -189,6 +191,7 @@ impl ProofService {
                 new_payload_request_root,
                 new_payload_request,
                 mut proof_types,
+                span,
             } => {
                 let block_hash = new_payload_request.block_hash();
                 let block_number = new_payload_request.block_number();
@@ -244,7 +247,10 @@ impl ProofService {
                 if !self.pending.contains_key(&block_hash)
                     && let Err(error) = self
                         .witness_service_tx
-                        .send(WitnessServiceMessage::FetchWitness { block_hash })
+                        .send(WitnessServiceMessage::FetchWitness {
+                            block_hash,
+                            span: span.clone(),
+                        })
                         .await
                 {
                     error!(%block_hash, block_number, error = %error, "fetch witness send failed");
@@ -269,6 +275,7 @@ impl ProofService {
                         new_payload_request: new_payload_request.clone(),
                         new_payload_request_root,
                         proof_types,
+                        span,
                     });
 
                 let _ = self.dashboard_service_tx.try_send(dashboard_msg);
@@ -305,7 +312,12 @@ impl ProofService {
                 };
 
                 for proof_type in request.proof_types {
-                    self.send_worker_input(worker_input_txs, proof_type, input.clone());
+                    self.send_worker_input(
+                        worker_input_txs,
+                        proof_type,
+                        input.clone(),
+                        request.span.clone(),
+                    );
                 }
             }
             ProofServiceMessage::WitnessTimeout { block_hash } => {
@@ -333,6 +345,7 @@ impl ProofService {
         worker_input_txs: &HashMap<ProofType, mpsc::Sender<WorkerInput>>,
         proof_type: ProofType,
         payload: Arc<NewPayloadRequestWithWitness>,
+        span: Span,
     ) {
         let new_payload_request_root = payload.root();
         let block_hash = payload.block_hash();
@@ -349,7 +362,7 @@ impl ProofService {
             return;
         };
 
-        let worker_input = WorkerInput { payload };
+        let worker_input = WorkerInput { payload, span };
         match tx.try_send(worker_input) {
             Ok(()) => {
                 debug!(%block_hash, block_number, %proof_type, "proof dispatched");

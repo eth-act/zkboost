@@ -9,7 +9,7 @@ use std::{
 use bytes::Bytes;
 use tokio::{sync::mpsc, time::timeout};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{Instrument, Span, error, info, info_span, record_all};
 use zkboost_types::{Hash256, ProofType};
 
 use crate::{
@@ -20,6 +20,7 @@ use crate::{
 /// Input sent to a per-zkVM worker for proof generation.
 pub(crate) struct WorkerInput {
     pub(crate) payload: Arc<NewPayloadRequestWithWitness>,
+    pub(crate) span: Span,
 }
 
 /// Output returned by a worker after a proof attempt.
@@ -54,6 +55,8 @@ pub(crate) async fn run_worker(
     proof_timeout: Duration,
 ) {
     let proof_type = zkvm.proof_type();
+    let otel_name = format!("prove/{proof_type}");
+
     info!(%proof_type, "zkvm worker started");
 
     loop {
@@ -74,16 +77,37 @@ pub(crate) async fn run_worker(
 
         info!(%block_hash, %proof_type, "proving");
 
+        let span = info_span!(
+            parent: input.span,
+            "prove",
+            otel.name = otel_name,
+            otel.status_code = tracing::field::Empty,
+            error_reason = tracing::field::Empty,
+        );
+
         let _ =
             dashboard_service_tx.try_send(DashboardMessage::prove_start(block_hash, proof_type));
 
         let start = Instant::now();
-        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.payload)).await {
+        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.payload))
+            .instrument(span.clone())
+            .await
+        {
             Ok(Ok(proof)) => ProofResult::Ok(Bytes::from(proof)),
             Ok(Err(error)) => ProofResult::Err(error.to_string()),
             Err(_) => ProofResult::Timeout,
         };
         let duration = start.elapsed();
+
+        match &proof_result {
+            ProofResult::Ok(_) => {}
+            ProofResult::Err(error) => {
+                record_all!(&span, otel.status_code = "ERROR", error_reason = error)
+            }
+            ProofResult::Timeout => {
+                record_all!(&span, otel.status_code = "ERROR", error_reason = "timeout")
+            }
+        }
 
         if let Err(error) = worker_output_tx
             .send(WorkerOutput {
