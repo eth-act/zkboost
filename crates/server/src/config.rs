@@ -164,7 +164,7 @@ pub enum MockProvingTime {
 #[allow(non_camel_case_types)]
 pub enum zkVMConfig {
     /// Remote ere-server backend.
-    External {
+    Ere {
         /// HTTP endpoint URL of the ere-server.
         endpoint: String,
         /// Proof type.
@@ -190,7 +190,7 @@ impl zkVMConfig {
     /// Returns the proof type identifier for this configuration.
     pub fn proof_type(&self) -> ProofType {
         match self {
-            Self::External { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
+            Self::Ere { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
         }
     }
 }
@@ -227,7 +227,7 @@ mod tests {
             el_endpoint = "http://localhost:8545"
 
             [[zkvm]]
-            kind = "external"
+            kind = "ere"
             endpoint = "http://ere-server:3000"
             proof_type = "ethrex-zisk"
 
@@ -244,7 +244,7 @@ mod tests {
         assert_eq!(config.zkvm[0].proof_type(), ProofType::EthrexZisk);
         assert_eq!(config.zkvm[1].proof_type(), ProofType::RethZisk);
 
-        assert!(matches!(&config.zkvm[0], zkVMConfig::External { .. }));
+        assert!(matches!(&config.zkvm[0], zkVMConfig::Ere { .. }));
         assert!(matches!(&config.zkvm[1], zkVMConfig::Mock { .. }));
     }
 

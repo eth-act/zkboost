@@ -43,7 +43,7 @@ pub(crate) enum zkVMError {
 #[derive(Clone, Debug)]
 pub(crate) enum zkVMInstance {
     /// External Ere server that provides zkVM functionalities via HTTP endpoints.
-    External {
+    Ere {
         /// Proof type identifier (e.g. `"reth-sp1"`).
         proof_type: ProofType,
         /// Client of external Ere server.
@@ -62,7 +62,7 @@ impl zkVMInstance {
     /// Creates a new zkVM instance from configuration.
     pub(crate) async fn new(config: &zkVMConfig) -> anyhow::Result<Self> {
         match config {
-            zkVMConfig::External {
+            zkVMConfig::Ere {
                 endpoint,
                 proof_type,
             } => {
@@ -79,7 +79,7 @@ impl zkVMInstance {
                             format!("failed to create zkVM client for endpoint: {endpoint_url}")
                         })?
                 };
-                Ok(Self::External {
+                Ok(Self::Ere {
                     proof_type: *proof_type,
                     client: Arc::new(client),
                 })
@@ -115,7 +115,7 @@ impl zkVMInstance {
         let el_kind = self.proof_type().el_kind();
         let input = new_payload_request_with_witness.to_zkvm_input(el_kind)?;
         match self {
-            Self::External { client, .. } => {
+            Self::Ere { client, .. } => {
                 let (_, proof, _) = client.prove(input, ProofKind::Compressed).await?;
                 match proof {
                     Proof::Compressed(bytes) => Ok(bytes),
@@ -133,7 +133,7 @@ impl zkVMInstance {
         proof: Vec<u8>,
     ) -> Result<(), zkVMError> {
         let public_values = match self {
-            Self::External { client, .. } => client
+            Self::Ere { client, .. } => client
                 .verify(Proof::Compressed(proof))
                 .await
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
@@ -162,7 +162,7 @@ impl zkVMInstance {
     /// Returns the proof type identifier for this instance.
     pub(crate) fn proof_type(&self) -> ProofType {
         match self {
-            Self::External { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
+            Self::Ere { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
         }
     }
 }
