@@ -165,7 +165,7 @@ impl zkBoostServer {
         let dashboard = if self.config.dashboard.enabled {
             let dashboard = Arc::new(RwLock::new(DashboardState::new(
                 self.zkvms.keys().copied(),
-                self.config.dashboard.history_size,
+                self.config.dashboard.retention,
             )));
 
             let dashboard_service =

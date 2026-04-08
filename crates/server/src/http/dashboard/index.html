@@ -613,38 +613,13 @@
         const percentile = (sorted, rank) =>
             sorted.length === 0 ? null : sorted[Math.max(0, Math.ceil(rank * sorted.length) - 1)];
 
-        const classifyProofStatus = (entry) =>
-            entry.status === 'success' ? 'success' : entry.status === 'timeout' ? 'timeout' : 'error';
-
         const provingSecs = (proof) =>
             proof.startedS != null && proof.endedS != null ? proof.endedS - proof.startedS : null;
 
         const proofCounts = (entries) => {
             const counts = { success: 0, timeout: 0, error: 0 };
-            for (const entry of entries) counts[classifyProofStatus(entry)]++;
+            for (const entry of entries) counts[entry.result]++;
             return counts;
-        };
-
-        const getHistoryGrouped = (blocks, filters, includePending) => {
-            const groups = {};
-            for (const block of blocks) {
-                const blockHash = block.blockHash;
-                const matchingProofs = [];
-                for (const [proofType, proof] of Object.entries(block.proofs)) {
-                    if (proof.status == null) continue;
-                    const classification = classifyProofStatus(proof);
-                    if (filters[classification]) {
-                        matchingProofs.push({ ...proof, proofType, blockHash, blockNumber: block.blockNumber });
-                    }
-                }
-                if (matchingProofs.length > 0) groups[blockHash] = matchingProofs;
-                else if (includePending && Object.keys(block.proofs).length === 0) groups[blockHash] = [];
-            }
-            const blockTimestampOf = (blockHash) => blocks.find((b) => b.blockHash === blockHash)?.blockTimestamp ?? 0;
-            return {
-                groups,
-                order: Object.keys(groups).sort((a, b) => blockTimestampOf(b) - blockTimestampOf(a)),
-            };
         };
 
         // Chart Helpers
@@ -714,11 +689,11 @@
                 if (blockTimestamp) byHash[blockHash].blockTimestamp = blockTimestamp;
             };
             for (const block of blocks) {
-                if (block.blockNumber) {
+                if (block.blockNumber != null) {
                     ensure(block.blockHash, block.blockNumber, block.blockTimestamp ?? 0);
-                    if (block.gasUsed) byHash[block.blockHash].gas = block.gasUsed / 1e6;
+                    if (block.gasUsed != null) byHash[block.blockHash].gas = block.gasUsed / 1e6;
                     for (const [proofType, proof] of Object.entries(block.proofs)) {
-                        if (proof.status === 'success' && provingSecs(proof) != null)
+                        if (proof.result === 'success' && provingSecs(proof) != null)
                             byHash[block.blockHash].proving[proofType] = provingSecs(proof);
                     }
                 }
@@ -773,7 +748,7 @@
             let maxCount = 0;
             for (const block of blocks) {
                 for (const [proofType, proof] of Object.entries(block.proofs)) {
-                    if (proof.status === 'success' && buckets[proofType]) {
+                    if (proof.result === 'success' && buckets[proofType]) {
                         const bucketIndex = Math.min(
                             Math.floor((provingSecs(proof) ?? 0) / HISTOGRAM_BUCKET_SIZE),
                             HISTOGRAM_BUCKETS - 1,
@@ -803,11 +778,11 @@
         const connected = signal(false);
         const proofTypes = signal([]);
         const buildVersion = signal('-');
-        const historySize = signal(256);
+        const retention = signal(256);
         const latestBlockNumber = signal(0);
         const latestBlockTimestamp = signal(0);
         const historicalBlocks = signal([]);
-        const latestEvents = signal({ witnessFetch: null, proofs: {} });
+        const latestEvents = signal({ fetchWitness: null, proving: {} });
 
         const elapsedTick = signal(0);
         setInterval(() => {
@@ -824,16 +799,15 @@
                 let sizeCount = 0;
                 for (const block of historicalBlocks.value) {
                     const proof = block.proofs[proofType];
-                    if (!proof || proof.status == null) continue;
-                    const classification = classifyProofStatus(proof);
-                    if (classification === 'success') {
+                    if (!proof || proof.result == null) continue;
+                    if (proof.result === 'success') {
                         success++;
                         if (provingSecs(proof) !== null) durations.push(provingSecs(proof));
                         if (proof.proofSize) {
                             totalSize += proof.proofSize;
                             sizeCount++;
                         }
-                    } else if (classification === 'timeout') timeout++;
+                    } else if (proof.result === 'timeout') timeout++;
                     else error++;
                 }
                 durations.sort((a, b) => a - b);
@@ -851,12 +825,12 @@
         });
 
         const latestEventsData = computed(() => {
-            const result = { witnessFetch: null, proofs: {} };
+            const result = { fetchWitness: null, proving: {} };
 
-            const witnessBlockHash = latestEvents.value.witnessFetch;
+            const witnessBlockHash = latestEvents.value.fetchWitness;
             if (witnessBlockHash) {
                 const block = historicalBlocks.value.find((b) => b.blockHash === witnessBlockHash) ?? {};
-                result.witnessFetch = {
+                result.fetchWitness = {
                     blockHash: witnessBlockHash,
                     blockNumber: block.blockNumber ?? 0,
                     blockTimestamp: block.blockTimestamp ?? 0,
@@ -873,7 +847,7 @@
             }
 
             for (const proofType of proofTypes.value) {
-                const proofBlockHash = latestEvents.value.proofs[proofType];
+                const proofBlockHash = latestEvents.value.proving[proofType];
                 if (!proofBlockHash) continue;
                 const block = historicalBlocks.value.find((b) => b.blockHash === proofBlockHash) ?? {};
                 const proof = block.proofs?.[proofType] ?? null;
@@ -884,7 +858,7 @@
                         requestedS: proof.requestedS ?? null,
                     }
                     : null;
-                result.proofs[proofType] = {
+                result.proving[proofType] = {
                     blockHash: proofBlockHash,
                     blockNumber: block.blockNumber ?? 0,
                     blockTimestamp: block.blockTimestamp ?? 0,
@@ -897,7 +871,7 @@
 
         // State Helpers
 
-        const withHistoricalBlock = (blockHash, data) => {
+        const updateHistoricalBlock = (blockHash, data) => {
             const blocks = historicalBlocks.value.map((b) => (b.blockHash === blockHash ? { ...b } : b));
             let entry = blocks.find((b) => b.blockHash === blockHash);
             if (!entry) {
@@ -913,10 +887,11 @@
                     proofs: {},
                 };
                 blocks.unshift(entry);
+                while (blocks.length > retention.value) blocks.pop();
             }
-            if (data.blockNumber) entry.blockNumber = data.blockNumber;
-            if (data.gasUsed) entry.gasUsed = data.gasUsed;
-            if (data.blockTimestamp) entry.blockTimestamp = data.blockTimestamp;
+            if (data.blockNumber != null) entry.blockNumber = data.blockNumber;
+            if (data.gasUsed != null) entry.gasUsed = data.gasUsed;
+            if (data.blockTimestamp != null) entry.blockTimestamp = data.blockTimestamp;
             if (data.witnessStartedS != null) entry.witnessStartedS = data.witnessStartedS;
             if (data.witnessEndedS != null) entry.witnessEndedS = data.witnessEndedS;
             if (data.witnessSuccess != null) entry.witnessSuccess = data.witnessSuccess;
@@ -925,8 +900,8 @@
             historicalBlocks.value = blocks;
         };
 
-        const updateTracking = (blockHash, proofType) => {
-            const currentHash = proofType ? latestEvents.value.proofs[proofType] : latestEvents.value.witnessFetch;
+        const updateLatestEvent = (blockHash, proofType) => {
+            const currentHash = proofType ? latestEvents.value.proving[proofType] : latestEvents.value.fetchWitness;
             if (currentHash === blockHash) return;
             const currentTimestamp = currentHash
                 ? (historicalBlocks.value.find((b) => b.blockHash === currentHash)?.blockTimestamp ?? 0)
@@ -934,8 +909,8 @@
             const newTimestamp = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.blockTimestamp ?? 0;
             if (newTimestamp > currentTimestamp) {
                 latestEvents.value = proofType
-                    ? { ...latestEvents.value, proofs: { ...latestEvents.value.proofs, [proofType]: blockHash } }
-                    : { ...latestEvents.value, witnessFetch: blockHash };
+                    ? { ...latestEvents.value, proving: { ...latestEvents.value.proving, [proofType]: blockHash } }
+                    : { ...latestEvents.value, fetchWitness: blockHash };
             }
         };
 
@@ -958,43 +933,43 @@
             if (requestedTypes) {
                 for (const proofType of requestedTypes) proofs[proofType] = { requestedS: startedS };
             }
-            withHistoricalBlock(blockHash, { blockNumber, gasUsed, blockTimestamp, proofs });
+            updateHistoricalBlock(blockHash, { blockNumber, gasUsed, blockTimestamp, proofs });
         };
 
         const handleFetchWitnessStart = (event) => {
             const { blockHash, startedS } = JSON.parse(event.data);
-            withHistoricalBlock(blockHash, { witnessStartedS: startedS });
-            updateTracking(blockHash);
+            updateHistoricalBlock(blockHash, { witnessStartedS: startedS });
+            updateLatestEvent(blockHash);
         };
 
         const handleFetchWitnessEnd = (event) => {
             const { blockHash, endedS, witnessSize, success } = JSON.parse(event.data);
-            withHistoricalBlock(blockHash, {
+            updateHistoricalBlock(blockHash, {
                 witnessEndedS: endedS,
                 witnessSuccess: !!success,
                 witnessSize: witnessSize ?? null,
             });
-            updateTracking(blockHash);
+            updateLatestEvent(blockHash);
         };
 
         const handleProveStart = (event) => {
             const { blockHash, proofType, startedS } = JSON.parse(event.data);
             const existing = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.proofs[proofType];
-            withHistoricalBlock(blockHash, {
+            updateHistoricalBlock(blockHash, {
                 proofs: {
                     [proofType]: { requestedS: existing?.requestedS ?? null, startedS },
                 },
             });
-            updateTracking(blockHash, proofType);
+            updateLatestEvent(blockHash, proofType);
         };
 
         const handleProveEnd = (event) => {
-            const { blockHash, proofType, status, endedS, proofSize, error } = JSON.parse(event.data);
+            const { blockHash, proofType, result, endedS, proofSize, error } = JSON.parse(event.data);
             const existing = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.proofs[proofType];
-            withHistoricalBlock(blockHash, {
+            updateHistoricalBlock(blockHash, {
                 proofs: {
                     [proofType]: {
-                        status,
+                        result,
                         error: error ?? null,
                         startedS: existing?.startedS ?? null,
                         endedS,
@@ -1003,7 +978,7 @@
                     },
                 },
             });
-            updateTracking(blockHash, proofType);
+            updateLatestEvent(blockHash, proofType);
         };
 
         const SSE_HANDLERS = {
@@ -1014,7 +989,7 @@
             proveEnd: handleProveEnd,
         };
 
-        const applyDashboardState = (state) => {
+        const initializeDashboardState = (state) => {
             const newHistoricalBlocks = state.historicalBlocks ?? [];
 
             if (newHistoricalBlocks.length > 0) {
@@ -1025,20 +1000,20 @@
                 }
             }
 
-            const newLatestEvents = { witnessFetch: null, proofs: {} };
+            const newLatestEvents = { fetchWitness: null, proving: {} };
             for (const block of newHistoricalBlocks) {
-                if (!newLatestEvents.witnessFetch && (block.witnessStartedS != null || block.witnessEndedS != null))
-                    newLatestEvents.witnessFetch = block.blockHash;
+                if (!newLatestEvents.fetchWitness && (block.witnessStartedS != null || block.witnessEndedS != null))
+                    newLatestEvents.fetchWitness = block.blockHash;
                 for (const [proofType, proof] of Object.entries(block.proofs ?? {})) {
-                    if (!newLatestEvents.proofs[proofType] && (proof.startedS != null || proof.status != null))
-                        newLatestEvents.proofs[proofType] = block.blockHash;
+                    if (!newLatestEvents.proving[proofType] && (proof.startedS != null || proof.result != null))
+                        newLatestEvents.proving[proofType] = block.blockHash;
                 }
             }
 
             batch(() => {
                 proofTypes.value = state.proofTypes;
                 buildVersion.value = state.buildVersion ?? '-';
-                historySize.value = state.historySize;
+                retention.value = state.retention;
                 historicalBlocks.value = newHistoricalBlocks;
                 latestEvents.value = newLatestEvents;
                 connected.value = true;
@@ -1165,7 +1140,7 @@
                 </div>
             </div>`;
 
-        const PendingRow = ({ label }) =>
+        const PendingEventRow = ({ label }) =>
             html`<tr class="event-pending">
                 <td>${label}</td>
                 <${MonoCell}>-<//>
@@ -1176,8 +1151,8 @@
                 <${MonoCell}>-<//>
             </tr>`;
 
-        const WitnessStatusRow = ({ block }) => {
-            if (!block) return html`<${PendingRow} label="Witness fetch" />`;
+        const WitnessEventRow = ({ block }) => {
+            if (!block) return html`<${PendingEventRow} label="Witness fetch" />`;
             const started = block.witnessStartedS;
             const ended = block.witnessEndedS;
             const blockTimestamp = block.blockTimestamp;
@@ -1209,11 +1184,11 @@
             </tr>`;
         };
 
-        const ProvingStatusRow = ({ proofType, block }) => {
+        const ProvingEventRow = ({ proofType, block }) => {
             const label = html`Proving ${' '}<${ProofTypeBadge} type=${proofType} />`;
-            if (!block) return html`<${PendingRow} label=${label} />`;
+            if (!block) return html`<${PendingEventRow} label=${label} />`;
             const proof = block.proofs[proofType];
-            if (!proof) return html`<${PendingRow} label=${label} />`;
+            if (!proof) return html`<${PendingEventRow} label=${label} />`;
             const started = proof.startedS;
             const ended = proof.endedS;
             const blockTimestamp = block.blockTimestamp;
@@ -1226,15 +1201,11 @@
                         ? html`<${ElapsedTime} startMs=${(blockTimestamp + started) * 1000} />`
                         : '-';
             const note =
-                proof.status == null
+                proof.result == null
                     ? '-'
-                    : (() => {
-                        const statusClass =
-                            proof.status === 'success' ? 'success' : proof.status === 'timeout' ? 'timeout' : 'error';
-                        return html`<span style="color:var(${STATUS_COLOR_VAR[statusClass]})"
-                            >${statusClass.toUpperCase()}</span
-                        >`;
-                    })();
+                    : html`<span style="color:var(${STATUS_COLOR_VAR[proof.result]})"
+                        >${proof.result.toUpperCase()}</span
+                    >`;
             const requested = proof.requestedS != null ? formatOffset(proof.requestedS) : '-';
             return html`<tr>
                 <td>${label}</td>
@@ -1267,13 +1238,13 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <${WitnessStatusRow} block=${latestEventsData.value.witnessFetch} />
+                            <${WitnessEventRow} block=${latestEventsData.value.fetchWitness} />
                             ${proofTypes.value.map(
                                 (proofType) =>
-                                    html`<${ProvingStatusRow}
+                                    html`<${ProvingEventRow}
                                         key=${proofType}
                                         proofType=${proofType}
-                                        block=${latestEventsData.value.proofs[proofType] ?? null} />`,
+                                        block=${latestEventsData.value.proving[proofType] ?? null} />`,
                             )}
                         </tbody>
                     </table>
@@ -1285,7 +1256,7 @@
             return html`<div class="panel">
                 <div class="section-title">
                     Proving Summary${' '}
-                    <span class="section-title-suffix"> (Last ${historySize} Blocks)</span>
+                    <span class="section-title-suffix"> (Last ${retention} Blocks)</span>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-dark-custom" style="display:${provingStats.value.length ? '' : 'none'}">
@@ -1488,14 +1459,14 @@
             return html`<div class="panel">
                 <div class="section-title">
                     Proving Time Distribution${' '}
-                    <span class="section-title-suffix"> (Last ${historySize} Blocks)</span>
+                    <span class="section-title-suffix"> (Last ${retention} Blocks)</span>
                 </div>
                 <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} squareDots />
                 <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
             </div>`;
         };
 
-        const ProofSubTable = ({ entries }) => {
+        const ProvingHistorySubTable = ({ entries }) => {
             const sorted = entries.slice().sort((a, b) => {
                 const indexA = proofTypes.value.indexOf(a.proofType);
                 const indexB = proofTypes.value.indexOf(b.proofType);
@@ -1518,7 +1489,6 @@
                         </thead>
                         <tbody>
                             ${sorted.map((entry) => {
-                                const classification = classifyProofStatus(entry);
                                 return html`<tr>
                                     <td><${ProofTypeBadge} type=${entry.proofType} /></td>
                                     <${MonoCell} right> ${formatOffset(entry.requestedS)}<//>
@@ -1526,7 +1496,7 @@
                                     <${MonoCell} right> ${formatOffset(entry.endedS)}<//>
                                     <${MonoCell} right> ${formatDuration(provingSecs(entry))}<//>
                                     <${MonoCell} right> ${formatBytes(entry.proofSize)}<//>
-                                    <${MonoCell} center> <${StatusBadge} status=${classification} /><//>
+                                    <${MonoCell} center> <${StatusBadge} status=${entry.result} /><//>
                                     ${entry.error
                                         ? html`<td class="mono error-cell" title=${entry.error}>${entry.error}</td>`
                                         : html`<td class="error-cell"></td>`}
@@ -1538,10 +1508,10 @@
             </tr>`;
         };
 
-        const HistoryBlockRow = ({ blockHash, entries, blockMeta: meta, expanded, onToggle }) => {
+        const ProvingHistoryRow = ({ blockHash, entries, block, expanded, onToggle }) => {
             const witnessDuration =
-                meta.witnessStartedS != null && meta.witnessEndedS != null
-                    ? meta.witnessEndedS - meta.witnessStartedS
+                block.witnessStartedS != null && block.witnessEndedS != null
+                    ? block.witnessEndedS - block.witnessStartedS
                     : null;
             const counts = proofCounts(entries);
             return html`<${Fragment}>
@@ -1550,21 +1520,21 @@
                         <span class="toggle-arrow"> ${'\u25B6'}</span>
                     </td>
                     <${MonoCell}>
-                        ${meta.blockNumber ?? '-'}${' '}
+                        ${block.blockNumber ?? '-'}${' '}
                         <${HashWithCopy} hash=${blockHash} />
                     <//>
-                    <${MonoCell} right> ${formatGas(meta.gasUsed)}<//>
-                    <${MonoCell} right> ${formatOffset(meta.witnessStartedS)}<//>
-                    <${MonoCell} right> ${formatOffset(meta.witnessEndedS)}<//>
+                    <${MonoCell} right> ${formatGas(block.gasUsed)}<//>
+                    <${MonoCell} right> ${formatOffset(block.witnessStartedS)}<//>
+                    <${MonoCell} right> ${formatOffset(block.witnessEndedS)}<//>
                     <${MonoCell} right> ${formatDuration(witnessDuration)}<//>
-                    <${MonoCell} right> ${formatBytes(meta.witnessSize)}<//>
+                    <${MonoCell} right> ${formatBytes(block.witnessSize)}<//>
                     <${Gap} />
                     <${CountCell} value=${counts.success} status="success" />
                     <${CountCell} value=${counts.timeout} status="timeout" />
                     <${CountCell} value=${counts.error} status="error" />
                     <td class="col-pad"></td>
                 </tr>
-                ${expanded && html`<${ProofSubTable} entries=${entries} />`}
+                ${expanded && html`<${ProvingHistorySubTable} entries=${entries} />`}
             <//>`;
         };
 
@@ -1578,14 +1548,34 @@
             const [expanded, setExpanded] = useState({});
 
             const allFiltersActive = filters.success && filters.timeout && filters.error;
-            const grouped = useMemo(
-                () => getHistoryGrouped(historicalBlocks.value, filters, allFiltersActive),
+            const filteredHistoricalBlocks = useMemo(
+                () =>
+                    historicalBlocks.value
+                        .map((block) => ({
+                            ...block,
+                            entries: Object.entries(block.proofs)
+                                .filter(([, proof]) => proof.result != null && filters[proof.result])
+                                .map(([proofType, proof]) => ({
+                                    ...proof,
+                                    proofType,
+                                    blockHash: block.blockHash,
+                                    blockNumber: block.blockNumber,
+                                })),
+                        }))
+                        .filter(
+                            (block) =>
+                                block.entries.length > 0 ||
+                                (allFiltersActive && Object.keys(block.proofs).length === 0),
+                        ),
                 [historicalBlocks.value, filters, allFiltersActive],
             );
-            const total = grouped.order.length;
-            const pages = Math.max(1, Math.ceil(total / HISTORY_PAGE_SIZE));
-            const safePage = Math.min(page, pages - 1);
-            const pagedOrder = grouped.order.slice(safePage * HISTORY_PAGE_SIZE, (safePage + 1) * HISTORY_PAGE_SIZE);
+            const total = filteredHistoricalBlocks.length;
+            const lastPage = Math.max(0, Math.ceil(total / HISTORY_PAGE_SIZE) - 1);
+            const currentPage = Math.min(page, lastPage);
+            const pagedBlocks = filteredHistoricalBlocks.slice(
+                currentPage * HISTORY_PAGE_SIZE,
+                (currentPage + 1) * HISTORY_PAGE_SIZE,
+            );
 
             const toggleFilter = useCallback(
                 (filterName) => {
@@ -1605,11 +1595,10 @@
 
             return html`<div class="panel">
                 <div class="section-title section-title-flex">
-                    <span
-                        >Proving History${' '}<span class="section-title-suffix"
-                            >(Last ${historySize} Blocks)</span
-                        ></span
-                    >
+                    <span>
+                        Proving History${' '}
+                        <span class="section-title-suffix">(Last ${retention} Blocks)</span>
+                    </span>
                     <span class="inline-filter">
                         ${['all', 'success', 'timeout', 'error'].map(
                             (filterName) => html`
@@ -1651,20 +1640,18 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${pagedOrder.map(
-                                        (blockHash) => html`
-                                            <${HistoryBlockRow}
-                                                key=${blockHash}
-                                                blockHash=${blockHash}
-                                                entries=${grouped.groups[blockHash] ?? []}
-                                                blockMeta=${historicalBlocks.value.find(
-                                                    (b) => b.blockHash === blockHash,
-                                                ) ?? {}}
-                                                expanded=${!!expanded[blockHash]}
+                                    ${pagedBlocks.map(
+                                        (block) => html`
+                                            <${ProvingHistoryRow}
+                                                key=${block.blockHash}
+                                                blockHash=${block.blockHash}
+                                                entries=${block.entries}
+                                                block=${block}
+                                                expanded=${!!expanded[block.blockHash]}
                                                 onToggle=${() =>
                                                     setExpanded((prev) => ({
                                                         ...prev,
-                                                        [blockHash]: !prev[blockHash],
+                                                        [block.blockHash]: !prev[block.blockHash],
                                                     }))} />
                                         `,
                                     )}
@@ -1675,19 +1662,19 @@
                         html`
                             <div class="pager">
                                 <span class="mono pager-info">
-                                    Page ${safePage + 1} of ${pages} (${total} blocks)</span
+                                    Page ${currentPage + 1} of ${lastPage + 1} (${total} blocks)</span
                                 >
                                 <div>
                                     <button
                                         class="btn btn-sm btn-outline-secondary pager-btn"
-                                        disabled=${safePage === 0}
-                                        onClick=${() => setPage((currentPage) => currentPage - 1)}>
+                                        disabled=${currentPage === 0}
+                                        onClick=${() => setPage((p) => p - 1)}>
                                         Prev
                                     </button>
                                     <button
                                         class="btn btn-sm btn-outline-secondary pager-btn pager-btn-next"
-                                        disabled=${safePage >= pages - 1}
-                                        onClick=${() => setPage((currentPage) => currentPage + 1)}>
+                                        disabled=${currentPage >= lastPage}
+                                        onClick=${() => setPage((p) => p + 1)}>
                                         Next
                                     </button>
                                 </div>
@@ -1709,7 +1696,7 @@
                         return response.json();
                     })
                     .then((state) => {
-                        applyDashboardState(state);
+                        initializeDashboardState(state);
                         for (const { eventName, data } of sseBufferRef.current) SSE_HANDLERS[eventName]?.({ data });
                         sseBufferRef.current = [];
                         isLiveRef.current = true;

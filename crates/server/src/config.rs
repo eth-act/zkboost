@@ -18,7 +18,7 @@ const DEFAULT_PROOF_CACHE_SIZE: usize = 128;
 const DEFAULT_WITNESS_CACHE_SIZE: usize = 128;
 const DEFAULT_MOCK_PROOF_SIZE: u64 = 1024;
 const DEFAULT_DASHBOARD_ENABLED: bool = false;
-const DEFAULT_DASHBOARD_HISTORY_SIZE: usize = 256;
+const DEFAULT_DASHBOARD_RETENTION: usize = 256;
 
 fn default_port() -> u16 {
     DEFAULT_PORT
@@ -52,8 +52,8 @@ fn default_dashboard_enabled() -> bool {
     DEFAULT_DASHBOARD_ENABLED
 }
 
-fn default_dashboard_history_size() -> usize {
-    DEFAULT_DASHBOARD_HISTORY_SIZE
+fn default_dashboard_retention() -> usize {
+    DEFAULT_DASHBOARD_RETENTION
 }
 
 /// Unified configuration for the zkboost proof node.
@@ -106,8 +106,8 @@ impl Config {
             "witness_cache_size must be > 0"
         );
         ensure!(
-            self.dashboard.history_size > 0,
-            "dashboard.history_size must be > 0"
+            self.dashboard.retention > 0,
+            "dashboard.retention must be > 0"
         );
         let mut proof_types = HashSet::new();
         for zkvm in &self.zkvm {
@@ -202,15 +202,15 @@ pub struct DashboardConfig {
     #[serde(default = "default_dashboard_enabled")]
     pub enabled: bool,
     /// Maximum number of recent block records to keep in the dashboard history.
-    #[serde(default = "default_dashboard_history_size")]
-    pub history_size: usize,
+    #[serde(default = "default_dashboard_retention")]
+    pub retention: usize,
 }
 
 impl Default for DashboardConfig {
     fn default() -> Self {
         Self {
             enabled: default_dashboard_enabled(),
-            history_size: default_dashboard_history_size(),
+            retention: default_dashboard_retention(),
         }
     }
 }
@@ -306,12 +306,12 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_dashboard_history_size_rejected() {
+    fn test_zero_dashboard_retention_rejected() {
         let toml = r#"
             el_endpoint = "http://localhost:8545"
             [dashboard]
             enabled = true
-            history_size = 0
+            retention = 0
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"

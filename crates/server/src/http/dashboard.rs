@@ -94,7 +94,7 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["proofTypes"].is_array());
         assert!(json["historicalBlocks"].is_array());
-        assert!(json["historySize"].is_number());
+        assert!(json["retention"].is_number());
         assert!(json["buildVersion"].is_string());
     }
 
