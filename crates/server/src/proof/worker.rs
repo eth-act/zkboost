@@ -78,7 +78,7 @@ pub(crate) async fn run_worker(
         info!(%block_hash, %proof_type, "proving");
 
         let span = info_span!(
-            parent: input.span,
+            parent: &input.span,
             "prove",
             otel.name = otel_name,
             otel.status_code = tracing::field::Empty,

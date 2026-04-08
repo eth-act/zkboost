@@ -200,7 +200,7 @@ async fn fetch_witness(
     let _ = dashboard_service_tx.try_send(DashboardMessage::fetch_witness_start(block_hash));
 
     let span = info_span!(
-        parent: span,
+        parent: &span,
         "fetch_witness",
         otel.status_code = tracing::field::Empty,
         error_reason = tracing::field::Empty,
