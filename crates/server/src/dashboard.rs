@@ -9,13 +9,13 @@ use std::{
 };
 
 use lru::LruCache;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use zkboost_types::{Hash256, MainnetEthSpec, NewPayloadRequest, ProofType};
 
-use crate::proof::worker::ProofResult;
+use crate::proof::worker::ProofResult as WorkerProofResult;
 
 /// Internal dashboard state behind `RwLock`, not directly serialized.
 #[derive(Debug)]
@@ -26,17 +26,14 @@ pub(crate) struct DashboardState {
 }
 
 impl DashboardState {
-    pub(crate) fn new(
-        proof_types: impl IntoIterator<Item = ProofType>,
-        history_size: usize,
-    ) -> Self {
+    pub(crate) fn new(proof_types: impl IntoIterator<Item = ProofType>, retention: usize) -> Self {
         let mut proof_types = proof_types.into_iter().collect::<Vec<_>>();
         proof_types.sort();
         Self {
             build_version: env!("CARGO_PKG_VERSION").to_owned(),
             proof_types,
             historical_blocks: LruCache::new(
-                NonZeroUsize::new(history_size).expect("history_size must be non-zero"),
+                NonZeroUsize::new(retention).expect("retention must be non-zero"),
             ),
         }
     }
@@ -51,7 +48,7 @@ impl DashboardState {
                 .map(|(_, block)| block)
                 .cloned()
                 .collect(),
-            history_size: self.historical_blocks.cap().get(),
+            retention: self.historical_blocks.cap().get(),
         }
     }
 
@@ -78,7 +75,15 @@ pub(crate) struct DashboardStateResponse {
     /// Historical block records, newest first.
     pub(crate) historical_blocks: Vec<HistoricalBlock>,
     /// Maximum number of blocks retained in history.
-    pub(crate) history_size: usize,
+    pub(crate) retention: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ProofResult {
+    Success,
+    Error,
+    Timeout,
 }
 
 /// Record of a block's proving pipeline state.
@@ -116,9 +121,8 @@ pub(crate) struct HistoricalProof {
     /// Seconds since block timestamp when proving started. None before proving begins.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) started_s: Option<f64>,
-    /// Outcome status ("success", "timeout", or "error"). None while proving.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) status: Option<String>,
+    pub(crate) result: Option<ProofResult>,
     /// Error message on failure. None while proving, on success, or on timeout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
@@ -164,7 +168,7 @@ pub(crate) enum DashboardMessage {
     ProveEnd {
         block_hash: Hash256,
         proof_type: ProofType,
-        status: String,
+        result: ProofResult,
         error: Option<String>,
         proof_size: Option<u64>,
         timestamp_secs: f64,
@@ -219,17 +223,17 @@ impl DashboardMessage {
     pub(crate) fn prove_end(
         block_hash: Hash256,
         proof_type: ProofType,
-        proof_result: &ProofResult,
+        proof_result: &WorkerProofResult,
     ) -> Self {
-        let (status, error, proof_size) = match proof_result {
-            ProofResult::Ok(bytes) => ("success".to_owned(), None, Some(bytes.len() as u64)),
-            ProofResult::Err(msg) => ("error".to_owned(), Some(msg.clone()), None),
-            ProofResult::Timeout => ("timeout".to_owned(), None, None),
+        let (result, error, proof_size) = match proof_result {
+            WorkerProofResult::Ok(bytes) => (ProofResult::Success, None, Some(bytes.len() as u64)),
+            WorkerProofResult::Err(msg) => (ProofResult::Error, Some(msg.clone()), None),
+            WorkerProofResult::Timeout => (ProofResult::Timeout, None, None),
         };
         Self::ProveEnd {
             block_hash,
             proof_type,
-            status,
+            result,
             error,
             proof_size,
             timestamp_secs: now_secs(),
@@ -275,7 +279,7 @@ pub(crate) enum DashboardEvent {
         block_hash: Hash256,
         proof_type: ProofType,
         ended_s: f64,
-        status: String,
+        result: ProofResult,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -440,7 +444,7 @@ impl DashboardService {
             DashboardMessage::ProveEnd {
                 block_hash,
                 proof_type,
-                status,
+                result,
                 error,
                 proof_size,
                 timestamp_secs,
@@ -451,7 +455,7 @@ impl DashboardService {
                 };
                 let ended_s = timestamp_secs - block.block_timestamp as f64;
                 if let Some(record) = block.proofs.get_mut(&proof_type) {
-                    record.status = Some(status.clone());
+                    record.result = Some(result);
                     record.error = error.clone();
                     record.ended_s = Some(ended_s);
                     record.proof_size = proof_size;
@@ -462,7 +466,7 @@ impl DashboardService {
                     block_hash,
                     proof_type,
                     ended_s,
-                    status,
+                    result,
                     error,
                     proof_size,
                 });
