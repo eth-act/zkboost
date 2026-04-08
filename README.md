@@ -69,9 +69,9 @@ el_endpoint = "http://localhost:8545"
 # LRU cache size for execution witnesses (default: 128)
 # witness_cache_size = 128
 
-# External zkVM (calls a remote ere-server via HTTP)
+# External Ere server (calls a remote ere-server via HTTP)
 [[zkvm]]
-kind = "external"
+kind = "ere"
 proof_type = "ethrex-zisk"
 endpoint = "http://ere-server:3000"
 
