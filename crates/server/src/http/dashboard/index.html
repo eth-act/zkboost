@@ -689,9 +689,9 @@
                 if (blockTimestamp) byHash[blockHash].blockTimestamp = blockTimestamp;
             };
             for (const block of blocks) {
-                if (block.blockNumber) {
+                if (block.blockNumber != null) {
                     ensure(block.blockHash, block.blockNumber, block.blockTimestamp ?? 0);
-                    if (block.gasUsed) byHash[block.blockHash].gas = block.gasUsed / 1e6;
+                    if (block.gasUsed != null) byHash[block.blockHash].gas = block.gasUsed / 1e6;
                     for (const [proofType, proof] of Object.entries(block.proofs)) {
                         if (proof.result === 'success' && provingSecs(proof) != null)
                             byHash[block.blockHash].proving[proofType] = provingSecs(proof);
@@ -889,9 +889,9 @@
                 blocks.unshift(entry);
                 while (blocks.length > retention.value) blocks.pop();
             }
-            if (data.blockNumber) entry.blockNumber = data.blockNumber;
-            if (data.gasUsed) entry.gasUsed = data.gasUsed;
-            if (data.blockTimestamp) entry.blockTimestamp = data.blockTimestamp;
+            if (data.blockNumber != null) entry.blockNumber = data.blockNumber;
+            if (data.gasUsed != null) entry.gasUsed = data.gasUsed;
+            if (data.blockTimestamp != null) entry.blockTimestamp = data.blockTimestamp;
             if (data.witnessStartedS != null) entry.witnessStartedS = data.witnessStartedS;
             if (data.witnessEndedS != null) entry.witnessEndedS = data.witnessEndedS;
             if (data.witnessSuccess != null) entry.witnessSuccess = data.witnessSuccess;
@@ -1203,13 +1203,9 @@
             const note =
                 proof.result == null
                     ? '-'
-                    : (() => {
-                        const statusClass =
-                            proof.result === 'success' ? 'success' : proof.result === 'timeout' ? 'timeout' : 'error';
-                        return html`<span style="color:var(${STATUS_COLOR_VAR[statusClass]})"
-                            >${statusClass.toUpperCase()}</span
-                        >`;
-                    })();
+                    : html`<span style="color:var(${STATUS_COLOR_VAR[proof.result]})"
+                        >${proof.result.toUpperCase()}</span
+                    >`;
             const requested = proof.requestedS != null ? formatOffset(proof.requestedS) : '-';
             return html`<tr>
                 <td>${label}</td>
@@ -1599,11 +1595,10 @@
 
             return html`<div class="panel">
                 <div class="section-title section-title-flex">
-                    <span
-                        >Proving History${' '}<span class="section-title-suffix"
-                            >(Last ${retention} Blocks)</span
-                        ></span
-                    >
+                    <span>
+                        Proving History${' '}
+                        <span class="section-title-suffix">(Last ${retention} Blocks)</span>
+                    </span>
                     <span class="inline-filter">
                         ${['all', 'success', 'timeout', 'error'].map(
                             (filterName) => html`
