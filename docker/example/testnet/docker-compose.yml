@@ -17,7 +17,7 @@ services:
       - ../../../scripts/download-ere-guest.sh:/scripts/download-ere-guest.sh:ro
 
   ethrex-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.6.0-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.7.0-cuda
     command: ["--port", "3000", "--program-path", "/programs/stateless-validator-ethrex-zisk", "gpu"]
     depends_on:
       download-programs:
@@ -63,6 +63,8 @@ services:
       context: ../../..
       dockerfile: ./docker/Dockerfile
     command: ["--config", "/app/config.toml"]
+    ports:
+      - "3000:3000"
     depends_on:
       ethrex-zisk:
         condition: service_healthy
