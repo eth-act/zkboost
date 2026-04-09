@@ -14,6 +14,17 @@ use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gau
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 use zkboost_types::ProofType;
 
+const HTTP_REQUESTS_TOTAL: &str = "zkboost_http_requests_total";
+const HTTP_REQUEST_DURATION_SECONDS: &str = "zkboost_http_request_duration_seconds";
+const HTTP_REQUESTS_IN_FLIGHT: &str = "zkboost_http_requests_in_flight";
+const PROVE_TOTAL: &str = "zkboost_prove_total";
+const PROVE_DURATION_SECONDS: &str = "zkboost_prove_duration_seconds";
+const PROVE_PROOF_BYTES: &str = "zkboost_prove_proof_bytes";
+const VERIFY_TOTAL: &str = "zkboost_verify_total";
+const VERIFY_DURATION_SECONDS: &str = "zkboost_verify_duration_seconds";
+const PROGRAMS_LOADED: &str = "zkboost_programs_loaded";
+const BUILD_INFO: &str = "zkboost_build_info";
+
 const DEFAULT_BUCKETS: &[f64] = &[
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 ];
@@ -26,7 +37,7 @@ pub fn init_metrics() -> PrometheusHandle {
         .set_buckets(DEFAULT_BUCKETS)
         .unwrap()
         .set_buckets_for_metric(
-            Matcher::Full("zkboost_prove_duration_seconds".to_owned()),
+            Matcher::Full(PROVE_DURATION_SECONDS.to_owned()),
             &from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5),
         )
         .unwrap()
@@ -34,31 +45,22 @@ pub fn init_metrics() -> PrometheusHandle {
         .expect("failed to install Prometheus recorder");
 
     // HTTP layer metrics
-    describe_counter!("zkboost_http_requests_total", "total http requests");
-    describe_histogram!(
-        "zkboost_http_request_duration_seconds",
-        "http request duration"
-    );
-    describe_gauge!("zkboost_http_requests_in_flight", "http requests in flight");
+    describe_counter!(HTTP_REQUESTS_TOTAL, "total http requests");
+    describe_histogram!(HTTP_REQUEST_DURATION_SECONDS, "http request duration");
+    describe_gauge!(HTTP_REQUESTS_IN_FLIGHT, "http requests in flight");
 
     // Prove operation metrics
-    describe_counter!("zkboost_prove_total", "total prove operations");
-    describe_histogram!(
-        "zkboost_prove_duration_seconds",
-        "proof generation duration"
-    );
-    describe_histogram!("zkboost_prove_proof_bytes", "proof size");
+    describe_counter!(PROVE_TOTAL, "total prove operations");
+    describe_histogram!(PROVE_DURATION_SECONDS, "proof generation duration");
+    describe_histogram!(PROVE_PROOF_BYTES, "proof size");
 
     // Verify operation metrics
-    describe_counter!("zkboost_verify_total", "total verify operations");
-    describe_histogram!(
-        "zkboost_verify_duration_seconds",
-        "proof verification duration"
-    );
+    describe_counter!(VERIFY_TOTAL, "total verify operations");
+    describe_histogram!(VERIFY_DURATION_SECONDS, "proof verification duration");
 
     // Application metrics
-    describe_gauge!("zkboost_programs_loaded", "zkvm programs loaded");
-    describe_gauge!("zkboost_build_info", "build info");
+    describe_gauge!(PROGRAMS_LOADED, "zkvm programs loaded");
+    describe_gauge!(BUILD_INFO, "build info");
 
     handle
 }
@@ -75,23 +77,23 @@ pub fn spawn_upkeep(handle: PrometheusHandle) {
 
 /// Record an HTTP request start (increment in-flight gauge).
 fn record_request_start(endpoint: &str) {
-    gauge!("zkboost_http_requests_in_flight", "endpoint" => endpoint.to_owned()).increment(1.0);
+    gauge!(HTTP_REQUESTS_IN_FLIGHT, "endpoint" => endpoint.to_owned()).increment(1.0);
 }
 
 /// Record an HTTP request completion with status and duration.
 fn record_request_end(endpoint: &str, method: &str, status: u16, duration: Duration) {
     let endpoint = endpoint.to_owned();
     let method = method.to_owned();
-    gauge!("zkboost_http_requests_in_flight", "endpoint" => endpoint.clone()).decrement(1.0);
+    gauge!(HTTP_REQUESTS_IN_FLIGHT, "endpoint" => endpoint.clone()).decrement(1.0);
     counter!(
-        "zkboost_http_requests_total",
+        HTTP_REQUESTS_TOTAL,
         "endpoint" => endpoint.clone(),
         "method" => method.clone(),
         "status" => status.to_string()
     )
     .increment(1);
     histogram!(
-        "zkboost_http_request_duration_seconds",
+        HTTP_REQUEST_DURATION_SECONDS,
         "endpoint" => endpoint,
         "method" => method
     )
@@ -106,19 +108,19 @@ pub fn record_prove(
     proof_size: usize,
 ) {
     counter!(
-        "zkboost_prove_total",
+        PROVE_TOTAL,
         "proof_type" => proof_type.to_string(),
         "status" => status
     )
     .increment(1);
     if status == "success" {
         histogram!(
-            "zkboost_prove_duration_seconds",
+            PROVE_DURATION_SECONDS,
             "proof_type" => proof_type.to_string(),
         )
         .record(duration.as_secs_f64());
         histogram!(
-            "zkboost_prove_proof_bytes",
+            PROVE_PROOF_BYTES,
             "proof_type" => proof_type.to_string(),
         )
         .record(proof_size as f64);
@@ -128,13 +130,13 @@ pub fn record_prove(
 /// Record a verify operation result.
 pub fn record_verify(proof_type: ProofType, verified: bool, duration: Duration) {
     counter!(
-        "zkboost_verify_total",
+        VERIFY_TOTAL,
         "proof_type" => proof_type.to_string(),
         "verified" => verified.to_string()
     )
     .increment(1);
     histogram!(
-        "zkboost_verify_duration_seconds",
+        VERIFY_DURATION_SECONDS,
         "proof_type" => proof_type.to_string(),
     )
     .record(duration.as_secs_f64());
@@ -142,12 +144,12 @@ pub fn record_verify(proof_type: ProofType, verified: bool, duration: Duration) 
 
 /// Set the number of loaded programs gauge.
 pub fn set_programs_loaded(count: usize) {
-    gauge!("zkboost_programs_loaded").set(count as f64);
+    gauge!(PROGRAMS_LOADED).set(count as f64);
 }
 
 /// Set the build info gauge with version label.
 pub fn set_build_info(version: &str) {
-    gauge!("zkboost_build_info", "version" => version.to_string()).set(1.0);
+    gauge!(BUILD_INFO, "version" => version.to_string()).set(1.0);
 }
 
 /// Axum middleware that records HTTP request metrics.
