@@ -17,6 +17,9 @@ use zkboost_types::ProofType;
 const HTTP_REQUESTS_TOTAL: &str = "zkboost_http_requests_total";
 const HTTP_REQUEST_DURATION_SECONDS: &str = "zkboost_http_request_duration_seconds";
 const HTTP_REQUESTS_IN_FLIGHT: &str = "zkboost_http_requests_in_flight";
+const WITNESS_FETCH_DURATION_SECONDS: &str = "zkboost_witness_fetch_duration_seconds";
+const WITNESS_BYTES: &str = "zkboost_witness_bytes";
+const WITNESS_FETCH_TOTAL: &str = "zkboost_witness_fetch_total";
 const PROVE_TOTAL: &str = "zkboost_prove_total";
 const PROVE_DURATION_SECONDS: &str = "zkboost_prove_duration_seconds";
 const PROVE_PROOF_BYTES: &str = "zkboost_prove_proof_bytes";
@@ -48,6 +51,11 @@ pub fn init_metrics() -> PrometheusHandle {
     describe_counter!(HTTP_REQUESTS_TOTAL, "total http requests");
     describe_histogram!(HTTP_REQUEST_DURATION_SECONDS, "http request duration");
     describe_gauge!(HTTP_REQUESTS_IN_FLIGHT, "http requests in flight");
+
+    // Witness operation metrics
+    describe_counter!(WITNESS_FETCH_TOTAL, "total witness fetch operations");
+    describe_histogram!(WITNESS_FETCH_DURATION_SECONDS, "witness fetch duration");
+    describe_histogram!(WITNESS_BYTES, "witness size");
 
     // Prove operation metrics
     describe_counter!(PROVE_TOTAL, "total prove operations");
@@ -98,6 +106,15 @@ fn record_request_end(endpoint: &str, method: &str, status: u16, duration: Durat
         "method" => method
     )
     .record(duration.as_secs_f64());
+}
+
+/// Record a witness fetch result.
+pub fn record_witness_fetch(status: &'static str, duration: Duration, witness_size: usize) {
+    counter!(WITNESS_FETCH_TOTAL, "status" => status).increment(1);
+    if status == "success" {
+        histogram!(WITNESS_FETCH_DURATION_SECONDS).record(duration.as_secs_f64());
+        histogram!(WITNESS_BYTES).record(witness_size as f64);
+    }
 }
 
 /// Record a prove operation result.

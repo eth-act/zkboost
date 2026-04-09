@@ -21,7 +21,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span, debug, error, info, info_span, record_all, trace, warn};
 use zkboost_types::Hash256;
 
-use crate::{dashboard::DashboardMessage, el_client::ElClient, proof::ProofServiceMessage};
+use crate::{
+    dashboard::DashboardMessage, el_client::ElClient, metrics::record_witness_fetch,
+    proof::ProofServiceMessage,
+};
 
 /// Messages consumed by the witness service event loop.
 #[derive(Debug)]
@@ -220,13 +223,19 @@ async fn fetch_witness(
     }
     .instrument(span.clone());
 
+    let fetch_start = Instant::now();
     match timeout(witness_timeout, AssertUnwindSafe(fut).catch_unwind()).await {
-        Ok(Ok((witness, witness_size))) => (block_hash, Some((Arc::new(witness), witness_size))),
+        Ok(Ok((witness, witness_size))) => {
+            record_witness_fetch("success", fetch_start.elapsed(), witness_size);
+            (block_hash, Some((Arc::new(witness), witness_size)))
+        }
         Ok(Err(_)) => {
+            record_witness_fetch("panic", fetch_start.elapsed(), 0);
             record_all!(span, otel.status_code = "ERROR", error_reason = "panic");
             (block_hash, None)
         }
         Err(_) => {
+            record_witness_fetch("timeout", fetch_start.elapsed(), 0);
             record_all!(span, otel.status_code = "ERROR", error_reason = "timeout");
             (block_hash, None)
         }
