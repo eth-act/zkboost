@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - master
-    tags:
-      - '*'
   pull_request:
 
 jobs:
@@ -38,7 +36,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}/zkboost
           tags: |
             type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
-            type=semver,pattern={{version}}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -61,11 +58,28 @@ jobs:
           cache-from: type=gha,scope=zkboost-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=zkboost-${{ matrix.arch }}
 
+  check-git-tag:
+    name: Check whether git tag exists
+    if: github.event_name == 'push'
+    needs: build-images
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check-git-tag.outputs.exists }}
+      semver: ${{ steps.check-git-tag.outputs.semver }}
+    steps:
+      - name: Check whether tag exists
+        id: check-git-tag
+        run: |
+          TAG=$(git ls-remote --tags "https://github.com/${{ github.repository }}" "v*" \
+            | awk '$1 == "${{ github.sha }}" { sub("refs/tags/", "", $2); sub(/\^\{\}$/, "", $2); print $2; exit }')
+          echo "exists=$([[ -n "$TAG" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "semver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
   merge-manifests:
     permissions:
       contents: read
       packages: write
-    needs: build-images
+    needs: [build-images, check-git-tag]
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
@@ -85,8 +99,10 @@ jobs:
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-amd64 \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-arm64
 
-      - name: Tag latest
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Tag semver and latest
+        if: needs.check-git-tag.outputs.exists == 'true'
         run: |
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.check-git-tag.outputs.semver }} \
+            ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}
           docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:latest \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}
