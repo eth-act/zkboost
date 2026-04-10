@@ -128,14 +128,12 @@ async fn start_zkboost_server(
     el_endpoint: url::Url,
     zkvm_configs: Vec<zkVMConfig>,
     witness_timeout_secs: u64,
-    proof_timeout_secs: u64,
 ) -> (url::Url, tokio_util::sync::CancellationToken) {
     let config = Config {
         port: 0,
         el_endpoint,
         chain_config_path: None,
         witness_timeout_secs,
-        proof_timeout_secs,
         proof_cache_size: 128,
         witness_cache_size: 128,
         dashboard: DashboardConfig::default(),
@@ -169,22 +167,18 @@ impl TestHarness {
         let fixture = Fixture::load();
         let el_endpoint =
             start_mock_el(&fixture, behavior.witness_timeout, behavior.witness_delay).await;
+        let witness_timeout_secs = if behavior.witness_timeout { 1 } else { 12 };
+        let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
         let proof_type = ProofType::EthrexZisk;
         let zkvm_config = zkVMConfig::Mock {
             proof_type,
-            mock_proving_time: zkboost_server::config::MockProvingTime::Constant { ms: 3000 },
-            mock_proof_size: 1024,
+            proof_timeout_secs,
+            mock_proving_time: zkboost_server::config::MockProvingTime::Constant { ms: 6000 },
+            mock_proof_size: 128 << 10,
             mock_failure: behavior.proof_failure,
         };
-        let witness_timeout_secs = if behavior.witness_timeout { 1 } else { 12 };
-        let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
-        let (zkboost_endpoint, shutdown) = start_zkboost_server(
-            el_endpoint,
-            vec![zkvm_config],
-            witness_timeout_secs,
-            proof_timeout_secs,
-        )
-        .await;
+        let (zkboost_endpoint, shutdown) =
+            start_zkboost_server(el_endpoint, vec![zkvm_config], witness_timeout_secs).await;
         let client = zkBoostClient::new(zkboost_endpoint);
         Self {
             client,

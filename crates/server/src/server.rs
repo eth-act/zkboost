@@ -104,10 +104,9 @@ impl zkBoostServer {
         shutdown_token: CancellationToken,
     ) -> anyhow::Result<(SocketAddr, Vec<JoinHandle<()>>)> {
         let witness_timeout = Duration::from_secs(self.config.witness_timeout_secs);
-        let proof_timeout = Duration::from_secs(self.config.proof_timeout_secs);
 
         let proof_cache = Arc::new(RwLock::new(LruCache::new(
-            NonZeroUsize::new(self.config.proof_cache_size)
+            NonZeroUsize::new(self.config.proof_cache_size * self.zkvms.len())
                 .expect("proof_cache_size must be non-zero"),
         )));
 
@@ -141,7 +140,6 @@ impl zkBoostServer {
                 worker_input_rx,
                 worker_output_tx.clone(),
                 dashboard_service_tx.clone(),
-                proof_timeout,
             )));
         }
 
@@ -151,7 +149,6 @@ impl zkBoostServer {
             proof_event_tx,
             witness_service_tx,
             dashboard_service_tx.clone(),
-            proof_timeout,
         );
         handles.push(tokio::spawn(proof_service.run(
             shutdown_token.clone(),

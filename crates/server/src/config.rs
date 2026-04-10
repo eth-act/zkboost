@@ -16,7 +16,7 @@ const DEFAULT_WITNESS_TIMEOUT_SECS: u64 = 12;
 const DEFAULT_PROOF_TIMEOUT_SECS: u64 = 12;
 const DEFAULT_PROOF_CACHE_SIZE: usize = 128;
 const DEFAULT_WITNESS_CACHE_SIZE: usize = 128;
-const DEFAULT_MOCK_PROOF_SIZE: u64 = 1024;
+const DEFAULT_MOCK_PROOF_SIZE: u64 = 128 << 10;
 const DEFAULT_DASHBOARD_ENABLED: bool = false;
 const DEFAULT_DASHBOARD_RETENTION: usize = 256;
 
@@ -41,7 +41,7 @@ fn default_witness_cache_size() -> usize {
 }
 
 fn default_mock_proving_time() -> MockProvingTime {
-    MockProvingTime::Constant { ms: 3000 }
+    MockProvingTime::Constant { ms: 6000 }
 }
 
 fn default_mock_proof_size() -> u64 {
@@ -70,13 +70,10 @@ pub struct Config {
     /// Timeout in seconds for witness data (both pending-proof and fetch staleness).
     #[serde(default = "default_witness_timeout_secs")]
     pub witness_timeout_secs: u64,
-    /// Timeout in seconds for proof generation per zkVM worker.
-    #[serde(default = "default_proof_timeout_secs")]
-    pub proof_timeout_secs: u64,
-    /// Maximum number of completed proofs to keep in the LRU cache.
+    /// Number of blocks to keep in the completed proofs LRU cache.
     #[serde(default = "default_proof_cache_size")]
     pub proof_cache_size: usize,
-    /// Maximum number of execution witnesses to keep in the LRU cache.
+    /// Number of blocks to keep in the execution witness LRU cache.
     #[serde(default = "default_witness_cache_size")]
     pub witness_cache_size: usize,
     /// Dashboard feature configuration.
@@ -116,6 +113,19 @@ impl Config {
                 proof_types.insert(proof_type),
                 "duplicate proof_type: {proof_type}"
             );
+            match zkvm {
+                zkVMConfig::Ere {
+                    proof_timeout_secs, ..
+                }
+                | zkVMConfig::Mock {
+                    proof_timeout_secs, ..
+                } => {
+                    ensure!(
+                        *proof_timeout_secs > 0,
+                        "proof_timeout_secs must be > 0 for {proof_type}"
+                    );
+                }
+            }
             if let zkVMConfig::Mock {
                 mock_proving_time,
                 mock_proof_size,
@@ -165,15 +175,21 @@ pub enum MockProvingTime {
 pub enum zkVMConfig {
     /// Remote ere-server backend.
     Ere {
-        /// HTTP endpoint URL of the ere-server.
-        endpoint: String,
         /// Proof type.
         proof_type: ProofType,
+        /// Timeout in seconds for proof generation.
+        #[serde(default = "default_proof_timeout_secs")]
+        proof_timeout_secs: u64,
+        /// HTTP endpoint URL of the ere-server.
+        endpoint: String,
     },
     /// In-process mock backend for testing.
     Mock {
         /// Proof type.
         proof_type: ProofType,
+        /// Timeout in seconds for proof generation.
+        #[serde(default = "default_proof_timeout_secs")]
+        proof_timeout_secs: u64,
         /// Simulated proving time configuration.
         #[serde(default = "default_mock_proving_time")]
         mock_proving_time: MockProvingTime,
@@ -262,8 +278,9 @@ mod tests {
         assert!(matches!(
             config.zkvm[0],
             zkVMConfig::Mock {
-                mock_proving_time: MockProvingTime::Constant { ms: 3000 },
-                mock_proof_size: 1024,
+                proof_timeout_secs: 12,
+                mock_proving_time: MockProvingTime::Constant { ms: 6000 },
+                mock_proof_size: 131072,
                 ..
             }
         ));
@@ -328,6 +345,19 @@ mod tests {
             kind = "mock"
             proof_type = "reth-sp1"
             mock_proving_time = { kind = "random", min_ms = 1000, max_ms = 50 }
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_zero_proof_timeout_secs_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+            proof_timeout_secs = 0
         "#;
         let config: Config = toml_edit::de::from_str(toml).unwrap();
         assert!(config.validate().is_err());

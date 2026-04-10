@@ -65,7 +65,6 @@ pub(crate) struct ProofService {
     proof_event_tx: broadcast::Sender<ProofEvent>,
     witness_service_tx: mpsc::Sender<WitnessServiceMessage>,
     dashboard_service_tx: mpsc::Sender<DashboardMessage>,
-    proof_timeout: Duration,
     pending: HashMap<Hash256, PendingRequest>,
     requested: HashSet<(Hash256, ProofType)>,
 }
@@ -78,7 +77,6 @@ impl ProofService {
         proof_event_tx: broadcast::Sender<ProofEvent>,
         witness_service_tx: mpsc::Sender<WitnessServiceMessage>,
         dashboard_service_tx: mpsc::Sender<DashboardMessage>,
-        proof_timeout: Duration,
     ) -> Self {
         Self {
             chain_config,
@@ -86,7 +84,6 @@ impl ProofService {
             proof_event_tx,
             witness_service_tx,
             dashboard_service_tx,
-            proof_timeout,
             pending: HashMap::new(),
             requested: HashSet::new(),
         }
@@ -170,8 +167,8 @@ impl ProofService {
                     proof_type,
                     FailureReason::ProvingTimeout,
                     format!(
-                        "proving timed out after {} seconds",
-                        self.proof_timeout.as_secs()
+                        "proving timed out after {:.02} seconds",
+                        duration.as_secs_f64()
                     ),
                     duration,
                 );

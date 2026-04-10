@@ -52,9 +52,9 @@ pub(crate) async fn run_worker(
     mut worker_input_rx: mpsc::Receiver<WorkerInput>,
     worker_output_tx: mpsc::Sender<WorkerOutput>,
     dashboard_service_tx: mpsc::Sender<DashboardMessage>,
-    proof_timeout: Duration,
 ) {
     let proof_type = zkvm.proof_type();
+    let proof_timeout = zkvm.proof_timeout();
     let otel_name = format!("prove/{proof_type}");
 
     info!(%proof_type, "zkvm worker started");
