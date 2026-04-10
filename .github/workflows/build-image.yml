@@ -95,14 +95,15 @@ jobs:
 
       - name: Create and push multi-arch manifest
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }} \
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }} \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-amd64 \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-arm64
 
       - name: Tag semver and latest
         if: needs.check-git-tag.outputs.exists == 'true'
         run: |
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.check-git-tag.outputs.semver }} \
-            ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}
-          docker buildx imagetools create -t ghcr.io/${{ github.repository }}/zkboost:latest \
+          docker buildx imagetools create \
+            -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.check-git-tag.outputs.semver }} \
+            -t ghcr.io/${{ github.repository }}/zkboost:latest \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}
