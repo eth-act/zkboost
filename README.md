@@ -60,9 +60,6 @@ el_endpoint = "http://localhost:8545"
 # Timeout for witness fetching in seconds (default: 12)
 # witness_timeout_secs = 12
 
-# Timeout for proof generation in seconds (default: 12)
-# proof_timeout_secs = 12
-
 # LRU cache size for completed proofs (default: 128)
 # proof_cache_size = 128
 
@@ -73,16 +70,20 @@ el_endpoint = "http://localhost:8545"
 [[zkvm]]
 kind = "ere"
 proof_type = "ethrex-zisk"
+
+# Timeout for proof generation in seconds (default: 12)
+# proof_timeout_secs = 12
+
+# Endpoint of the Ere server
 endpoint = "http://ere-server:3000"
 
 # Mock zkVMs (in-process, for testing without Docker/GPU)
 
-# Fixed proving time
+# Fixed proving time (default)
 [[zkvm]]
 kind = "mock"
 proof_type = "reth-sp1"
-mock_proving_time = { kind = "constant", ms = 3000 }
-mock_proof_size = 1024
+mock_proving_time = { kind = "constant", ms = 6000 }
 
 # Random proving time uniformly sampled from [min_ms, max_ms]
 [[zkvm]]

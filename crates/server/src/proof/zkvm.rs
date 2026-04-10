@@ -46,6 +46,8 @@ pub(crate) enum zkVMInstance {
     Ere {
         /// Proof type identifier (e.g. `"reth-sp1"`).
         proof_type: ProofType,
+        /// Timeout for proof generation.
+        proof_timeout: Duration,
         /// Client of external Ere server.
         client: Arc<zkVMClient>,
     },
@@ -53,6 +55,8 @@ pub(crate) enum zkVMInstance {
     Mock {
         /// Proof type identifier (e.g. `"reth-sp1"`).
         proof_type: ProofType,
+        /// Timeout for proof generation.
+        proof_timeout: Duration,
         /// Mock zkVM implementation.
         vm: MockzkVM,
     },
@@ -63,8 +67,9 @@ impl zkVMInstance {
     pub(crate) async fn new(config: &zkVMConfig) -> anyhow::Result<Self> {
         match config {
             zkVMConfig::Ere {
-                endpoint,
                 proof_type,
+                proof_timeout_secs,
+                endpoint,
             } => {
                 let endpoint_url = Url::parse(endpoint)
                     .with_context(|| format!("failed to parse endpoint URL: {endpoint}"))?;
@@ -81,16 +86,19 @@ impl zkVMInstance {
                 };
                 Ok(Self::Ere {
                     proof_type: *proof_type,
+                    proof_timeout: Duration::from_secs(*proof_timeout_secs),
                     client: Arc::new(client),
                 })
             }
             zkVMConfig::Mock {
                 proof_type,
+                proof_timeout_secs,
                 mock_proving_time,
                 mock_proof_size,
                 mock_failure,
             } => Ok(Self::Mock {
                 proof_type: *proof_type,
+                proof_timeout: Duration::from_secs(*proof_timeout_secs),
                 vm: MockzkVM::new(
                     proof_type.el_kind(),
                     mock_proving_time.clone(),
@@ -163,6 +171,13 @@ impl zkVMInstance {
     pub(crate) fn proof_type(&self) -> ProofType {
         match self {
             Self::Ere { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
+        }
+    }
+
+    /// Returns the proof timeout for this instance.
+    pub(crate) fn proof_timeout(&self) -> Duration {
+        match self {
+            Self::Ere { proof_timeout, .. } | Self::Mock { proof_timeout, .. } => *proof_timeout,
         }
     }
 }

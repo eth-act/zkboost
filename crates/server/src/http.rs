@@ -125,6 +125,7 @@ pub(crate) mod tests {
         let proof_type = ProofType::RethZisk;
         let mock_config = zkVMConfig::Mock {
             proof_type,
+            proof_timeout_secs: 12,
             mock_proving_time: MockProvingTime::Constant { ms: 10 },
             mock_proof_size: 64,
             mock_failure: false,
