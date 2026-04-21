@@ -56,7 +56,7 @@ mod tests {
         routing::post,
     };
     use tower::ServiceExt;
-    use zkboost_types::{ElKind, Hash256, ProofStatus, ProofVerificationResponse};
+    use zkboost_types::{Hash256, ProofStatus, ProofVerificationResponse};
 
     use crate::{
         http::{AppState, tests::mock_app_state, v1::post_execution_proof_verifications},
@@ -142,7 +142,7 @@ mod tests {
 
     fn mock_proof(new_payload_request_root: Hash256, mock_proof_size: u64) -> Vec<u8> {
         let mut proof = vec![0; mock_proof_size as usize];
-        let public_values = expected_public_values(new_payload_request_root, ElKind::Reth).unwrap();
+        let public_values = expected_public_values(new_payload_request_root).unwrap();
         proof[..32].copy_from_slice(&public_values);
         proof
     }

@@ -12,15 +12,12 @@ use alloy_rpc_types_engine::{
     ExecutionPayloadV2 as AlloyExecutionPayloadV2, ExecutionPayloadV3 as AlloyExecutionPayloadV3,
     PraguePayloadFields,
 };
-use ere_zkvm_interface::Input;
+use ere_guests_stateless_validator_ethrex::guest::StatelessValidatorEthrexInput;
+use ere_guests_stateless_validator_reth::{
+    guest::StatelessValidatorRethInput, host::StatelessInput,
+};
+use ere_server_client::{Input, codec::Encode};
 use stateless::ExecutionWitness;
-use stateless_validator_ethrex::guest::{
-    StatelessValidatorEthrexInput, StatelessValidatorEthrexIo,
-};
-use stateless_validator_reth::{
-    guest::{Io, StatelessValidatorRethInput, StatelessValidatorRethIo},
-    host::StatelessInput,
-};
 use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest};
 
 /// Combines a `NewPayloadRequest` with its execution witness and chain config, eagerly computing
@@ -79,14 +76,13 @@ impl NewPayloadRequestWithWitness {
 
     /// Generates zkVM input for the given EL kind.
     pub(crate) fn to_zkvm_input(&self, el_kind: ElKind) -> anyhow::Result<Input> {
-        let stdin = match el_kind {
-            ElKind::Ethrex => StatelessValidatorEthrexIo::serialize_input(
-                &StatelessValidatorEthrexInput::new(&self.stateless_input, true)?,
-            )?,
-            ElKind::Reth => StatelessValidatorRethIo::serialize_input(
-                &StatelessValidatorRethInput::new(&self.stateless_input, true)?,
-            )?,
-        };
+        let stdin =
+            match el_kind {
+                ElKind::Ethrex => StatelessValidatorEthrexInput::new(&self.stateless_input, true)?
+                    .encode_to_vec()?,
+                ElKind::Reth => StatelessValidatorRethInput::new(&self.stateless_input, true)?
+                    .encode_to_vec()?,
+            };
         Ok(Input::new().with_prefixed_stdin(stdin))
     }
 }

@@ -19,7 +19,7 @@ otel = [
     "dep:opentelemetry-otlp",
     "dep:opentelemetry_sdk",
     "dep:tracing-opentelemetry",
-    "ere-server/otel",
+    "ere-server-client/otel",
 ]
 
 [dependencies]
@@ -64,13 +64,12 @@ reth-ethereum-primitives.workspace = true
 stateless.workspace = true
 
 # ere
-ere-server.workspace = true
-ere-zkvm-interface.workspace = true
+ere-server-client.workspace = true
 
 # ere-guests
-stateless-validator-common.workspace = true
-stateless-validator-ethrex.workspace = true
-stateless-validator-reth.workspace = true
+ere-guests-stateless-validator-common.workspace = true
+ere-guests-stateless-validator-ethrex.workspace = true
+ere-guests-stateless-validator-reth.workspace = true
 
 # local
 zkboost-types.workspace = true
