@@ -4,7 +4,7 @@ set -euo pipefail
 # Download and verify a guest program from eth-act/ere-guests releases.
 #
 # Usage: ./download-ere-guest.sh --tag <release-tag> --guest <guest-name> --output-dir <dir>
-# Example: ./download-ere-guest.sh --tag v0.7.0 --guest stateless-validator-reth-zisk --output-dir ./programs/
+# Example: ./download-ere-guest.sh --tag v0.9.0 --guest stateless-validator-reth-zisk --output-dir ./programs/
 
 PUB_KEY="RWTsNA0kZFhw19A26aujYun4hv4RraCnEYDehrgEG6NnCjmjkr9/+KGy"
 
@@ -12,7 +12,7 @@ usage() {
     echo "Usage: $0 --tag <release-tag> --guest <guest-name> --output-dir <dir>"
     echo ""
     echo "Options:"
-    echo "  --tag         Release tag (e.g. v0.7.0)"
+    echo "  --tag         Release tag (e.g. v0.9.0)"
     echo "  --guest       Guest program name (e.g. stateless-validator-reth-zisk)"
     echo "  --output-dir  Directory to save the downloaded program"
     exit 1
@@ -53,16 +53,16 @@ fi
 
 REPO="eth-act/ere-guests"
 BASE_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
-PROGRAM_URL="${BASE_URL}/${GUEST_NAME}"
-SIG_URL="${BASE_URL}/${GUEST_NAME}.minisig"
+ELF_URL="${BASE_URL}/${GUEST_NAME}.elf"
+SIG_URL="${ELF_URL}.minisig"
 
 mkdir -p "${OUTPUT_DIR}"
 
 PROGRAM_PATH="${OUTPUT_DIR}/${GUEST_NAME}"
 SIG_PATH="${OUTPUT_DIR}/${GUEST_NAME}.minisig"
 
-echo "Downloading ${GUEST_NAME} from ${PROGRAM_URL}..."
-curl -fSL -o "${PROGRAM_PATH}" "${PROGRAM_URL}"
+echo "Downloading ${GUEST_NAME} from ${ELF_URL}..."
+curl -fSL -o "${PROGRAM_PATH}" "${ELF_URL}"
 
 echo "Downloading signature from ${SIG_URL}..."
 curl -fSL -o "${SIG_PATH}" "${SIG_URL}"

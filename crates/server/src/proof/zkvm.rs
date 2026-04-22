@@ -290,7 +290,7 @@ fn gas_used(req: &NewPayloadRequest) -> u64 {
     }
 }
 
-/// Computes the expected public values hash for a given payload root and EL kind.
+/// Computes the expected public values hash for a given payload root.
 pub(crate) fn expected_public_values(
     new_payload_request_root: Hash256,
 ) -> anyhow::Result<[u8; 32]> {
