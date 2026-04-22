@@ -60,7 +60,7 @@ opentelemetry_sdk = "0.31"
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = "0.3"
-url = "2.5.7"
+url = { version = "2.5.7", features = ["serde"] }
 
 # lighthouse
 ethereum_serde_utils = "0.8.0"

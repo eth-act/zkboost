@@ -83,16 +83,10 @@ pub fn spawn_upkeep(handle: PrometheusHandle) {
     });
 }
 
-/// Record an HTTP request start (increment in-flight gauge).
-fn record_request_start(endpoint: &str) {
-    gauge!(HTTP_REQUESTS_IN_FLIGHT, "endpoint" => endpoint.to_owned()).increment(1.0);
-}
-
 /// Record an HTTP request completion with status and duration.
-fn record_request_end(endpoint: &str, method: &str, status: u16, duration: Duration) {
+fn record_http_request(endpoint: &str, method: &str, status: u16, duration: Duration) {
     let endpoint = endpoint.to_owned();
     let method = method.to_owned();
-    gauge!(HTTP_REQUESTS_IN_FLIGHT, "endpoint" => endpoint.clone()).decrement(1.0);
     counter!(
         HTTP_REQUESTS_TOTAL,
         "endpoint" => endpoint.clone(),
@@ -174,20 +168,37 @@ pub fn set_build_info(version: &str) {
 /// Uses `MatchedPath` (the route template) rather than the raw URI to avoid
 /// unbounded metric cardinality from path parameters.
 pub(crate) async fn http_metrics_middleware(request: Request, next: Next) -> Response {
-    let start = Instant::now();
+    struct InFlightGuard {
+        endpoint: String,
+    }
+
+    impl InFlightGuard {
+        fn new(endpoint: String) -> Self {
+            gauge!(HTTP_REQUESTS_IN_FLIGHT, "endpoint" => endpoint.clone()).increment(1.0);
+            Self { endpoint }
+        }
+    }
+
+    impl Drop for InFlightGuard {
+        fn drop(&mut self) {
+            let endpoint = std::mem::take(&mut self.endpoint);
+            gauge!(HTTP_REQUESTS_IN_FLIGHT, "endpoint" => endpoint).decrement(1.0);
+        }
+    }
+
     let method = request.method().to_string();
     let path = request
         .extensions()
         .get::<MatchedPath>()
         .map(|mp| mp.as_str().to_owned())
         .unwrap_or_else(|| "unmatched".to_owned());
+    let _guard = InFlightGuard::new(path.clone());
 
-    record_request_start(&path);
-
+    let start = Instant::now();
     let response = next.run(request).await;
+    let elapsed = start.elapsed();
 
-    let status = response.status().as_u16();
-    record_request_end(&path, &method, status, start.elapsed());
+    record_http_request(&path, &method, response.status().as_u16(), elapsed);
 
     response
 }

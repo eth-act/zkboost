@@ -43,7 +43,8 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 tokio-util.workspace = true
 toml_edit = { workspace = true, features = ["serde"] }
-tower-http = { workspace = true, features = ["trace", "limit"] }
+tower.workspace = true
+tower-http = { workspace = true, features = ["catch-panic", "trace", "limit"] }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"], optional = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio"], optional = true }
@@ -67,7 +68,6 @@ stateless.workspace = true
 ere-server-client.workspace = true
 
 # ere-guests
-ere-guests-stateless-validator-common.workspace = true
 ere-guests-stateless-validator-ethrex.workspace = true
 ere-guests-stateless-validator-reth.workspace = true
 
@@ -76,7 +76,6 @@ zkboost-types.workspace = true
 
 [dev-dependencies]
 futures.workspace = true
-tower = { workspace = true, features = ["util"] }
 
 # local
 zkboost-client.workspace = true
