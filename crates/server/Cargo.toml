@@ -67,6 +67,7 @@ stateless.workspace = true
 ere-server-client.workspace = true
 
 # ere-guests
+ere-guests-stateless-validator-common.workspace = true
 ere-guests-stateless-validator-ethrex.workspace = true
 ere-guests-stateless-validator-reth.workspace = true
 

@@ -8235,6 +8235,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "stateless",
+ "stateless-validator-common",
  "stateless-validator-ethrex",
  "stateless-validator-reth",
  "strum",

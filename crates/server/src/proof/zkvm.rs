@@ -4,13 +4,14 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
+use ere_guests_stateless_validator_common::{
+    guest::StatelessValidatorOutput, new_payload_request::NewPayloadRequest,
+};
 use ere_guests_stateless_validator_ethrex::guest::{
     StatelessValidatorEthrexGuest, StatelessValidatorEthrexInput,
-    new_payload_request::NewPayloadRequest,
 };
 use ere_guests_stateless_validator_reth::guest::{
-    Guest, Platform, StatelessValidatorOutput, StatelessValidatorRethGuest,
-    StatelessValidatorRethInput,
+    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput,
 };
 use ere_server_client::{EncodedProof, PublicValues, codec::Encode, zkVMClient};
 use rand::{Rng, rng};

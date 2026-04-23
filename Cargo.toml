@@ -87,6 +87,7 @@ stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "ed189a519
 ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.8.0" }
 
 # ere-guests
+ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", package = "stateless-validator-common" }
 ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", features = ["host"], package = "stateless-validator-ethrex" }
 ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", features = ["host"], package = "stateless-validator-reth" }
 
