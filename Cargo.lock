@@ -2129,6 +2129,11 @@ version = "0.8.0"
 source = "git+https://github.com/eth-act/ere?tag=v0.8.0#54b00745fa5fabe008b037f61f6864305c41af80"
 
 [[package]]
+name = "ere-codec"
+version = "0.8.1"
+source = "git+https://github.com/eth-act/ere?tag=v0.8.1#653b406fa352f4c53161810c4ef078e79ec45b1b"
+
+[[package]]
 name = "ere-platform-core"
 version = "0.8.0"
 source = "git+https://github.com/eth-act/ere?tag=v0.8.0#54b00745fa5fabe008b037f61f6864305c41af80"
@@ -2141,8 +2146,24 @@ dependencies = [
  "anyhow",
  "auto_impl",
  "bincode",
- "ere-codec",
- "ere-verifier-core",
+ "ere-codec 0.8.0",
+ "ere-verifier-core 0.8.0",
+ "indexmap 2.13.0",
+ "serde",
+ "strum",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ere-prover-core"
+version = "0.8.1"
+source = "git+https://github.com/eth-act/ere?tag=v0.8.1#653b406fa352f4c53161810c4ef078e79ec45b1b"
+dependencies = [
+ "anyhow",
+ "auto_impl",
+ "bincode",
+ "ere-codec 0.8.1",
+ "ere-verifier-core 0.8.1",
  "indexmap 2.13.0",
  "serde",
  "strum",
@@ -2151,8 +2172,8 @@ dependencies = [
 
 [[package]]
 name = "ere-server-api"
-version = "0.8.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.8.0#54b00745fa5fabe008b037f61f6864305c41af80"
+version = "0.8.1"
+source = "git+https://github.com/eth-act/ere?tag=v0.8.1#653b406fa352f4c53161810c4ef078e79ec45b1b"
 dependencies = [
  "prost",
  "serde",
@@ -2161,11 +2182,11 @@ dependencies = [
 
 [[package]]
 name = "ere-server-client"
-version = "0.8.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.8.0#54b00745fa5fabe008b037f61f6864305c41af80"
+version = "0.8.1"
+source = "git+https://github.com/eth-act/ere?tag=v0.8.1#653b406fa352f4c53161810c4ef078e79ec45b1b"
 dependencies = [
  "bincode",
- "ere-prover-core",
+ "ere-prover-core 0.8.1",
  "ere-server-api",
  "opentelemetry",
  "thiserror 2.0.18",
@@ -2180,7 +2201,17 @@ version = "0.8.0"
 source = "git+https://github.com/eth-act/ere?tag=v0.8.0#54b00745fa5fabe008b037f61f6864305c41af80"
 dependencies = [
  "auto_impl",
- "ere-codec",
+ "ere-codec 0.8.0",
+ "serde",
+]
+
+[[package]]
+name = "ere-verifier-core"
+version = "0.8.1"
+source = "git+https://github.com/eth-act/ere?tag=v0.8.1#653b406fa352f4c53161810c4ef078e79ec45b1b"
+dependencies = [
+ "auto_impl",
+ "ere-codec 0.8.1",
  "serde",
 ]
 
@@ -2922,7 +2953,7 @@ name = "guest"
 version = "0.9.0"
 source = "git+https://github.com/eth-act/ere-guests?tag=v0.9.0#73457deefabfbc49d0bda34c9445fdc5ac289f3d"
 dependencies = [
- "ere-codec",
+ "ere-codec 0.8.0",
  "ere-platform-core",
  "sha2",
 ]
@@ -6534,7 +6565,7 @@ dependencies = [
  "alloy-eips",
  "alloy-primitives",
  "anyhow",
- "ere-codec",
+ "ere-codec 0.8.0",
  "ere-platform-core",
  "libssz",
  "libssz-derive",
@@ -6557,7 +6588,7 @@ dependencies = [
  "alloy-rlp",
  "anyhow",
  "bytes",
- "ere-prover-core",
+ "ere-prover-core 0.8.0",
  "ethrex-common",
  "ethrex-crypto",
  "ethrex-guest-program",
@@ -6585,7 +6616,7 @@ dependencies = [
  "alloy-rpc-types-engine",
  "anyhow",
  "bincode",
- "ere-prover-core",
+ "ere-prover-core 0.8.0",
  "guest",
  "once_cell",
  "reth-chainspec",
