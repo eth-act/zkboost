@@ -14,7 +14,8 @@ use bytes::Bytes;
 use lru::LruCache;
 use metrics_exporter_prometheus::PrometheusHandle;
 use tokio::sync::{RwLock, broadcast, mpsc};
-use tower_http::trace::TraceLayer;
+use tower::ServiceBuilder;
+use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
 use zkboost_types::{Hash256, ProofEvent, ProofType};
 
 use crate::{
@@ -63,6 +64,12 @@ impl AppState {
 
 /// Builds the Axum router with all endpoints and middleware.
 pub(crate) fn router(state: Arc<AppState>) -> Router {
+    let api_middleware = ServiceBuilder::new()
+        .layer(middleware::from_fn(http_metrics_middleware))
+        .layer(TraceLayer::new_for_http())
+        .layer(CatchPanicLayer::new())
+        .layer(DefaultBodyLimit::max(1 << 30));
+
     let api = Router::new()
         .route(
             "/v1/execution_proof_requests",
@@ -77,14 +84,12 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             post(v1::post_execution_proof_verifications),
         )
         .fallback(fallback_handler)
-        .with_state(state.clone())
-        .layer(middleware::from_fn(http_metrics_middleware))
-        .layer(TraceLayer::new_for_http())
-        .layer(DefaultBodyLimit::max(1 << 30));
+        .layer(api_middleware);
 
     let mut infra = Router::new()
         .route("/health", get(StatusCode::OK))
         .route("/metrics", get(get_metrics));
+
     if state.dashboard.is_some() {
         infra = infra
             .route("/dashboard", get(dashboard::get_dashboard))
@@ -92,7 +97,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             .route("/dashboard/events", get(dashboard::get_dashboard_events));
     }
 
-    api.merge(infra.with_state(state))
+    api.merge(infra).with_state(state)
 }
 
 async fn fallback_handler() -> v1::ErrorResponse {

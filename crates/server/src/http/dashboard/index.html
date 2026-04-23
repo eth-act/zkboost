@@ -421,6 +421,31 @@
             }
         }
 
+        .section-title-collapsible {
+            cursor: pointer;
+            user-select: none;
+
+            &:hover {
+                color: var(--text-1);
+            }
+
+            .panel-toggle-arrow {
+                display: inline-block;
+                margin-right: 6px;
+                font-size: 0.7rem;
+                transform: rotate(90deg);
+                transition: transform 0.15s ease;
+            }
+
+            &.collapsed .panel-toggle-arrow {
+                transform: rotate(0deg);
+            }
+        }
+
+        .panel-body-collapsed {
+            display: none;
+        }
+
         .cell-left {
             text-align: left;
         }
@@ -773,6 +798,35 @@
             return { datasets, maxCount };
         };
 
+        const buildScatterData = (blocks, types) => {
+            const pointsByType = Object.fromEntries(types.map((proofType) => [proofType, []]));
+            let maxGasM = 0;
+            let maxSecs = 0;
+            for (const block of blocks) {
+                if (block.gasUsed == null) continue;
+                const gasM = block.gasUsed / 1e6;
+                for (const [proofType, proof] of Object.entries(block.proofs)) {
+                    if (proof.result !== 'success') continue;
+                    const secs = provingSecs(proof);
+                    if (secs == null) continue;
+                    if (!pointsByType[proofType]) continue;
+                    pointsByType[proofType].push({ x: gasM, y: secs });
+                    if (gasM > maxGasM) maxGasM = gasM;
+                    if (secs > maxSecs) maxSecs = secs;
+                }
+            }
+            const datasets = types.map((proofType) => ({
+                label: proofType,
+                data: pointsByType[proofType],
+                backgroundColor: proofTypeColor(proofType),
+                borderColor: proofTypeColor(proofType),
+                showLine: false,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+            }));
+            return { datasets, maxGasM, maxSecs };
+        };
+
         // Signals
 
         const connected = signal(false);
@@ -783,6 +837,17 @@
         const latestBlockTimestamp = signal(0);
         const historicalBlocks = signal([]);
         const latestEvents = signal({ fetchWitness: null, proving: {} });
+
+        const PANEL_COLLAPSE_STORAGE_KEY = 'zkboost-dashboard-panels-v1';
+        const loadPanelCollapseState = () => {
+            try {
+                const raw = localStorage.getItem(PANEL_COLLAPSE_STORAGE_KEY);
+                return raw ? JSON.parse(raw) : {};
+            } catch {
+                return {};
+            }
+        };
+        const panelCollapseState = signal(loadPanelCollapseState());
 
         const elapsedTick = signal(0);
         setInterval(() => {
@@ -1048,6 +1113,18 @@
             chart.update();
         };
 
+        const usePanelCollapse = (panelId) => {
+            const collapsed = !!panelCollapseState.value[panelId];
+            const toggle = useCallback(() => {
+                const next = { ...panelCollapseState.value, [panelId]: !panelCollapseState.value[panelId] };
+                panelCollapseState.value = next;
+                try {
+                    localStorage.setItem(PANEL_COLLAPSE_STORAGE_KEY, JSON.stringify(next));
+                } catch {}
+            }, [panelId]);
+            return { collapsed, toggle };
+        };
+
         // Components
 
         const CopyIcon = () =>
@@ -1222,86 +1299,96 @@
         };
 
         const LatestEvents = () => {
+            const { collapsed, toggle } = usePanelCollapse('latestEvents');
             return html`<div class="panel">
-                <div class="section-title">Latest Events</div>
-                <div class="table-responsive">
-                    <table class="table table-dark-custom">
-                        <thead>
-                            <tr>
-                                <th class="cell-left">Event</th>
-                                <th>Block</th>
-                                <th class="th-timestamp">Requested</th>
-                                <th class="th-timestamp">Started</th>
-                                <th class="th-timestamp">Ended</th>
-                                <th>Duration</th>
-                                <th class="th-fill">Note</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <${WitnessEventRow} block=${latestEventsData.value.fetchWitness} />
-                            ${proofTypes.value.map(
-                                (proofType) =>
-                                    html`<${ProvingEventRow}
-                                        key=${proofType}
-                                        proofType=${proofType}
-                                        block=${latestEventsData.value.proving[proofType] ?? null} />`,
-                            )}
-                        </tbody>
-                    </table>
+                <div class="section-title section-title-collapsible${collapsed ? ' collapsed' : ''}" onClick=${toggle}>
+                    <span class="panel-toggle-arrow">${'▶'}</span>Latest Events
+                </div>
+                <div class=${collapsed ? 'panel-body-collapsed' : ''}>
+                    <div class="table-responsive">
+                        <table class="table table-dark-custom">
+                            <thead>
+                                <tr>
+                                    <th class="cell-left">Event</th>
+                                    <th>Block</th>
+                                    <th class="th-timestamp">Requested</th>
+                                    <th class="th-timestamp">Started</th>
+                                    <th class="th-timestamp">Ended</th>
+                                    <th>Duration</th>
+                                    <th class="th-fill">Note</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <${WitnessEventRow} block=${latestEventsData.value.fetchWitness} />
+                                ${proofTypes.value.map(
+                                    (proofType) =>
+                                        html`<${ProvingEventRow}
+                                            key=${proofType}
+                                            proofType=${proofType}
+                                            block=${latestEventsData.value.proving[proofType] ?? null} />`,
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>`;
         };
 
         const ProvingSummary = () => {
+            const { collapsed, toggle } = usePanelCollapse('provingSummary');
             return html`<div class="panel">
-                <div class="section-title">
-                    Proving Summary${' '}
+                <div class="section-title section-title-collapsible${collapsed ? ' collapsed' : ''}" onClick=${toggle}>
+                    <span class="panel-toggle-arrow">${'▶'}</span>Proving Summary${' '}
                     <span class="section-title-suffix"> (Last ${retention} Blocks)</span>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-dark-custom" style="display:${provingStats.value.length ? '' : 'none'}">
-                        <thead>
-                            <tr>
-                                <th rowspan="2">Type</th>
-                                <th colspan="3" class="text-center">Proofs</th>
-                                <th class="col-gap-top"></th>
-                                <th colspan="3" class="text-center">Proving Time</th>
-                                <th rowspan="2" class="text-center">Proof Size<br />Avg</th>
-                                <th class="col-pad" rowspan="2"></th>
-                            </tr>
-                            <tr>
-                                <th class="cell-center">Success</th>
-                                <th class="cell-center">Timeout</th>
-                                <th class="cell-center">Error</th>
-                                <th class="col-gap"></th>
-                                <th>P50</th>
-                                <th>P95</th>
-                                <th>P99</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${provingStats.value.map(
-                                (stat) => html`
-                                    <tr>
-                                        <td>
-                                            <${ProofTypeBadge} type=${stat.proofType} />
-                                        </td>
-                                        <${CountCell} value=${stat.success} status="success" />
-                                        <${CountCell} value=${stat.timeout} status="timeout" />
-                                        <${CountCell} value=${stat.error} status="error" />
-                                        <${Gap} />
-                                        <${MonoCell} right> ${formatDuration(stat.p50)}<//>
-                                        <${MonoCell} right> ${formatDuration(stat.p95)}<//>
-                                        <${MonoCell} right> ${formatDuration(stat.p99)}<//>
-                                        <${MonoCell} right> ${formatBytes(stat.avgSize)}<//>
-                                        <td class="col-pad"></td>
-                                    </tr>
-                                `,
-                            )}
-                        </tbody>
-                    </table>
+                <div class=${collapsed ? 'panel-body-collapsed' : ''}>
+                    <div class="table-responsive">
+                        <table
+                            class="table table-dark-custom"
+                            style="display:${provingStats.value.length ? '' : 'none'}">
+                            <thead>
+                                <tr>
+                                    <th rowspan="2">Type</th>
+                                    <th colspan="3" class="text-center">Proofs</th>
+                                    <th class="col-gap-top"></th>
+                                    <th colspan="3" class="text-center">Proving Time</th>
+                                    <th rowspan="2" class="text-center">Proof Size<br />Avg</th>
+                                    <th class="col-pad" rowspan="2"></th>
+                                </tr>
+                                <tr>
+                                    <th class="cell-center">Success</th>
+                                    <th class="cell-center">Timeout</th>
+                                    <th class="cell-center">Error</th>
+                                    <th class="col-gap"></th>
+                                    <th>P50</th>
+                                    <th>P95</th>
+                                    <th>P99</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${provingStats.value.map(
+                                    (stat) => html`
+                                        <tr>
+                                            <td>
+                                                <${ProofTypeBadge} type=${stat.proofType} />
+                                            </td>
+                                            <${CountCell} value=${stat.success} status="success" />
+                                            <${CountCell} value=${stat.timeout} status="timeout" />
+                                            <${CountCell} value=${stat.error} status="error" />
+                                            <${Gap} />
+                                            <${MonoCell} right> ${formatDuration(stat.p50)}<//>
+                                            <${MonoCell} right> ${formatDuration(stat.p95)}<//>
+                                            <${MonoCell} right> ${formatDuration(stat.p99)}<//>
+                                            <${MonoCell} right> ${formatBytes(stat.avgSize)}<//>
+                                            <td class="col-pad"></td>
+                                        </tr>
+                                    `,
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    ${!provingStats.value.length && html`<div class="empty-state">No proving data yet.</div>`}
                 </div>
-                ${!provingStats.value.length && html`<div class="empty-state">No proving data yet.</div>`}
             </div>`;
         };
 
@@ -1326,6 +1413,7 @@
 
         const ProvingTimeChart = () => {
             const [blockCount, setBlockCount] = useState(128);
+            const { collapsed, toggle } = usePanelCollapse('provingTime');
             const { canvasRef, chartRef, legend } = useChart((bindingContext) => {
                 const chartOptions = baseChartOptions('BLOCK NUMBER', 'TIME (s)', {
                     title: (items) => (items.length ? `Block ${items[0].label}` : ''),
@@ -1387,6 +1475,10 @@
                 applyDatasetsToChart(chart, datasets, legend.states);
             }, [historicalBlocks.value, proofTypes.value, blockCount, legend.states]);
 
+            useEffect(() => {
+                if (!collapsed) chartRef.current?.resize();
+            }, [collapsed]);
+
             const legendItems = useMemo(
                 () => [
                     ...proofTypes.value.map((proofType) => ({ label: proofType, color: proofTypeColor(proofType) })),
@@ -1396,9 +1488,11 @@
             );
 
             return html`<div class="panel">
-                <div class="section-title section-title-flex">
-                    <span>Proving Time</span>
-                    <span class="inline-filter"
+                <div
+                    class="section-title section-title-flex section-title-collapsible${collapsed ? ' collapsed' : ''}"
+                    onClick=${toggle}>
+                    <span><span class="panel-toggle-arrow">${'▶'}</span>Proving Time</span>
+                    <span class="inline-filter" onClick=${(e) => e.stopPropagation()}
                         >Last${' '}${[32, 64, 128, 256].map(
                             (size) =>
                                 html`<button
@@ -1409,12 +1503,70 @@
                         )}${' '}blocks</span
                     >
                 </div>
-                <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} showLine />
-                <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+                <div class=${collapsed ? 'panel-body-collapsed' : ''}>
+                    <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} showLine />
+                    <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+                </div>
+            </div>`;
+        };
+
+        const GasVsProvingTimeChart = () => {
+            const { collapsed, toggle } = usePanelCollapse('gasVsProvingTime');
+            const { canvasRef, chartRef, legend } = useChart((bindingContext) => {
+                const chartOptions = baseChartOptions('GAS USED (M)', 'TIME (s)', {
+                    title: (items) => (items.length ? items[0].dataset.label : ''),
+                    label: (context) =>
+                        `${context.dataset.label}: gas ${context.parsed.x.toFixed(2)}M, time ${context.parsed.y.toFixed(3)}s`,
+                });
+                chartOptions.interaction = { mode: 'nearest', intersect: true };
+                chartOptions.plugins.tooltip.mode = 'nearest';
+                chartOptions.plugins.tooltip.intersect = true;
+                chartOptions.scales.x.type = 'linear';
+                chartOptions.scales.x.min = 0;
+                chartOptions.scales.x.max = 60;
+                chartOptions.scales.x.ticks.stepSize = 5;
+                chartOptions.scales.y.min = 0;
+                chartOptions.scales.y.max = 12;
+                chartOptions.scales.y.ticks.stepSize = 2;
+                return new Chart(bindingContext, {
+                    type: 'scatter',
+                    data: { datasets: [] },
+                    options: chartOptions,
+                });
+            });
+
+            useEffect(() => {
+                const chart = chartRef.current;
+                if (!chart) return;
+                const { datasets, maxGasM, maxSecs } = buildScatterData(historicalBlocks.value, proofTypes.value);
+                chart.options.scales.x.max = Math.max(60, Math.ceil(maxGasM / 5) * 5);
+                chart.options.scales.y.max = Math.max(12, Math.ceil(maxSecs));
+                applyDatasetsToChart(chart, datasets, legend.states);
+            }, [historicalBlocks.value, proofTypes.value, legend.states]);
+
+            useEffect(() => {
+                if (!collapsed) chartRef.current?.resize();
+            }, [collapsed]);
+
+            const legendItems = useMemo(
+                () => proofTypes.value.map((proofType) => ({ label: proofType, color: proofTypeColor(proofType) })),
+                [proofTypes.value],
+            );
+
+            return html`<div class="panel">
+                <div class="section-title section-title-collapsible${collapsed ? ' collapsed' : ''}" onClick=${toggle}>
+                    <span class="panel-toggle-arrow">${'▶'}</span>Gas Used vs Proving Time${' '}
+                    <span class="section-title-suffix"> (Last ${retention} Blocks)</span>
+                </div>
+                <div class=${collapsed ? 'panel-body-collapsed' : ''}>
+                    <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} />
+                    <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+                </div>
             </div>`;
         };
 
         const ProvingTimeDistribution = () => {
+            const { collapsed, toggle } = usePanelCollapse('provingTimeDistribution');
             const { canvasRef, chartRef, legend } = useChart((bindingContext) => {
                 const bucketLabels = Array.from({ length: HISTOGRAM_BUCKETS }, (_, index) =>
                     ((index + 1) * HISTOGRAM_BUCKET_SIZE).toFixed(1),
@@ -1447,6 +1599,10 @@
                 applyDatasetsToChart(chart, datasets, legend.states);
             }, [historicalBlocks.value, proofTypes.value, legend.states]);
 
+            useEffect(() => {
+                if (!collapsed) chartRef.current?.resize();
+            }, [collapsed]);
+
             const legendItems = useMemo(
                 () =>
                     proofTypes.value.map((proofType) => ({
@@ -1457,12 +1613,14 @@
             );
 
             return html`<div class="panel">
-                <div class="section-title">
-                    Proving Time Distribution${' '}
+                <div class="section-title section-title-collapsible${collapsed ? ' collapsed' : ''}" onClick=${toggle}>
+                    <span class="panel-toggle-arrow">${'▶'}</span>Proving Time Distribution${' '}
                     <span class="section-title-suffix"> (Last ${retention} Blocks)</span>
                 </div>
-                <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} squareDots />
-                <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+                <div class=${collapsed ? 'panel-body-collapsed' : ''}>
+                    <${ChartLegend} items=${legendItems} states=${legend.states} onToggle=${legend.toggle} squareDots />
+                    <div class="chart-wrap"><canvas ref=${canvasRef}></canvas></div>
+                </div>
             </div>`;
         };
 
@@ -1546,6 +1704,7 @@
                 error: true,
             });
             const [expanded, setExpanded] = useState({});
+            const { collapsed, toggle } = usePanelCollapse('provingHistory');
 
             const allFiltersActive = filters.success && filters.timeout && filters.error;
             const filteredHistoricalBlocks = useMemo(
@@ -1594,12 +1753,14 @@
             );
 
             return html`<div class="panel">
-                <div class="section-title section-title-flex">
+                <div
+                    class="section-title section-title-flex section-title-collapsible${collapsed ? ' collapsed' : ''}"
+                    onClick=${toggle}>
                     <span>
-                        Proving History${' '}
+                        <span class="panel-toggle-arrow">${'▶'}</span>Proving History${' '}
                         <span class="section-title-suffix">(Last ${retention} Blocks)</span>
                     </span>
-                    <span class="inline-filter">
+                    <span class="inline-filter" onClick=${(e) => e.stopPropagation()}>
                         ${['all', 'success', 'timeout', 'error'].map(
                             (filterName) => html`
                                 <button
@@ -1613,74 +1774,76 @@
                         )}
                     </span>
                 </div>
-                ${total === 0
-                    ? html`<div class="empty-state">No proof history yet.</div>`
-                    : html`
-                        <div class="table-responsive">
-                            <table class="table table-dark-custom">
-                                <thead>
-                                    <tr>
-                                        <th rowspan="2"></th>
-                                        <th rowspan="2">Block</th>
-                                        <th rowspan="2">Gas Used</th>
-                                        <th colspan="4" class="text-center">Witness</th>
-                                        <th class="col-gap-top"></th>
-                                        <th colspan="3" class="text-center">Proofs</th>
-                                        <th class="col-pad" rowspan="2"></th>
-                                    </tr>
-                                    <tr>
-                                        <th>Started</th>
-                                        <th>Ended</th>
-                                        <th>Duration</th>
-                                        <th>Size</th>
-                                        <th class="col-gap"></th>
-                                        <th class="cell-center">Success</th>
-                                        <th class="cell-center">Timeout</th>
-                                        <th class="cell-center">Error</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${pagedBlocks.map(
-                                        (block) => html`
-                                            <${ProvingHistoryRow}
-                                                key=${block.blockHash}
-                                                blockHash=${block.blockHash}
-                                                entries=${block.entries}
-                                                block=${block}
-                                                expanded=${!!expanded[block.blockHash]}
-                                                onToggle=${() =>
-                                                    setExpanded((prev) => ({
-                                                        ...prev,
-                                                        [block.blockHash]: !prev[block.blockHash],
-                                                    }))} />
-                                        `,
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                        ${total > HISTORY_PAGE_SIZE &&
-                        html`
-                            <div class="pager">
-                                <span class="mono pager-info">
-                                    Page ${currentPage + 1} of ${lastPage + 1} (${total} blocks)</span
-                                >
-                                <div>
-                                    <button
-                                        class="btn btn-sm btn-outline-secondary pager-btn"
-                                        disabled=${currentPage === 0}
-                                        onClick=${() => setPage((p) => p - 1)}>
-                                        Prev
-                                    </button>
-                                    <button
-                                        class="btn btn-sm btn-outline-secondary pager-btn pager-btn-next"
-                                        disabled=${currentPage >= lastPage}
-                                        onClick=${() => setPage((p) => p + 1)}>
-                                        Next
-                                    </button>
-                                </div>
+                <div class=${collapsed ? 'panel-body-collapsed' : ''}>
+                    ${total === 0
+                        ? html`<div class="empty-state">No proof history yet.</div>`
+                        : html`
+                            <div class="table-responsive">
+                                <table class="table table-dark-custom">
+                                    <thead>
+                                        <tr>
+                                            <th rowspan="2"></th>
+                                            <th rowspan="2">Block</th>
+                                            <th rowspan="2">Gas Used</th>
+                                            <th colspan="4" class="text-center">Witness</th>
+                                            <th class="col-gap-top"></th>
+                                            <th colspan="3" class="text-center">Proofs</th>
+                                            <th class="col-pad" rowspan="2"></th>
+                                        </tr>
+                                        <tr>
+                                            <th>Started</th>
+                                            <th>Ended</th>
+                                            <th>Duration</th>
+                                            <th>Size</th>
+                                            <th class="col-gap"></th>
+                                            <th class="cell-center">Success</th>
+                                            <th class="cell-center">Timeout</th>
+                                            <th class="cell-center">Error</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${pagedBlocks.map(
+                                            (block) => html`
+                                                <${ProvingHistoryRow}
+                                                    key=${block.blockHash}
+                                                    blockHash=${block.blockHash}
+                                                    entries=${block.entries}
+                                                    block=${block}
+                                                    expanded=${!!expanded[block.blockHash]}
+                                                    onToggle=${() =>
+                                                        setExpanded((prev) => ({
+                                                            ...prev,
+                                                            [block.blockHash]: !prev[block.blockHash],
+                                                        }))} />
+                                            `,
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
+                            ${total > HISTORY_PAGE_SIZE &&
+                            html`
+                                <div class="pager">
+                                    <span class="mono pager-info">
+                                        Page ${currentPage + 1} of ${lastPage + 1} (${total} blocks)</span
+                                    >
+                                    <div>
+                                        <button
+                                            class="btn btn-sm btn-outline-secondary pager-btn"
+                                            disabled=${currentPage === 0}
+                                            onClick=${() => setPage((p) => p - 1)}>
+                                            Prev
+                                        </button>
+                                        <button
+                                            class="btn btn-sm btn-outline-secondary pager-btn pager-btn-next"
+                                            disabled=${currentPage >= lastPage}
+                                            onClick=${() => setPage((p) => p + 1)}>
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            `}
                         `}
-                    `}
+                </div>
             </div>`;
         };
 
@@ -1744,6 +1907,7 @@
                     <${LatestEvents} />
                     <${ProvingSummary} />
                     <${ProvingTimeChart} />
+                    <${GasVsProvingTimeChart} />
                     <${ProvingTimeDistribution} />
                     <${ProvingHistory} />
                 </div>`;

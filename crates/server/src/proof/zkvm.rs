@@ -4,19 +4,19 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use ere_server::client::zkVMClient;
-use ere_zkvm_interface::{Proof, ProofKind, PublicValues};
+use ere_guests_stateless_validator_common::{
+    guest::StatelessValidatorOutput, new_payload_request::NewPayloadRequest,
+};
+use ere_guests_stateless_validator_ethrex::guest::{
+    StatelessValidatorEthrexGuest, StatelessValidatorEthrexInput,
+};
+use ere_guests_stateless_validator_reth::guest::{
+    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput, codec::Encode,
+};
+use ere_server_client::{EncodedProof, PublicValues, zkVMClient};
 use rand::{Rng, rng};
 use sha2::{Digest, Sha256};
 use stateless::StatelessInput;
-use stateless_validator_common::new_payload_request::NewPayloadRequest;
-use stateless_validator_ethrex::guest::{
-    StatelessValidatorEthrexGuest, StatelessValidatorEthrexInput, StatelessValidatorEthrexIo,
-};
-use stateless_validator_reth::guest::{
-    Guest, Io, Platform, StatelessValidatorOutput, StatelessValidatorRethGuest,
-    StatelessValidatorRethInput, StatelessValidatorRethIo,
-};
 use tokio::time::{Instant, sleep_until};
 use tracing::warn;
 use url::Url;
@@ -75,7 +75,7 @@ impl zkVMInstance {
                     .with_context(|| format!("failed to parse endpoint URL: {endpoint}"))?;
                 let client = {
                     #[cfg(feature = "otel")]
-                    let middlewares = vec![Box::new(ere_server::client::OtelPropagation) as Box<_>];
+                    let middlewares = vec![Box::new(ere_server_client::OtelPropagation) as Box<_>];
                     #[cfg(not(feature = "otel"))]
                     let middlewares = Vec::new();
 
@@ -124,11 +124,8 @@ impl zkVMInstance {
         let input = new_payload_request_with_witness.to_zkvm_input(el_kind)?;
         match self {
             Self::Ere { client, .. } => {
-                let (_, proof, _) = client.prove(input, ProofKind::Compressed).await?;
-                match proof {
-                    Proof::Compressed(bytes) => Ok(bytes),
-                    _ => anyhow::bail!("unexpected proof kind: {:?}", proof.kind()),
-                }
+                let (_, proof, _) = client.prove(input).await?;
+                Ok(proof.0)
             }
             Self::Mock { .. } => unreachable!(),
         }
@@ -142,7 +139,7 @@ impl zkVMInstance {
     ) -> Result<(), zkVMError> {
         let public_values = match self {
             Self::Ere { client, .. } => client
-                .verify(Proof::Compressed(proof))
+                .verify(EncodedProof(proof))
                 .await
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
             Self::Mock { vm, .. } => vm
@@ -151,8 +148,7 @@ impl zkVMInstance {
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
         }?;
 
-        let el_kind = self.proof_type().el_kind();
-        let expected = expected_public_values(new_payload_request_root, el_kind)
+        let expected = expected_public_values(new_payload_request_root)
             .map_err(|error| zkVMError::VerificationFailed(error.to_string()))?;
 
         // For zkVM with fixed size public values, ensure all padding are zeros.
@@ -248,7 +244,7 @@ impl MockzkVM {
         sleep_until(start + duration).await;
 
         if proof.len() == self.mock_proof_size as usize {
-            Ok(proof[..32].to_vec())
+            Ok(proof[..32].into())
         } else {
             anyhow::bail!("invalid proof")
         }
@@ -273,14 +269,14 @@ fn execute(el_kind: ElKind, input: &StatelessInput) -> anyhow::Result<([u8; 32],
             let input = StatelessValidatorEthrexInput::new(input, true)?;
             let gas_used = gas_used(&input.new_payload_request);
             let output = StatelessValidatorEthrexGuest::compute::<Host>(input);
-            let serialized = StatelessValidatorEthrexIo::serialize_output(&output)?;
+            let serialized = output.encode_to_vec()?;
             Ok((Sha256::digest(serialized).into(), gas_used))
         }
         ElKind::Reth => {
             let input = StatelessValidatorRethInput::new(input, true)?;
             let gas_used = gas_used(&input.new_payload_request);
             let output = StatelessValidatorRethGuest::compute::<Host>(input);
-            let serialized = StatelessValidatorRethIo::serialize_output(&output)?;
+            let serialized = output.encode_to_vec()?;
             Ok((Sha256::digest(serialized).into(), gas_used))
         }
     }
@@ -295,15 +291,11 @@ fn gas_used(req: &NewPayloadRequest) -> u64 {
     }
 }
 
-/// Computes the expected public values hash for a given payload root and EL kind.
+/// Computes the expected public values hash for a given payload root.
 pub(crate) fn expected_public_values(
     new_payload_request_root: Hash256,
-    el_kind: ElKind,
 ) -> anyhow::Result<[u8; 32]> {
     let output = StatelessValidatorOutput::new(new_payload_request_root.0, true);
-    let serialized = match el_kind {
-        ElKind::Reth => StatelessValidatorRethIo::serialize_output(&output)?,
-        ElKind::Ethrex => StatelessValidatorEthrexIo::serialize_output(&output)?,
-    };
+    let serialized = output.encode_to_vec()?;
     Ok(Sha256::digest(serialized).into())
 }

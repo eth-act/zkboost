@@ -1,29 +1,12 @@
 services:
-  download-programs:
-    image: alpine:latest
-    command:
-      - /bin/sh
-      - -c
-      - |
-        if [ -f /programs/stateless-validator-ethrex-zisk ] && [ -f /programs/stateless-validator-reth-zisk ]; then
-          echo "Binaries already exist, skipping download."
-          exit 0
-        fi
-        apk add --no-cache curl minisign bash
-        bash /scripts/download-ere-guest.sh --tag v0.7.0 --guest stateless-validator-ethrex-zisk --output-dir /programs
-        bash /scripts/download-ere-guest.sh --tag v0.7.0 --guest stateless-validator-reth-zisk --output-dir /programs
-    volumes:
-      - programs:/programs
-      - ../../../scripts/download-ere-guest.sh:/scripts/download-ere-guest.sh:ro
-
   ethrex-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.7.0-cuda
-    command: ["--port", "3000", "--program-path", "/programs/stateless-validator-ethrex-zisk", "gpu"]
-    depends_on:
-      download-programs:
-        condition: service_completed_successfully
-    volumes:
-      - programs:/programs:ro
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.8.1-cuda
+    command:
+      - "--port"
+      - "3000"
+      - "--elf-url"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.9.0/stateless-validator-ethrex-zisk.elf"
+      - "gpu"
     shm_size: 32G
     ulimits:
       memlock:
@@ -48,7 +31,12 @@ services:
 
   reth-zisk:
     extends: ethrex-zisk
-    command: ["--port", "3000", "--program-path", "/programs/stateless-validator-reth-zisk", "gpu"]
+    command:
+      - "--port"
+      - "3000"
+      - "--elf-url"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.9.0/stateless-validator-reth-zisk.elf"
+      - "gpu"
     deploy:
       resources:
         reservations:
@@ -82,10 +70,6 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       start_period: 1s
       start_interval: 1s
-
-volumes:
-  programs:
-    name: programs-v0.7.0
 
 networks:
   zkboost:

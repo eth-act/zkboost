@@ -9,13 +9,3 @@ port_publisher:
   cl:
     enabled: true
     public_port_start: 33000
-additional_services:
-  - spamoor
-spamoor_params:
-  spammers:
-  - scenario: eoatx
-    config:
-      throughput: 200
-  - scenario: erctx
-    config:
-      throughput: 200
