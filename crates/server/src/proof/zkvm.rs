@@ -11,9 +11,9 @@ use ere_guests_stateless_validator_ethrex::guest::{
     StatelessValidatorEthrexGuest, StatelessValidatorEthrexInput,
 };
 use ere_guests_stateless_validator_reth::guest::{
-    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput,
+    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput, codec::Encode,
 };
-use ere_server_client::{EncodedProof, PublicValues, codec::Encode, zkVMClient};
+use ere_server_client::{EncodedProof, PublicValues, zkVMClient};
 use rand::{Rng, rng};
 use sha2::{Digest, Sha256};
 use stateless::StatelessInput;

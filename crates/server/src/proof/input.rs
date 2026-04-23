@@ -14,9 +14,10 @@ use alloy_rpc_types_engine::{
 };
 use ere_guests_stateless_validator_ethrex::guest::StatelessValidatorEthrexInput;
 use ere_guests_stateless_validator_reth::{
-    guest::StatelessValidatorRethInput, host::StatelessInput,
+    guest::{StatelessValidatorRethInput, codec::Encode},
+    host::StatelessInput,
 };
-use ere_server_client::{Input, codec::Encode};
+use ere_server_client::Input;
 use stateless::ExecutionWitness;
 use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest};
 
