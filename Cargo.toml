@@ -73,23 +73,23 @@ tree_hash = "0.12"
 tree_hash_derive = "0.12"
 
 # alloy
-alloy-eips = "1"
-alloy-genesis = "1"
-alloy-primitives = "1"
-alloy-rpc-types-engine = "1"
-alloy-rpc-types-eth = "1"
+alloy-eips = "2"
+alloy-genesis = "2"
+alloy-primitives = "1.5"
+alloy-rpc-types-engine = "2"
+alloy-rpc-types-eth = "2"
 
 # reth
-reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.11.0", default-features = false }
-stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "ed189a51931e8589102f3139d48fdbb3bbe4c1f7", default-features = false }
+reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v2.1.0", default-features = false }
+stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "e5480e71a8031641ff471cad9dc482a7a14b32d5", default-features = false }
 
 # ere
 ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.8.1" }
 
 # ere-guests
-ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", package = "stateless-validator-common" }
-ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", features = ["host"], package = "stateless-validator-ethrex" }
-ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", features = ["host"], package = "stateless-validator-reth" }
+ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", branch = "jsign-update-reth-3", package = "stateless-validator-common" }
+ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", branch = "jsign-update-reth-3", features = ["host"], package = "stateless-validator-ethrex" }
+ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", branch = "jsign-update-reth-3", features = ["host"], package = "stateless-validator-reth" }
 
 # local
 zkboost-client = { path = "crates/client" }
