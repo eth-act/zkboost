@@ -4,11 +4,9 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use ere_guests_stateless_validator_common::{
-    guest::StatelessValidatorOutput, new_payload_request::NewPayloadRequest,
-};
-use ere_guests_stateless_validator_ethrex::guest::{
-    StatelessValidatorEthrexGuest, StatelessValidatorEthrexInput,
+use ere_guests_stateless_validator_common::guest::StatelessValidatorOutput;
+use ere_guests_stateless_validator_ethrex::{
+    guest::StatelessValidatorEthrexGuest, host::build_eip8025_input,
 };
 use ere_guests_stateless_validator_reth::guest::{
     Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput, codec::Encode,
@@ -296,31 +294,21 @@ fn execute(el_kind: ElKind, input: &StatelessInput) -> anyhow::Result<([u8; 32],
         fn print(_: &str) {}
     }
 
-    match el_kind {
+    let public_values = match el_kind {
         ElKind::Ethrex => {
-            let input = StatelessValidatorEthrexInput::new(input, true)?;
-            let gas_used = gas_used(&input.new_payload_request);
+            let input = build_eip8025_input(input, true)?;
             let output = StatelessValidatorEthrexGuest::compute::<Host>(input);
             let serialized = output.encode_to_vec()?;
-            Ok((Sha256::digest(serialized).into(), gas_used))
+            Sha256::digest(serialized).into()
         }
         ElKind::Reth => {
             let input = StatelessValidatorRethInput::new(input, true)?;
-            let gas_used = gas_used(&input.new_payload_request);
             let output = StatelessValidatorRethGuest::compute::<Host>(input);
             let serialized = output.encode_to_vec()?;
-            Ok((Sha256::digest(serialized).into(), gas_used))
+            Sha256::digest(serialized).into()
         }
-    }
-}
-
-fn gas_used(req: &NewPayloadRequest) -> u64 {
-    match req {
-        NewPayloadRequest::Bellatrix(r) => r.execution_payload.gas_used,
-        NewPayloadRequest::Capella(r) => r.execution_payload.gas_used,
-        NewPayloadRequest::Deneb(r) => r.execution_payload.gas_used,
-        NewPayloadRequest::ElectraFulu(r) => r.execution_payload.gas_used,
-    }
+    };
+    Ok((public_values, input.block.header.gas_used))
 }
 
 /// Computes the expected public values hash for a given payload root.

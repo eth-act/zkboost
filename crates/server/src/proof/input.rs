@@ -12,7 +12,7 @@ use alloy_rpc_types_engine::{
     ExecutionPayloadV2 as AlloyExecutionPayloadV2, ExecutionPayloadV3 as AlloyExecutionPayloadV3,
     PraguePayloadFields,
 };
-use ere_guests_stateless_validator_ethrex::guest::StatelessValidatorEthrexInput;
+use ere_guests_stateless_validator_ethrex::host::build_eip8025_input;
 use ere_guests_stateless_validator_reth::{
     guest::{StatelessValidatorRethInput, codec::Encode},
     host::StatelessInput,
@@ -77,13 +77,12 @@ impl NewPayloadRequestWithWitness {
 
     /// Generates zkVM input for the given EL kind.
     pub(crate) fn to_zkvm_input(&self, el_kind: ElKind) -> anyhow::Result<Input> {
-        let stdin =
-            match el_kind {
-                ElKind::Ethrex => StatelessValidatorEthrexInput::new(&self.stateless_input, true)?
-                    .encode_to_vec()?,
-                ElKind::Reth => StatelessValidatorRethInput::new(&self.stateless_input, true)?
-                    .encode_to_vec()?,
-            };
+        let stdin = match el_kind {
+            ElKind::Ethrex => build_eip8025_input(&self.stateless_input, true)?.encode_to_vec()?,
+            ElKind::Reth => {
+                StatelessValidatorRethInput::new(&self.stateless_input, true)?.encode_to_vec()?
+            }
+        };
         Ok(Input::new().with_prefixed_stdin(stdin))
     }
 }
