@@ -30,7 +30,7 @@ See [docker/example/testnet](docker/example/testnet) for a Docker Compose setup 
 
 ### Prerequisites
 
-* **Rust** ≥ 1.91
+* **Rust** ≥ 1.93
 
 ```bash
 # 1. Clone
