@@ -26,7 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         if: steps.release.outputs.pr
         with:
-          toolchain: 1.91.0
+          toolchain: 1.93.1
 
       - name: Update Cargo.lock
         if: steps.release.outputs.pr
