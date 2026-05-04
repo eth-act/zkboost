@@ -125,6 +125,12 @@ impl Config {
                         "proof_timeout_secs must be > 0 for {proof_type}"
                     );
                 }
+                zkVMConfig::Verifier { program_vk_url, .. } => {
+                    ensure!(
+                        !program_vk_url.is_empty(),
+                        "program_vk_url must be set for verifier-only zkvm {proof_type}"
+                    );
+                }
             }
             if let zkVMConfig::Mock {
                 mock_proving_time,
@@ -168,7 +174,8 @@ pub enum MockProvingTime {
     },
 }
 
-/// zkVM backend configuration, either a remote ere-server or a mock for testing.
+/// zkVM backend configuration, either a remote ere-server, a mock, or an
+/// in-process verifier-only backend (no proving).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 #[allow(non_camel_case_types)]
@@ -200,13 +207,26 @@ pub enum zkVMConfig {
         #[serde(default)]
         mock_failure: bool,
     },
+    /// In-process verifier-only backend. Verifies proofs received via HTTP
+    /// without running an `ere-server` or pre-loading prover circuits.
+    /// Returns an error on prove requests.
+    Verifier {
+        /// Proof type.
+        proof_type: ProofType,
+        /// URL or local path to the program verifying key file (.vk) for the
+        /// guest program of this proof type. Pre-computed and shipped in
+        /// `eth-act/ere-guests` releases alongside the .elf.
+        program_vk_url: String,
+    },
 }
 
 impl zkVMConfig {
     /// Returns the proof type identifier for this configuration.
     pub fn proof_type(&self) -> ProofType {
         match self {
-            Self::Ere { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
+            Self::Ere { proof_type, .. }
+            | Self::Mock { proof_type, .. }
+            | Self::Verifier { proof_type, .. } => *proof_type,
         }
     }
 }
