@@ -24,7 +24,7 @@ use zkboost_types::{ElKind, Hash256, ProofType};
 
 use crate::{
     config::{MockProvingTime, zkVMConfig},
-    proof::input::NewPayloadRequestWithWitness,
+    proof::{input::NewPayloadRequestWithWitness, verifier::DynVerifier},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -38,7 +38,7 @@ pub(crate) enum zkVMError {
     PublicValuesMismatch,
 }
 
-/// zkVM instance, either a remote ere-server or a mock.
+/// zkVM instance: remote ere-server, in-process mock, or in-process verifier-only.
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
 pub(crate) enum zkVMInstance {
@@ -59,6 +59,15 @@ pub(crate) enum zkVMInstance {
         proof_timeout: Duration,
         /// Mock zkVM implementation.
         vm: MockzkVM,
+    },
+    /// In-process verifier-only backend. No `ere-server`, no prover circuit
+    /// loaded — just the lightweight `ere-verifier-*` for this proof type.
+    /// Returns an error on prove requests.
+    Verifier {
+        /// Proof type identifier.
+        proof_type: ProofType,
+        /// Verifier implementation, dispatched per proof_type.
+        verifier: Arc<DynVerifier>,
     },
 }
 
@@ -106,6 +115,20 @@ impl zkVMInstance {
                     *mock_failure,
                 ),
             }),
+            zkVMConfig::Verifier {
+                proof_type,
+                program_vk_url,
+            } => {
+                let verifier = DynVerifier::from_url(*proof_type, program_vk_url)
+                    .await
+                    .with_context(|| {
+                        format!("init in-process verifier for {proof_type} from {program_vk_url}")
+                    })?;
+                Ok(Self::Verifier {
+                    proof_type: *proof_type,
+                    verifier: Arc::new(verifier),
+                })
+            }
         }
     }
 
@@ -119,6 +142,9 @@ impl zkVMInstance {
                 .prove(new_payload_request_with_witness.stateless_input())
                 .await;
         }
+        if let Self::Verifier { proof_type, .. } = self {
+            anyhow::bail!("prove not supported for verifier-only zkvm {proof_type}");
+        }
 
         let el_kind = self.proof_type().el_kind();
         let input = new_payload_request_with_witness.to_zkvm_input(el_kind)?;
@@ -127,7 +153,7 @@ impl zkVMInstance {
                 let (_, proof, _) = client.prove(input).await?;
                 Ok(proof.0)
             }
-            Self::Mock { .. } => unreachable!(),
+            Self::Mock { .. } | Self::Verifier { .. } => unreachable!(),
         }
     }
 
@@ -137,7 +163,7 @@ impl zkVMInstance {
         new_payload_request_root: Hash256,
         proof: Vec<u8>,
     ) -> Result<(), zkVMError> {
-        let public_values = match self {
+        let public_values: PublicValues = match self {
             Self::Ere { client, .. } => client
                 .verify(EncodedProof(proof))
                 .await
@@ -145,6 +171,11 @@ impl zkVMInstance {
             Self::Mock { vm, .. } => vm
                 .verify(&proof)
                 .await
+                .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
+            Self::Verifier { verifier, .. } => verifier
+                .verify(&proof)
+                .await
+                .map(PublicValues::from)
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
         }?;
 
@@ -166,14 +197,19 @@ impl zkVMInstance {
     /// Returns the proof type identifier for this instance.
     pub(crate) fn proof_type(&self) -> ProofType {
         match self {
-            Self::Ere { proof_type, .. } | Self::Mock { proof_type, .. } => *proof_type,
+            Self::Ere { proof_type, .. }
+            | Self::Mock { proof_type, .. }
+            | Self::Verifier { proof_type, .. } => *proof_type,
         }
     }
 
     /// Returns the proof timeout for this instance.
+    /// Verifier-only backends never prove, so the timeout is irrelevant — we
+    /// return the default to keep the signature uniform.
     pub(crate) fn proof_timeout(&self) -> Duration {
         match self {
             Self::Ere { proof_timeout, .. } | Self::Mock { proof_timeout, .. } => *proof_timeout,
+            Self::Verifier { .. } => Duration::from_secs(12),
         }
     }
 }

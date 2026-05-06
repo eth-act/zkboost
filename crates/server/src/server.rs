@@ -132,6 +132,11 @@ impl zkBoostServer {
 
         let mut worker_input_txs = HashMap::new();
         for zkvm in self.zkvms.values() {
+            // Verifier-only backends don't prove, so they get no worker. Prove
+            // requests for those proof_types are dropped at the dispatch layer.
+            if matches!(zkvm, zkVMInstance::Verifier { .. }) {
+                continue;
+            }
             let (worker_input_tx, worker_input_rx) = mpsc::channel(CHANNEL_CAPACITY);
             worker_input_txs.insert(zkvm.proof_type(), worker_input_tx);
             handles.push(tokio::spawn(worker::run_worker(

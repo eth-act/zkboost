@@ -2,6 +2,7 @@
 //! (dispatched to per-zkVM worker), and completed (cached in LRU, broadcast via SSE).
 
 pub mod input;
+pub mod verifier;
 pub mod worker;
 pub mod zkvm;
 
