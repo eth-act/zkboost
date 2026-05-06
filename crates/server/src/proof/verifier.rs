@@ -6,10 +6,9 @@
 //! `program_vk`, downloaded from the URL configured for that proof_type.
 
 use anyhow::Context;
-use zkboost_types::ProofType;
-
 #[cfg(feature = "verifier-zisk")]
 use ere_verifier_core::{PublicValues, codec::Decode, zkVMVerifier};
+use zkboost_types::ProofType;
 
 /// Per-zkVM verifier dispatch. Variants are feature-gated.
 #[allow(non_camel_case_types)]
@@ -71,15 +70,11 @@ impl DynVerifier {
 }
 
 async fn download_program_vk(url: &str) -> anyhow::Result<Vec<u8>> {
-    if let Some(path) = url.strip_prefix("file://").or_else(|| {
-        if url.contains("://") {
-            None
-        } else {
-            Some(url)
-        }
-    }) {
-        return std::fs::read(path)
-            .with_context(|| format!("read program_vk from {path}"));
+    if let Some(path) = url
+        .strip_prefix("file://")
+        .or_else(|| if url.contains("://") { None } else { Some(url) })
+    {
+        return std::fs::read(path).with_context(|| format!("read program_vk from {path}"));
     }
     let bytes = reqwest::get(url)
         .await
