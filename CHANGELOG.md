@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/eth-act/zkboost/compare/v0.6.0...v0.7.0) (2026-05-06)
+
+
+### Features
+
+* **server:** in-process verifier-only zkVM backend (kind: verifier) ([#61](https://github.com/eth-act/zkboost/issues/61)) ([d8aec0b](https://github.com/eth-act/zkboost/commit/d8aec0b1aca9240cc6bb77377c641bdc90b78c60))
+
 ## [0.6.0](https://github.com/eth-act/zkboost/compare/v0.5.0...v0.6.0) (2026-04-23)
 
 
