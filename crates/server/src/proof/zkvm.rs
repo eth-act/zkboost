@@ -273,12 +273,9 @@ impl MockzkVM {
 
     /// Simulate proof verification by checking proof size.
     pub(crate) async fn verify(&self, proof: &[u8]) -> anyhow::Result<PublicValues> {
-        let start = Instant::now();
+        sleep(Duration::from_millis(10)).await;
 
-        let duration = Duration::from_millis(10);
-        sleep_until(start + duration).await;
-
-        if proof.len() == self.mock_proof_size as usize {
+        if proof.len() >= 32 {
             Ok(proof[..32].into())
         } else {
             anyhow::bail!("invalid proof")

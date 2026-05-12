@@ -119,7 +119,7 @@ mod tests {
     #[tokio::test]
     async fn test_invalid_mock_proof() {
         let state = mock_app_state().await;
-        let body = mock_proof(Hash256::ZERO, 32);
+        let body = vec![0; 31];
         let response = test_router(state)
             .oneshot(
                 Request::builder()
