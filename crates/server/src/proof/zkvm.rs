@@ -14,17 +14,18 @@ use ere_guests_stateless_validator_reth::guest::{
     Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput, codec::Encode,
 };
 use ere_server_client::{EncodedProof, PublicValues, zkVMClient};
+use ere_verifier::Verifier;
 use rand::{Rng, rng};
 use sha2::{Digest, Sha256};
 use stateless::StatelessInput;
-use tokio::time::{Instant, sleep_until};
+use tokio::time::{Instant, sleep, sleep_until};
 use tracing::warn;
 use url::Url;
 use zkboost_types::{ElKind, Hash256, ProofType};
 
 use crate::{
     config::{MockProvingTime, zkVMConfig},
-    proof::{input::NewPayloadRequestWithWitness, verifier::DynVerifier},
+    proof::{input::NewPayloadRequestWithWitness, verifier::verifier_from_url},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -67,7 +68,7 @@ pub(crate) enum zkVMInstance {
         /// Proof type identifier.
         proof_type: ProofType,
         /// Verifier implementation, dispatched per proof_type.
-        verifier: Arc<DynVerifier>,
+        verifier: Arc<Verifier>,
     },
 }
 
@@ -119,7 +120,7 @@ impl zkVMInstance {
                 proof_type,
                 program_vk_url,
             } => {
-                let verifier = DynVerifier::from_url(*proof_type, program_vk_url)
+                let verifier = verifier_from_url(*proof_type, program_vk_url)
                     .await
                     .with_context(|| {
                         format!("init in-process verifier for {proof_type} from {program_vk_url}")
@@ -174,8 +175,6 @@ impl zkVMInstance {
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
             Self::Verifier { verifier, .. } => verifier
                 .verify(&proof)
-                .await
-                .map(PublicValues::from)
                 .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
         }?;
 

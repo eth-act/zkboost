@@ -13,7 +13,7 @@ path = "src/bin/zkboost.rs"
 workspace = true
 
 [features]
-default = ["verifier-zisk"]
+default = []
 otel = [
     "dep:opentelemetry",
     "dep:opentelemetry-otlp",
@@ -21,7 +21,6 @@ otel = [
     "dep:tracing-opentelemetry",
     "ere-server-client/otel",
 ]
-verifier-zisk = ["dep:ere-verifier-core", "dep:ere-verifier-zisk"]
 
 [dependencies]
 anyhow.workspace = true
@@ -66,8 +65,7 @@ stateless.workspace = true
 
 # ere
 ere-server-client.workspace = true
-ere-verifier-core = { workspace = true, optional = true }
-ere-verifier-zisk = { workspace = true, optional = true }
+ere-verifier.workspace = true
 
 # ere-guests
 ere-guests-stateless-validator-common.workspace = true

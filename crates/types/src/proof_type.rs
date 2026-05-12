@@ -6,6 +6,7 @@ use std::{
     str::FromStr,
 };
 
+use ere_catalog::zkVMKind;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 
@@ -56,6 +57,16 @@ impl ProofType {
         match self {
             Self::EthrexRisc0 | Self::EthrexSP1 | Self::EthrexZisk => ElKind::Ethrex,
             Self::RethOpenVM | Self::RethRisc0 | Self::RethSP1 | Self::RethZisk => ElKind::Reth,
+        }
+    }
+
+    /// Returns the zkVM kind for this proof type.
+    pub fn zkvm_kind(&self) -> zkVMKind {
+        match self {
+            Self::EthrexRisc0 | Self::RethRisc0 => zkVMKind::Risc0,
+            Self::EthrexSP1 | Self::RethSP1 => zkVMKind::SP1,
+            Self::RethOpenVM => zkVMKind::OpenVM,
+            Self::EthrexZisk | Self::RethZisk => zkVMKind::Zisk,
         }
     }
 

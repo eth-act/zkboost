@@ -21,3 +21,5 @@ ssz_types.workspace = true
 superstruct.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
+
+ere-catalog.workspace = true
