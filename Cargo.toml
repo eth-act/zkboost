@@ -84,9 +84,9 @@ reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = 
 stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "ed189a51931e8589102f3139d48fdbb3bbe4c1f7", default-features = false }
 
 # ere
-ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.8.1" }
-ere-verifier-core = { git = "https://github.com/eth-act/ere", tag = "v0.8.1" }
-ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.8.1" }
+ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.9.0" }
+ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.9.0" }
+ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.9.0" }
 
 # ere-guests
 ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.9.0", package = "stateless-validator-common" }
