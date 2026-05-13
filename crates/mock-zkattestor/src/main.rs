@@ -41,17 +41,17 @@ async fn main() -> anyhow::Result<()> {
         proof_types: cli.proof_types,
     });
 
-    let mut stream = Box::pin(mock_attestor.cl_client.subscribe_head_events());
-    while let Some(Ok(head)) = stream.next().await {
-        info!(slot = head.slot, block = %head.block, "new head");
+    let mut stream = Box::pin(mock_attestor.cl_client.subscribe_block_events());
+    while let Some(Ok(block)) = stream.next().await {
+        info!(slot = block.slot, block = %block.block, "new block");
         let mock_attestor = mock_attestor.clone();
         tokio::spawn(async move {
-            if let Err(error) = mock_attestor.process_slot(head.slot).await {
-                warn!(slot = head.slot, error = %error, "slot failed");
+            if let Err(error) = mock_attestor.process_block(block.block).await {
+                warn!(slot = block.slot, block = %block.block, error = %error, "block failed");
             }
         });
     }
-    bail!("head stream ended")
+    bail!("block stream ended")
 }
 
 struct MockAttestor {
@@ -61,8 +61,8 @@ struct MockAttestor {
 }
 
 impl MockAttestor {
-    async fn process_slot(&self, slot: u64) -> anyhow::Result<()> {
-        let beacon_block = self.cl_client.get_beacon_block(slot).await?;
+    async fn process_block(&self, block_root: Hash256) -> anyhow::Result<()> {
+        let beacon_block = self.cl_client.get_beacon_block(block_root).await?;
         let new_payload_request = new_payload_request_from_beacon_block(&beacon_block)?;
 
         let block_hash = new_payload_request.block_hash();

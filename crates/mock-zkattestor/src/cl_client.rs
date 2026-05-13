@@ -15,7 +15,7 @@ use zkboost_types::{
 };
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct Head {
+pub(crate) struct Block {
     #[serde(with = "serde_utils::quoted_u64")]
     pub(crate) slot: u64,
     pub(crate) block: Hash256,
@@ -35,19 +35,19 @@ impl ClClient {
         }
     }
 
-    pub(crate) fn subscribe_head_events(
+    pub(crate) fn subscribe_block_events(
         &self,
-    ) -> impl Stream<Item = Result<Head, anyhow::Error>> + Send + '_ {
+    ) -> impl Stream<Item = Result<Block, anyhow::Error>> + Send + '_ {
         async_stream::try_stream! {
             let mut url = self.base_url.join("/eth/v1/events")?;
-            url.query_pairs_mut().append_pair("topics", "head");
+            url.query_pairs_mut().append_pair("topics", "block");
             let mut es = EventSource::new(self.http.get(url))?;
             while let Some(event) = es.next().await {
                 match event {
                     Ok(SseEvent::Open) => {}
-                    Ok(SseEvent::Message(message)) if message.event == "head" => {
-                        let head_event: Head = serde_json::from_str(&message.data)?;
-                        yield head_event
+                    Ok(SseEvent::Message(message)) if message.event == "block" => {
+                        let block_event: Block = serde_json::from_str(&message.data)?;
+                        yield block_event
                     }
                     Ok(SseEvent::Message(_)) => {}
                     Err(error) => {
@@ -61,11 +61,11 @@ impl ClClient {
 
     pub(crate) async fn get_beacon_block(
         &self,
-        slot: u64,
+        block_root: Hash256,
     ) -> anyhow::Result<SignedBeaconBlock<MainnetEthSpec>> {
         let url = self
             .base_url
-            .join(&format!("/eth/v2/beacon/blocks/{slot}"))?;
+            .join(&format!("/eth/v2/beacon/blocks/{block_root}"))?;
         let resp = self
             .http
             .get(url)
