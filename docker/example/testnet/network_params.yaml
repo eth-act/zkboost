@@ -1,27 +1,36 @@
-# Ported and modified from https://github.com/eth-act/lighthouse/blob/optional-proofs/scripts/local_testnet/network_params_mixed_proof_gen_verify.yaml
-
-# Mixed configuration: 3 normal nodes with reth, 3 zkvm nodes with dummy EL
 participants:
-  # Normal nodes with real EL (nodes 1-3)
-  - el_type: reth
-    cl_type: lighthouse
-    count: 3
-  # ZKVM nodes with dummy EL (nodes 4-6)
-  # TODO: Use lighthouse with optional-proofs
-  # - el_type: dummy
-  #   cl_type: lighthouse
-  #   count: 3
+  - cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:eth-act-optional-proofs
+    el_type: reth
+    el_image: ghcr.io/paradigmxyz/reth
+    supernode: true
+    cl_extra_params:
+      - --target-peers=3
+      - --proof-engine-endpoint=http://zkboost:3000
+      - --proof-types=2,6
+    vc_extra_params:
+      - --proof-engine-endpoint=http://zkboost:3000
+      - --proof-types=2,6
+    count: 2
+  - cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:eth-act-optional-proofs
+    el_type: None
+    supernode: false
+    cl_extra_params:
+      - --target-peers=3
+      - --proof-engine-endpoint=http://zkboost:3000
+      - --proof-types=2,6
+    count: 1
+
 network_params:
   seconds_per_slot: 12
-global_log_level: debug
-snooper_enabled: false
+
 additional_services:
-  - dora
-  - prometheus_grafana
-port_publisher:
-  el:
-    enabled: true
-    public_port_start: 32000
-  cl:
-    enabled: true
-    public_port_start: 33000
+  - spamoor
+
+spamoor_params:
+  spammers:
+    - scenario: "erctx"
+      config:
+        throughput: 1
+
