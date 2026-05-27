@@ -83,6 +83,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             "/v1/execution_proof_verifications",
             post(v1::post_execution_proof_verifications),
         )
+        .route("/v1/proof_types", get(v1::get_proof_types))
         .fallback(fallback_handler)
         .layer(api_middleware);
 

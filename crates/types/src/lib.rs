@@ -75,6 +75,40 @@ pub enum ProofStatus {
     Invalid,
 }
 
+/// Response for `GET /v1/proof_types`.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProofTypesResponse {
+    /// List of initialized proof types with their capabilities.
+    pub proof_types: Vec<ProofTypeInfo>,
+}
+
+/// Information about a single initialized proof type.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProofTypeInfo {
+    /// The proof type identifier (e.g., "reth-zisk").
+    pub proof_type: ProofType,
+    /// The backend kind: "ere", "mock", or "verifier".
+    pub kind: BackendKind,
+    /// Whether this backend can generate proofs.
+    pub can_prove: bool,
+    /// Whether this backend can verify proofs.
+    pub can_verify: bool,
+}
+
+/// Backend kind for a zkVM instance.
+///
+/// Uses the same terminology as zkboost configuration.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackendKind {
+    /// Remote ere-server backend.
+    Ere,
+    /// In-process mock backend for testing.
+    Mock,
+    /// In-process verifier-only backend.
+    Verifier,
+}
+
 impl ProofStatus {
     /// Returns `true` if proof status is `ProofStatus::Valid`:
     pub fn is_valid(&self) -> bool {
@@ -257,11 +291,55 @@ mod comma_separated {
 
 #[cfg(test)]
 mod tests {
-    use crate::ProofRequestQuery;
+    use crate::{BackendKind, ProofRequestQuery, ProofType, ProofTypeInfo, ProofTypesResponse};
 
     #[test]
     fn test_empty_proof_types_deserializes_to_empty_vec() {
         let query: ProofRequestQuery = serde_json::from_str(r#"{"proof_types": ""}"#).unwrap();
         assert!(query.proof_types.is_empty());
+    }
+
+    #[test]
+    fn test_backend_kind_serialization() {
+        // Verify each BackendKind serializes to the expected lowercase string
+        assert_eq!(
+            serde_json::to_string(&BackendKind::Ere).unwrap(),
+            r#""ere""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BackendKind::Mock).unwrap(),
+            r#""mock""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BackendKind::Verifier).unwrap(),
+            r#""verifier""#
+        );
+    }
+
+    #[test]
+    fn test_proof_types_response_roundtrip() {
+        // Verify the response type serializes and deserializes correctly
+        let response = ProofTypesResponse {
+            proof_types: vec![
+                ProofTypeInfo {
+                    proof_type: ProofType::RethZisk,
+                    kind: BackendKind::Ere,
+                    can_prove: true,
+                    can_verify: true,
+                },
+                ProofTypeInfo {
+                    proof_type: ProofType::EthrexZisk,
+                    kind: BackendKind::Verifier,
+                    can_prove: false,
+                    can_verify: true,
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: ProofTypesResponse = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response, parsed);
+        assert_eq!(parsed.proof_types.len(), 2);
     }
 }

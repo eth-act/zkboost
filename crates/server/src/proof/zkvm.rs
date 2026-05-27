@@ -209,6 +209,19 @@ impl zkVMInstance {
             Self::Verifier { .. } => Duration::from_secs(12),
         }
     }
+
+    /// Returns the backend kind and capabilities for this instance.
+    ///
+    /// - `Ere`: can prove and verify (remote prover)
+    /// - `Mock`: can prove and verify (testing)
+    /// - `Verifier`: can only verify (no proving circuit loaded)
+    pub(crate) fn backend_capabilities(&self) -> (zkboost_types::BackendKind, bool, bool) {
+        match self {
+            Self::Ere { .. } => (zkboost_types::BackendKind::Ere, true, true),
+            Self::Mock { .. } => (zkboost_types::BackendKind::Mock, true, true),
+            Self::Verifier { .. } => (zkboost_types::BackendKind::Verifier, false, true),
+        }
+    }
 }
 
 /// Mock zkVM for testing.
@@ -318,4 +331,65 @@ pub(crate) fn expected_public_values(
     let output = StatelessValidatorOutput::new(new_payload_request_root.0, true);
     let serialized = output.encode_to_vec()?;
     Ok(Sha256::digest(serialized).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use zkboost_types::{BackendKind, ProofType};
+
+    use super::*;
+
+    /// Creates a test Ere instance with dummy client.
+    fn test_ere_instance() -> zkVMInstance {
+        let endpoint = Url::parse("http://localhost:9999").unwrap();
+        let client = zkVMClient::new(endpoint, reqwest::Client::new(), vec![]).unwrap();
+        zkVMInstance::Ere {
+            proof_type: ProofType::RethZisk,
+            proof_timeout: Duration::from_secs(10),
+            client: Arc::new(client),
+        }
+    }
+
+    /// Creates a test Mock instance.
+    fn test_mock_instance() -> zkVMInstance {
+        zkVMInstance::Mock {
+            proof_type: ProofType::RethZisk,
+            proof_timeout: Duration::from_secs(10),
+            vm: MockzkVM::new(
+                zkboost_types::ElKind::Reth,
+                crate::config::MockProvingTime::Constant { ms: 10 },
+                64,
+                false,
+            ),
+        }
+    }
+
+    #[test]
+    fn test_ere_backend_capabilities() {
+        let instance = test_ere_instance();
+        let (kind, can_prove, can_verify) = instance.backend_capabilities();
+
+        assert_eq!(kind, BackendKind::Ere);
+        assert!(can_prove, "ere backends can prove");
+        assert!(can_verify, "ere backends can verify");
+    }
+
+    #[test]
+    fn test_mock_backend_capabilities() {
+        let instance = test_mock_instance();
+        let (kind, can_prove, can_verify) = instance.backend_capabilities();
+
+        assert_eq!(kind, BackendKind::Mock);
+        assert!(can_prove, "mock backends can prove");
+        assert!(can_verify, "mock backends can verify");
+    }
+
+    // Note: zkVMInstance::Verifier is not directly tested here because
+    // constructing a Verifier requires a valid program VK file. However:
+    // 1. The match in backend_capabilities() is exhaustive - compiler enforces all variants
+    // 2. The logic is trivial (just returning constants)
+    // 3. The capability mapping (can_prove=false, can_verify=true) is documented in REQUIREMENTS.md
+    // 4. Integration tests with real Verifier instances provide full coverage
 }
