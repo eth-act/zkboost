@@ -107,6 +107,8 @@ pub enum BackendKind {
     Mock,
     /// In-process verifier-only backend.
     Verifier,
+    /// Remote cluster backend.
+    Cluster,
 }
 
 impl ProofStatus {
@@ -313,6 +315,10 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&BackendKind::Verifier).unwrap(),
             r#""verifier""#
+        );
+        assert_eq!(
+            serde_json::to_string(&BackendKind::Cluster).unwrap(),
+            r#""cluster""#
         );
     }
 

@@ -84,14 +84,16 @@ reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = 
 stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "e5480e71a8031641ff471cad9dc482a7a14b32d5", default-features = false }
 
 # ere
-ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.9.1" }
-ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.9.1" }
-ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.9.1" }
+ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
+ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
+ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
+ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
+ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
 
 # ere-guests
-ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.10.0", package = "stateless-validator-common" }
-ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.10.0", features = ["host"], package = "stateless-validator-ethrex" }
-ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.10.0", features = ["host"], package = "stateless-validator-reth" }
+ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.12.1", package = "stateless-validator-common" }
+ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.12.1", features = ["host"], package = "stateless-validator-ethrex" }
+ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.12.1", features = ["host"], package = "stateless-validator-reth" }
 
 # local
 zkboost-client = { path = "crates/client" }

@@ -1,15 +1,16 @@
-//! zkVM instance management and initialization, supporting external Ere servers via HTTP and
-//! in-process mock instances for testing.
+//! zkVM instance management and initialization, supporting external Ere servers via HTTP,
+//! in-process mock instances for testing, and remote clusters.
 
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use ere_guests_stateless_validator_common::guest::StatelessValidatorOutput;
 use ere_guests_stateless_validator_ethrex::{
-    guest::StatelessValidatorEthrexGuest, host::build_eip8025_input,
+    guest::StatelessValidatorEthrexGuest,
+    host::{Eip8025InputSource, build_eip8025_input},
 };
 use ere_guests_stateless_validator_reth::guest::{
-    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput, codec::Encode,
+    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput,
 };
 use ere_server_client::{EncodedProof, PublicValues, zkVMClient};
 use ere_verifier::Verifier;
@@ -17,27 +18,18 @@ use rand::{Rng, rng};
 use sha2::{Digest, Sha256};
 use stateless::StatelessInput;
 use tokio::time::{Instant, sleep, sleep_until};
-use tracing::warn;
 use url::Url;
 use zkboost_types::{ElKind, Hash256, ProofType};
 
 use crate::{
-    config::{MockProvingTime, zkVMConfig},
-    proof::{input::NewPayloadRequestWithWitness, verifier::verifier_from_url},
+    config::{MockProvingTime, load, zkVMConfig},
+    proof::{input::NewPayloadRequestWithWitness, zkvm::cluster_client::ClusterClient},
 };
 
-#[derive(Debug, thiserror::Error)]
-#[allow(non_camel_case_types)]
-pub(crate) enum zkVMError {
-    /// The proof could not be verified by the zkVM backend.
-    #[error("proof verification failed: {0}")]
-    VerificationFailed(String),
-    /// The public values do not match the expected values.
-    #[error("public values mismatch")]
-    PublicValuesMismatch,
-}
+mod cluster_client;
 
-/// zkVM instance: remote ere-server, in-process mock, or in-process verifier-only.
+/// zkVM instance: remote ere-server, in-process mock, or in-process verifier-only, or a remote
+/// cluster.
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug)]
 pub(crate) enum zkVMInstance {
@@ -66,6 +58,17 @@ pub(crate) enum zkVMInstance {
         /// Proof type identifier.
         proof_type: ProofType,
         /// Verifier implementation, dispatched per proof_type.
+        verifier: Arc<Verifier>,
+    },
+    /// External cluster, currently only supports ZisK.
+    Cluster {
+        /// Proof type identifier.
+        proof_type: ProofType,
+        /// Timeout for proof generation.
+        proof_timeout: Duration,
+        /// Client for the external proving cluster.
+        client: ClusterClient,
+        /// In-process verifier.
         verifier: Arc<Verifier>,
     },
 }
@@ -116,15 +119,34 @@ impl zkVMInstance {
             }),
             zkVMConfig::Verifier {
                 proof_type,
+                program_vk_path,
                 program_vk_url,
             } => {
-                let verifier = verifier_from_url(*proof_type, program_vk_url)
-                    .await
-                    .with_context(|| {
-                        format!("init in-process verifier for {proof_type} from {program_vk_url}")
-                    })?;
+                let encoded_program_vk = load(program_vk_path, program_vk_url).await?;
+                let verifier = Verifier::new(proof_type.zkvm_kind(), &encoded_program_vk)
+                    .with_context(|| format!("init in-process verifier for {proof_type}"))?;
                 Ok(Self::Verifier {
                     proof_type: *proof_type,
+                    verifier: Arc::new(verifier),
+                })
+            }
+            zkVMConfig::Cluster {
+                proof_type,
+                proof_timeout_secs,
+                endpoint,
+                elf_path,
+                elf_url,
+            } => {
+                let elf = load(elf_path, elf_url)
+                    .await
+                    .with_context(|| format!("failed to load cluster elf for {proof_type}"))?;
+                let client = ClusterClient::new(*proof_type, endpoint, elf).await?;
+                let verifier = Verifier::new(proof_type.zkvm_kind(), &client.program_vk()?)
+                    .with_context(|| format!("init in-process verifier for {proof_type}"))?;
+                Ok(Self::Cluster {
+                    proof_type: *proof_type,
+                    proof_timeout: Duration::from_secs(*proof_timeout_secs),
+                    client,
                     verifier: Arc::new(verifier),
                 })
             }
@@ -132,6 +154,11 @@ impl zkVMInstance {
     }
 
     /// Generates a compressed proof for the given payload, returning raw proof bytes.
+    ///
+    /// The attempt is unbounded here. The per-zkVM worker wraps this call in
+    /// [`tokio::time::timeout`] using [`proof_timeout`](Self::proof_timeout), so a
+    /// timeout drops this future. For the cluster backend the in-flight job is
+    /// then cancelled server-side when its `ClusterProveJob` guard is dropped.
     pub(crate) async fn prove(
         &self,
         new_payload_request_with_witness: &NewPayloadRequestWithWitness,
@@ -152,6 +179,7 @@ impl zkVMInstance {
                 let (_, proof, _) = client.prove(input).await?;
                 Ok(proof.0)
             }
+            Self::Cluster { client, .. } => client.create_prove_job(&input).await?.wait().await,
             Self::Mock { .. } | Self::Verifier { .. } => unreachable!(),
         }
     }
@@ -159,25 +187,19 @@ impl zkVMInstance {
     /// Verifies a compressed proof against the expected public values.
     pub(crate) async fn verify(
         &self,
+        chain_id: u64,
         new_payload_request_root: Hash256,
         proof: Vec<u8>,
-    ) -> Result<(), zkVMError> {
+    ) -> anyhow::Result<()> {
         let public_values: PublicValues = match self {
-            Self::Ere { client, .. } => client
-                .verify(EncodedProof(proof))
-                .await
-                .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
-            Self::Mock { vm, .. } => vm
-                .verify(&proof)
-                .await
-                .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
-            Self::Verifier { verifier, .. } => verifier
-                .verify(&proof)
-                .map_err(|error| zkVMError::VerificationFailed(error.to_string())),
-        }?;
+            Self::Ere { client, .. } => client.verify(EncodedProof(proof)).await?,
+            Self::Mock { vm, .. } => vm.verify(&proof).await?,
+            Self::Verifier { verifier, .. } | Self::Cluster { verifier, .. } => {
+                verifier.verify(&proof)?
+            }
+        };
 
-        let expected = expected_public_values(new_payload_request_root)
-            .map_err(|error| zkVMError::VerificationFailed(error.to_string()))?;
+        let expected = expected_public_values(chain_id, new_payload_request_root)?;
 
         // For zkVM with fixed size public values, ensure all padding are zeros.
         if public_values.len() >= 32
@@ -186,8 +208,7 @@ impl zkVMInstance {
         {
             Ok(())
         } else {
-            warn!(?public_values, ?expected, "unexpected public values");
-            Err(zkVMError::PublicValuesMismatch)
+            anyhow::bail!("unexpected public values, expected {expected:?}, got: {public_values:?}")
         }
     }
 
@@ -197,6 +218,7 @@ impl zkVMInstance {
             Self::Ere { proof_type, .. }
             | Self::Mock { proof_type, .. }
             | Self::Verifier { proof_type, .. } => *proof_type,
+            Self::Cluster { proof_type, .. } => *proof_type,
         }
     }
 
@@ -205,7 +227,9 @@ impl zkVMInstance {
     /// return the default to keep the signature uniform.
     pub(crate) fn proof_timeout(&self) -> Duration {
         match self {
-            Self::Ere { proof_timeout, .. } | Self::Mock { proof_timeout, .. } => *proof_timeout,
+            Self::Ere { proof_timeout, .. }
+            | Self::Mock { proof_timeout, .. }
+            | Self::Cluster { proof_timeout, .. } => *proof_timeout,
             Self::Verifier { .. } => Duration::from_secs(12),
         }
     }
@@ -215,11 +239,13 @@ impl zkVMInstance {
     /// - `Ere`: can prove and verify (remote prover)
     /// - `Mock`: can prove and verify (testing)
     /// - `Verifier`: can only verify (no proving circuit loaded)
+    /// - `Cluster`: can prove and verify (external proving cluster)
     pub(crate) fn backend_capabilities(&self) -> (zkboost_types::BackendKind, bool, bool) {
         match self {
             Self::Ere { .. } => (zkboost_types::BackendKind::Ere, true, true),
             Self::Mock { .. } => (zkboost_types::BackendKind::Mock, true, true),
             Self::Verifier { .. } => (zkboost_types::BackendKind::Verifier, false, true),
+            Self::Cluster { .. } => (zkboost_types::BackendKind::Cluster, true, true),
         }
     }
 }
@@ -298,27 +324,28 @@ fn execute(el_kind: ElKind, input: &StatelessInput) -> anyhow::Result<([u8; 32],
     struct Host;
 
     impl Platform for Host {
-        fn read_whole_input() -> impl Deref<Target = [u8]> {
+        fn read_input() -> impl Deref<Target = [u8]> {
             [].as_slice()
         }
 
-        fn write_whole_output(_: &[u8]) {}
+        fn write_output(_: &[u8]) {}
 
         fn print(_: &str) {}
     }
 
     let public_values = match el_kind {
         ElKind::Ethrex => {
-            let input = build_eip8025_input(input, true)?;
+            let input = build_eip8025_input(Eip8025InputSource::Legacy {
+                stateless_input: input,
+                valid_block: true,
+            })?;
             let output = StatelessValidatorEthrexGuest::compute::<Host>(input);
-            let serialized = output.encode_to_vec()?;
-            Sha256::digest(serialized).into()
+            Sha256::digest(output.serialize()).into()
         }
         ElKind::Reth => {
             let input = StatelessValidatorRethInput::new(input, true)?;
             let output = StatelessValidatorRethGuest::compute::<Host>(input);
-            let serialized = output.encode_to_vec()?;
-            Sha256::digest(serialized).into()
+            Sha256::digest(output.serialize()).into()
         }
     };
     Ok((public_values, input.block.header.gas_used))
@@ -326,11 +353,11 @@ fn execute(el_kind: ElKind, input: &StatelessInput) -> anyhow::Result<([u8; 32],
 
 /// Computes the expected public values hash for a given payload root.
 pub(crate) fn expected_public_values(
+    chain_id: u64,
     new_payload_request_root: Hash256,
 ) -> anyhow::Result<[u8; 32]> {
-    let output = StatelessValidatorOutput::new(new_payload_request_root.0, true);
-    let serialized = output.encode_to_vec()?;
-    Ok(Sha256::digest(serialized).into())
+    let output = StatelessValidatorOutput::new(new_payload_request_root.0, true, chain_id);
+    Ok(Sha256::digest(output.serialize()).into())
 }
 
 #[cfg(test)]

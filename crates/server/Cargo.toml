@@ -66,6 +66,8 @@ stateless.workspace = true
 # ere
 ere-server-client.workspace = true
 ere-verifier.workspace = true
+ere-cluster-client-zisk.workspace = true
+ere-verifier-zisk.workspace = true
 
 # ere-guests
 ere-guests-stateless-validator-common.workspace = true

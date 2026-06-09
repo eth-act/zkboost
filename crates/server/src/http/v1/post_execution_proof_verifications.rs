@@ -30,7 +30,11 @@ pub(crate) async fn post_execution_proof_verifications(
     })?;
 
     let status = match zkvm
-        .verify(params.new_payload_request_root, body.to_vec())
+        .verify(
+            state.chain_id,
+            params.new_payload_request_root,
+            body.to_vec(),
+        )
         .await
     {
         Ok(()) => ProofStatus::Valid,
@@ -75,7 +79,7 @@ mod tests {
     #[tokio::test]
     async fn test_unknown_proof_type_returns_not_found() {
         let state = mock_app_state().await;
-        let body = mock_proof(Hash256::ZERO, 64);
+        let body = mock_proof(state.chain_id, Hash256::ZERO, 64);
         let response = test_router(state)
             .oneshot(
                 Request::builder()
@@ -95,7 +99,7 @@ mod tests {
     #[tokio::test]
     async fn test_valid_mock_proof() {
         let state = mock_app_state().await;
-        let body = mock_proof(Hash256::ZERO, 64);
+        let body = mock_proof(state.chain_id, Hash256::ZERO, 64);
         let response = test_router(state)
             .oneshot(
                 Request::builder()
@@ -140,9 +144,13 @@ mod tests {
         assert_eq!(resp.status, ProofStatus::Invalid);
     }
 
-    fn mock_proof(new_payload_request_root: Hash256, mock_proof_size: u64) -> Vec<u8> {
+    fn mock_proof(
+        chain_id: u64,
+        new_payload_request_root: Hash256,
+        mock_proof_size: u64,
+    ) -> Vec<u8> {
         let mut proof = vec![0; mock_proof_size as usize];
-        let public_values = expected_public_values(new_payload_request_root).unwrap();
+        let public_values = expected_public_values(chain_id, new_payload_request_root).unwrap();
         proof[..32].copy_from_slice(&public_values);
         proof
     }

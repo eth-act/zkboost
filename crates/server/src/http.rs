@@ -29,6 +29,7 @@ mod v1;
 
 /// Shared application state for all HTTP handlers.
 pub(crate) struct AppState {
+    pub(crate) chain_id: u64,
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     pub(crate) proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
     pub(crate) metrics: PrometheusHandle,
@@ -42,6 +43,7 @@ impl AppState {
     /// Creates shared application state for the HTTP handlers.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
+        chain_id: u64,
         zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
         proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
         metrics: PrometheusHandle,
@@ -51,6 +53,7 @@ impl AppState {
         dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
     ) -> Self {
         Self {
+            chain_id,
             zkvms,
             proof_cache,
             metrics,
@@ -128,6 +131,7 @@ pub(crate) mod tests {
     };
 
     pub(crate) async fn mock_app_state() -> Arc<AppState> {
+        let chain_id = 1;
         let proof_type = ProofType::RethZisk;
         let mock_config = zkVMConfig::Mock {
             proof_type,
@@ -149,6 +153,7 @@ pub(crate) mod tests {
         let (_, dashboard_event_rx) = broadcast::channel(16);
 
         Arc::new(AppState::new(
+            chain_id,
             zkvms,
             proof_cache,
             metrics,

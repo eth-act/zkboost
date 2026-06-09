@@ -83,6 +83,7 @@ impl zkBoostServer {
                 crate::config::zkVMConfig::Ere { .. } => "prover",
                 crate::config::zkVMConfig::Mock { .. } => "mock",
                 crate::config::zkVMConfig::Verifier { .. } => "verifier-only",
+                crate::config::zkVMConfig::Cluster { .. } => "cluster",
             };
             info!(
                 proof_type = %zkvm_config.proof_type(),
@@ -161,7 +162,7 @@ impl zkBoostServer {
         }
 
         let proof_service = ProofService::new(
-            self.chain_config,
+            self.chain_config.clone(),
             proof_cache.clone(),
             proof_event_tx,
             witness_service_tx,
@@ -197,6 +198,7 @@ impl zkBoostServer {
         };
 
         let app_state = Arc::new(AppState::new(
+            self.chain_config.chain_id,
             self.zkvms.clone(),
             proof_cache,
             self.metrics,
