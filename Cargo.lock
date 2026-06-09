@@ -3668,7 +3668,7 @@ dependencies = [
 
 [[package]]
 name = "guest-loader"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4976,7 +4976,7 @@ dependencies = [
 
 [[package]]
 name = "mock-zkattestor"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -11553,7 +11553,7 @@ dependencies = [
 
 [[package]]
 name = "zkboost-client"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "async-stream",
  "bytes",
@@ -11570,7 +11570,7 @@ dependencies = [
 
 [[package]]
 name = "zkboost-server"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "alloy-eips",
  "alloy-genesis",
@@ -11620,7 +11620,7 @@ dependencies = [
 
 [[package]]
 name = "zkboost-types"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "ere-catalog",
  "ethereum_ssz",
