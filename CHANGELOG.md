@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/eth-act/zkboost/compare/v0.7.0...v0.8.0) (2026-06-09)
+
+
+### Features
+
+* bump ere and add cluster kind with zisk cluster support ([#66](https://github.com/eth-act/zkboost/issues/66)) ([732fcbb](https://github.com/eth-act/zkboost/commit/732fcbb8d5aa853af9b6581ff1e4e2a75e38bc66))
+
 ## [0.7.0](https://github.com/eth-act/zkboost/compare/v0.6.0...v0.7.0) (2026-05-13)
 
 
