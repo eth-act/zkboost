@@ -6,6 +6,8 @@
 ### Features
 
 * bump ere and add cluster kind with zisk cluster support ([#66](https://github.com/eth-act/zkboost/issues/66)) ([732fcbb](https://github.com/eth-act/zkboost/commit/732fcbb8d5aa853af9b6581ff1e4e2a75e38bc66))
+* reject proof requests early for verifier-only instances ([#64](https://github.com/eth-act/zkboost/issues/64)) ([5e4d30b](https://github.com/eth-act/zkboost/commit/5e4d30b866123e80169104fe9fe818ad129bfb25))
+* add proof types endpoint ([#65](https://github.com/eth-act/zkboost/issues/65)) ([9be2085](https://github.com/eth-act/zkboost/commit/9be2085d87e130674d0b2f7abb0679541e20c426))
 
 ## [0.7.0](https://github.com/eth-act/zkboost/compare/v0.6.0...v0.7.0) (2026-05-13)
 
