@@ -148,11 +148,18 @@ impl zkVMInstance {
 
     /// Generates a compressed proof for the given payload, returning raw proof bytes.
     ///
+    /// `prove_span` is the worker's prove span; backends that learn a backend-side job
+    /// identifier (currently the cluster) record it there explicitly.
+    ///
     /// The attempt is unbounded here. The per-zkVM worker wraps this call in
     /// [`tokio::time::timeout`] using [`proof_timeout`](Self::proof_timeout), so a
     /// timeout drops this future. For the cluster backend the in-flight job is
     /// then cancelled server-side when its `ClusterProveJob` guard is dropped.
-    pub(crate) async fn prove(&self, stateless_input: &StatelessInput) -> anyhow::Result<Vec<u8>> {
+    pub(crate) async fn prove(
+        &self,
+        stateless_input: &StatelessInput,
+        prove_span: &tracing::Span,
+    ) -> anyhow::Result<Vec<u8>> {
         if let Self::Mock { vm, .. } = self {
             return vm.prove(stateless_input).await;
         }
@@ -166,7 +173,13 @@ impl zkVMInstance {
                 let (_, proof, _) = client.prove(input).await?;
                 Ok(proof.0)
             }
-            Self::Cluster { client, .. } => client.create_prove_job(&input).await?.wait().await,
+            Self::Cluster { client, .. } => {
+                client
+                    .create_prove_job(&input, prove_span)
+                    .await?
+                    .wait()
+                    .await
+            }
             Self::Mock { .. } | Self::Verifier { .. } => unreachable!(),
         }
     }

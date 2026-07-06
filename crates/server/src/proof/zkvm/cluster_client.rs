@@ -6,7 +6,7 @@ use anyhow::Context;
 use ere_cluster_client_zisk::{Error as ZiskError, Input, RemoteProverConfig, ZiskClusterClient};
 use ere_verifier::zkVMKind;
 use ere_verifier_zisk::codec::Encode;
-use tracing::warn;
+use tracing::{Span, info, warn};
 use zkboost_types::ProofType;
 
 /// A client for an external proving cluster, with one variant per supported zkVM.
@@ -49,7 +49,14 @@ impl ClusterClient {
 
     /// Submits a prove job for `input`, returning a [`ClusterProveJob`] that
     /// drives it to completion.
-    pub(crate) async fn create_prove_job(&self, input: &Input) -> anyhow::Result<ClusterProveJob> {
+    ///
+    /// `prove_span` is the worker's prove span, which declares an empty `job_id` field;
+    /// the id the cluster assigns is recorded there.
+    pub(crate) async fn create_prove_job(
+        &self,
+        input: &Input,
+        prove_span: &Span,
+    ) -> anyhow::Result<ClusterProveJob> {
         match self {
             Self::Zisk(client) => {
                 let job_id = match client.create_prove_job(input).await {
@@ -64,6 +71,10 @@ impl ClusterClient {
                     }
                     Err(err) => return Err(err).context("submit zisk prove job"),
                 };
+                // Recorded on the explicitly passed span rather than `Span::current()`, so the
+                // id cannot silently land elsewhere if an intermediate span is ever introduced.
+                prove_span.record("job_id", job_id.as_str());
+                info!(%job_id, "zisk cluster prove job created");
                 Ok(ClusterProveJob::Zisk {
                     client: client.clone(),
                     job_id: Some(job_id),
