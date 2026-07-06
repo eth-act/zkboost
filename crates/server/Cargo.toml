@@ -77,6 +77,7 @@ zkboost-types.workspace = true
 
 [dev-dependencies]
 futures.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 # local
 zkboost-client.workspace = true
