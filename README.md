@@ -54,6 +54,11 @@ port = 3000
 # Ethereum execution layer JSON-RPC endpoint (required)
 el_endpoint = "http://localhost:8545"
 
+# Optional HTTP headers applied to every EL JSON-RPC request (e.g. authentication).
+# Header names are case-insensitive; names differing only in case are rejected.
+# [el_headers]
+# Authorization = "Bearer <token>"
+
 # Optional local EL chain config JSON file.
 # chain_config_path = "path/to/chain_config.json"
 

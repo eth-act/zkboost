@@ -143,6 +143,7 @@ async fn start_zkboost_server(
     let config = Config {
         port: 0,
         el_endpoint,
+        el_headers: HashMap::new(),
         chain_config_path: None,
         witness_timeout_secs,
         proof_cache_size: 128,

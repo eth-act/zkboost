@@ -1,14 +1,15 @@
 //! Configuration types.
 
 use std::{
-    collections::HashSet,
-    fs,
+    collections::{HashMap, HashSet},
+    fmt, fs,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use anyhow::{Context, ensure};
 use ere_verifier::zkVMKind;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use zkboost_types::ProofType;
@@ -59,13 +60,19 @@ fn default_dashboard_retention() -> usize {
 }
 
 /// Unified configuration for the zkboost proof node.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is implemented manually so `el_headers` values (which typically carry
+/// credentials) are redacted.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     /// HTTP server port.
     #[serde(default = "default_port")]
     pub port: u16,
     /// EL endpoint for witness fetching.
     pub el_endpoint: Url,
+    /// Optional HTTP headers applied to every EL JSON-RPC request (e.g. authentication).
+    #[serde(default)]
+    pub el_headers: HashMap<String, String>,
     /// Optional path to a local execution-layer chain config JSON file.
     #[serde(default)]
     pub chain_config_path: Option<PathBuf>,
@@ -85,6 +92,33 @@ pub struct Config {
     pub zkvm: Vec<zkVMConfig>,
 }
 
+impl fmt::Debug for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Formats the `el_headers` map with every value replaced by `<redacted>`.
+        struct RedactedHeaders<'a>(&'a HashMap<String, String>);
+
+        impl fmt::Debug for RedactedHeaders<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_map()
+                    .entries(self.0.keys().map(|name| (name, "<redacted>")))
+                    .finish()
+            }
+        }
+
+        f.debug_struct("Config")
+            .field("port", &self.port)
+            .field("el_endpoint", &self.el_endpoint)
+            .field("el_headers", &RedactedHeaders(&self.el_headers))
+            .field("chain_config_path", &self.chain_config_path)
+            .field("witness_timeout_secs", &self.witness_timeout_secs)
+            .field("proof_cache_size", &self.proof_cache_size)
+            .field("witness_cache_size", &self.witness_cache_size)
+            .field("dashboard", &self.dashboard)
+            .field("zkvm", &self.zkvm)
+            .finish()
+    }
+}
+
 impl Config {
     /// Load configuration from a TOML file at the given path.
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
@@ -94,11 +128,36 @@ impl Config {
         Ok(config)
     }
 
+    /// Builds the header map applied to every EL JSON-RPC request from `el_headers`.
+    pub fn el_header_map(&self) -> anyhow::Result<HeaderMap> {
+        let mut headers = HeaderMap::with_capacity(self.el_headers.len());
+        for (name, value) in &self.el_headers {
+            let name: HeaderName = name
+                .parse()
+                .with_context(|| format!("invalid el_headers header name: {name}"))?;
+            let mut value: HeaderValue = value
+                .parse()
+                .with_context(|| format!("invalid el_headers value for header: {name}"))?;
+            // Header values typically carry credentials; mark them sensitive so `Debug`
+            // formatting of the header map redacts them.
+            value.set_sensitive(true);
+            // `el_headers` is a case-sensitive TOML map while header names are
+            // case-insensitive, so keys differing only in case would otherwise collapse
+            // here nondeterministically (HashMap iteration order decides which one wins).
+            ensure!(
+                headers.insert(&name, value).is_none(),
+                "duplicate el_headers header (names are case-insensitive): {name}"
+            );
+        }
+        Ok(headers)
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
         ensure!(
             !self.zkvm.is_empty(),
             "at least one [[zkvm]] entry is required"
         );
+        self.el_header_map()?;
         ensure!(self.proof_cache_size > 0, "proof_cache_size must be > 0");
         ensure!(
             self.witness_cache_size > 0,
@@ -408,6 +467,115 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_el_headers_default_empty() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.el_headers.is_empty());
+        assert!(config.el_header_map().unwrap().is_empty());
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_el_headers_parsed() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [el_headers]
+            Authorization = "Bearer secret"
+            "X-Custom" = "1"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        config.validate().unwrap();
+        let headers = config.el_header_map().unwrap();
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers.get("authorization").unwrap(), "Bearer secret");
+        assert_eq!(headers.get("x-custom").unwrap(), "1");
+    }
+
+    #[test]
+    fn test_el_headers_values_marked_sensitive() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [el_headers]
+            Authorization = "Bearer secret"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let headers = config.el_header_map().unwrap();
+        assert!(headers.get("authorization").unwrap().is_sensitive());
+    }
+
+    #[test]
+    fn test_config_debug_redacts_el_header_values() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [el_headers]
+            Authorization = "Bearer secret"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let debug = format!("{config:?}");
+        assert!(debug.contains("Authorization"), "{debug}");
+        assert!(debug.contains("<redacted>"), "{debug}");
+        assert!(!debug.contains("Bearer secret"), "{debug}");
+    }
+
+    #[test]
+    fn test_el_headers_case_duplicate_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [el_headers]
+            Authorization = "Bearer secret"
+            authorization = "Bearer other"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("duplicate el_headers header"), "{error}");
+    }
+
+    #[test]
+    fn test_el_headers_invalid_name_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [el_headers]
+            "bad header" = "value"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_el_headers_invalid_value_rejected() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            [el_headers]
+            Authorization = "bad\nvalue"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert!(config.validate().is_err());
     }
 
     #[test]

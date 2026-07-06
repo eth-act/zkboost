@@ -54,7 +54,10 @@ impl zkBoostServer {
     /// from the given configuration.
     pub async fn new(config: Config, metrics: PrometheusHandle) -> anyhow::Result<Self> {
         info!(url = %config.el_endpoint, "el endpoint configured");
-        let el_client = Arc::new(ElClient::new(config.el_endpoint.clone()));
+        let el_client = Arc::new(ElClient::new(
+            config.el_endpoint.clone(),
+            config.el_header_map()?,
+        )?);
 
         let blob_params = load_blob_params(&config.chain_config_path, &el_client).await?;
         info!(
