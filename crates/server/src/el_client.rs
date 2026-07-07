@@ -1,10 +1,9 @@
-//! EL JSON-RPC client wrapping `debug_chainConfig`, `eth_getBlockByHash`, and
+//! EL JSON-RPC client wrapping the `debug_chainConfig` and
 //! `debug_executionWitnessByBlockHash` RPC methods.
 
-use alloy_genesis::ChainConfig;
-use reth_ethereum_primitives::{Block, TransactionSigned};
+use alloy_genesis::ChainConfig as AlloyChainConfig;
+use alloy_rpc_types_debug::ExecutionWitness;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use stateless::ExecutionWitness;
 use url::Url;
 use zkboost_types::Hash256;
 
@@ -77,17 +76,9 @@ impl ElClient {
     }
 
     /// Fetch chain config.
-    pub async fn get_chain_config(&self) -> Result<Option<ChainConfig>, Error> {
+    pub async fn get_chain_config(&self) -> Result<Option<AlloyChainConfig>, Error> {
         let result = self.request("debug_chainConfig", ()).await?;
         Ok(result.map(|(chain_config, _)| chain_config))
-    }
-
-    /// Fetch a block by hash.
-    pub async fn get_block_by_hash(&self, block_hash: Hash256) -> Result<Option<Block>, Error> {
-        let result: Option<(alloy_rpc_types_eth::Block<TransactionSigned>, _)> = self
-            .request("eth_getBlockByHash", (block_hash, true))
-            .await?;
-        Ok(result.map(|(block, _)| block.into_consensus()))
     }
 
     /// Fetch execution witness for a block, returning the witness and the raw response size.

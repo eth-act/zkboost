@@ -10,28 +10,30 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
+pub use ere_guests_stateless_validator_common::{
+    HashTreeRoot, Sha2Hasher, SszDecode, SszEncode, SszList, SszVector,
+    guest::input::{
+        BlobSchedule, ChainConfig, ExecutionWitness, ForkActivation, ForkConfig, ProtocolFork,
+        new_payload_request::*,
+    },
+};
+use libssz_derive::{SszDecode, SszEncode};
+pub use proof_type::*;
 use serde::{Deserialize, Serialize};
 
-mod new_payload_request;
 mod proof_type;
 
-#[rustfmt::skip]
-pub use {
-    lighthouse_types::{Hash256, MainnetEthSpec, Withdrawal},
-    ssz::{Decode, Encode},
-    tree_hash::TreeHash,
-    new_payload_request::*,
-    proof_type::*,
-};
+/// 32-bytes Hash.
+pub type Hash256 = alloy_primitives::B256;
 
-/// Query params for `POST /v1/execution_proof_requests`.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ProofRequestQuery {
-    /// Comma-separated list of proof types to request.
-    #[serde(
-        deserialize_with = "comma_separated::deserialize",
-        serialize_with = "comma_separated::serialize"
-    )]
+/// SSZ-encoded request body for `POST /v1/execution_proof_requests`.
+#[derive(Debug, Clone, Eq, PartialEq, SszEncode, SszDecode)]
+pub struct ProofRequestBody {
+    /// The payload to prove.
+    pub new_payload_request: NewPayloadRequest,
+    /// Expected chain config to prove the payload against (resolved active fork).
+    pub chain_config: ChainConfig,
+    /// Proof types to generate for this payload.
     pub proof_types: Vec<ProofType>,
 }
 
@@ -49,13 +51,17 @@ pub struct ProofEventQuery {
     pub new_payload_request_root: Option<Hash256>,
 }
 
-/// Query params for `POST /v1/execution_proof_verifications`.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ProofVerificationQuery {
-    /// The root identifying the payload request.
-    pub new_payload_request_root: Hash256,
-    /// The proof type to verify.
+/// SSZ-encoded request body for `POST /v1/execution_proof_verifications`.
+#[derive(Debug, Clone, Eq, PartialEq, SszEncode, SszDecode)]
+pub struct ProofVerificationBody {
+    /// The root identifying the proven payload request.
+    pub new_payload_request_root: [u8; 32],
+    /// Expected chain config to verify the proof against (resolved active fork).
+    pub chain_config: ChainConfig,
+    /// The proof type being verified.
     pub proof_type: ProofType,
+    /// The proof bytes.
+    pub proof: Vec<u8>,
 }
 
 /// Response for `POST /v1/execution_proof_verifications`.
@@ -152,7 +158,7 @@ impl ProofEvent {
         }
     }
 
-    /// Returns the canonical SSE event name for this variant.
+    /// Returns the SSE event name for this variant.
     pub fn event_name(&self) -> &'static str {
         match self {
             Self::ProofComplete(_) => "proof_complete",
@@ -254,52 +260,9 @@ pub enum FailureReason {
     InternalError,
 }
 
-/// Custom serde for comma-separated `Vec<ProofType>` in query strings.
-mod comma_separated {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    use crate::ProofType;
-
-    pub(crate) fn serialize<S>(proof_types: &[ProofType], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let s: String = proof_types
-            .iter()
-            .map(|proof_type| proof_type.as_str())
-            .collect::<Vec<_>>()
-            .join(",");
-        serializer.serialize_str(&s)
-    }
-
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<ProofType>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        if value.is_empty() {
-            return Ok(Vec::new());
-        }
-        value
-            .split(',')
-            .map(|part| {
-                part.trim()
-                    .parse::<ProofType>()
-                    .map_err(serde::de::Error::custom)
-            })
-            .collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{BackendKind, ProofRequestQuery, ProofType, ProofTypeInfo, ProofTypesResponse};
-
-    #[test]
-    fn test_empty_proof_types_deserializes_to_empty_vec() {
-        let query: ProofRequestQuery = serde_json::from_str(r#"{"proof_types": ""}"#).unwrap();
-        assert!(query.proof_types.is_empty());
-    }
+    use crate::{BackendKind, ProofType, ProofTypeInfo, ProofTypesResponse};
 
     #[test]
     fn test_backend_kind_serialization() {

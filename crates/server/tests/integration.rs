@@ -7,40 +7,39 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_genesis::ChainConfig;
 use alloy_primitives::B256;
 use axum::{Json, extract::State};
 use bytes::Bytes;
 use futures::StreamExt;
 use metrics_exporter_prometheus::PrometheusBuilder;
-use stateless::ExecutionWitness;
 use tokio::net::TcpListener;
-use zkboost_client::{MainnetEthSpec, zkBoostClient};
+use zkboost_client::zkBoostClient;
 use zkboost_server::{
     config::{Config, DashboardConfig, zkVMConfig},
     server::zkBoostServer,
 };
 use zkboost_types::{
-    Decode, FailureReason, Hash256, NewPayloadRequest, ProofEvent, ProofEventKind, ProofFailure,
-    ProofStatus, ProofType, TreeHash,
+    ChainConfig, FailureReason, Hash256, HashTreeRoot, NewPayloadRequest, ProofEvent,
+    ProofEventKind, ProofFailure, ProofStatus, ProofType, Sha2Hasher, SszDecode,
 };
 
 struct Fixture {
-    new_payload_request: NewPayloadRequest<MainnetEthSpec>,
+    new_payload_request: NewPayloadRequest,
     new_payload_request_root: Hash256,
     chain_config: ChainConfig,
-    witness: ExecutionWitness,
+    witness: serde_json::Value,
 }
 
 impl Fixture {
     fn load() -> Self {
         const NEW_PAYLOAD_REQUEST: &[u8] = include_bytes!("fixture/new_payload_request.ssz");
-        const CHAIN_CONFIG: &str = include_str!("fixture/chain_config.json");
+        const CHAIN_CONFIG: &[u8] = include_bytes!("fixture/chain_config.ssz");
         const EXECUTION_WITNESS: &str = include_str!("fixture/execution_witness.json");
         let new_payload_request = NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST).unwrap();
-        let new_payload_request_root = new_payload_request.tree_hash_root();
-        let chain_config: ChainConfig = serde_json::from_str(CHAIN_CONFIG).unwrap();
-        let witness: ExecutionWitness = serde_json::from_str(EXECUTION_WITNESS).unwrap();
+        let new_payload_request_root =
+            Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
+        let chain_config = ChainConfig::from_ssz_bytes(CHAIN_CONFIG).unwrap();
+        let witness: serde_json::Value = serde_json::from_str(EXECUTION_WITNESS).unwrap();
         Fixture {
             new_payload_request,
             new_payload_request_root,
@@ -52,8 +51,8 @@ impl Fixture {
 
 async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: bool) -> url::Url {
     struct MockElState {
-        witnesses: HashMap<B256, ExecutionWitness>,
-        chain_config: ChainConfig,
+        witnesses: HashMap<B256, serde_json::Value>,
+        chain_config: serde_json::Value,
         witness_timeout: bool,
         witness_delay: bool,
         first_query_time: OnceLock<Instant>,
@@ -67,7 +66,7 @@ async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: 
         let method = request["method"].as_str().unwrap_or("");
 
         let result = match method {
-            "debug_chainConfig" => serde_json::to_value(&state.chain_config).unwrap(),
+            "debug_chainConfig" => state.chain_config.clone(),
             "debug_executionWitnessByBlockHash" => {
                 let hash_str = request["params"][0].as_str().unwrap();
                 let hash: B256 = hash_str.parse().unwrap();
@@ -104,11 +103,23 @@ async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: 
     }
 
     let block_hash = fixture.new_payload_request.block_hash();
-    let witnesses = HashMap::from([(B256::from(block_hash.0), fixture.witness.clone())]);
+    let witnesses = HashMap::from([(B256::from(block_hash), fixture.witness.clone())]);
+
+    let blob_schedule = fixture.chain_config.active_fork.blob_schedule().unwrap();
+    let chain_config = serde_json::json!({
+        "chainId": fixture.chain_config.chain_id,
+        "blobSchedule": {
+            "bpo2": {
+                "target": blob_schedule.target,
+                "max": blob_schedule.max,
+                "baseFeeUpdateFraction": blob_schedule.base_fee_update_fraction,
+            }
+        }
+    });
 
     let state = Arc::new(MockElState {
         witnesses,
-        chain_config: fixture.chain_config.clone(),
+        chain_config,
         witness_timeout,
         witness_delay,
         first_query_time: OnceLock::new(),
@@ -191,7 +202,11 @@ impl TestHarness {
     async fn request_proof(&self) {
         let new_payload_request_root = self
             .client
-            .request_proof(&self.fixture.new_payload_request, &[self.proof_type])
+            .request_proof(
+                &self.fixture.new_payload_request,
+                &self.fixture.chain_config,
+                &[self.proof_type],
+            )
             .await
             .unwrap()
             .new_payload_request_root;
@@ -263,6 +278,7 @@ impl TestHarness {
             .client
             .verify_proof(
                 self.fixture.new_payload_request_root,
+                &self.fixture.chain_config,
                 self.proof_type,
                 &proof,
             )

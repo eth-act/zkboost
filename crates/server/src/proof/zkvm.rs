@@ -4,26 +4,19 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use ere_guests_stateless_validator_common::guest::StatelessValidatorOutput;
-use ere_guests_stateless_validator_ethrex::{
-    guest::StatelessValidatorEthrexGuest,
-    host::{Eip8025InputSource, build_eip8025_input},
-};
-use ere_guests_stateless_validator_reth::guest::{
-    Guest, Platform, StatelessValidatorRethGuest, StatelessValidatorRethInput,
-};
-use ere_server_client::{EncodedProof, PublicValues, zkVMClient};
+use ere_guests_stateless_validator_common::guest::StatelessValidationResult;
+use ere_platform_core::Platform;
+use ere_server_client::{EncodedProof, Input, PublicValues, zkVMClient};
 use ere_verifier::Verifier;
 use rand::{Rng, rng};
-use sha2::{Digest, Sha256};
-use stateless::StatelessInput;
+use serde::{Deserialize, Serialize};
 use tokio::time::{Instant, sleep, sleep_until};
 use url::Url;
-use zkboost_types::{ElKind, Hash256, ProofType};
+use zkboost_types::{ChainConfig, ElKind, Hash256, ProofType, SszEncode};
 
 use crate::{
     config::{MockProvingTime, load, zkVMConfig},
-    proof::{input::NewPayloadRequestWithWitness, zkvm::cluster_client::ClusterClient},
+    proof::{input::StatelessInput, zkvm::cluster_client::ClusterClient},
 };
 
 mod cluster_client;
@@ -159,21 +152,15 @@ impl zkVMInstance {
     /// [`tokio::time::timeout`] using [`proof_timeout`](Self::proof_timeout), so a
     /// timeout drops this future. For the cluster backend the in-flight job is
     /// then cancelled server-side when its `ClusterProveJob` guard is dropped.
-    pub(crate) async fn prove(
-        &self,
-        new_payload_request_with_witness: &NewPayloadRequestWithWitness,
-    ) -> anyhow::Result<Vec<u8>> {
+    pub(crate) async fn prove(&self, stateless_input: &StatelessInput) -> anyhow::Result<Vec<u8>> {
         if let Self::Mock { vm, .. } = self {
-            return vm
-                .prove(new_payload_request_with_witness.stateless_input())
-                .await;
+            return vm.prove(stateless_input).await;
         }
         if let Self::Verifier { proof_type, .. } = self {
             anyhow::bail!("prove not supported for verifier-only zkvm {proof_type}");
         }
 
-        let el_kind = self.proof_type().el_kind();
-        let input = new_payload_request_with_witness.to_zkvm_input(el_kind)?;
+        let input = Input::new().with_stdin(stateless_input.stateless_input_bytes().to_vec());
         match self {
             Self::Ere { client, .. } => {
                 let (_, proof, _) = client.prove(input).await?;
@@ -187,8 +174,8 @@ impl zkVMInstance {
     /// Verifies a compressed proof against the expected public values.
     pub(crate) async fn verify(
         &self,
-        chain_id: u64,
         new_payload_request_root: Hash256,
+        chain_config: &ChainConfig,
         proof: Vec<u8>,
     ) -> anyhow::Result<()> {
         let public_values: PublicValues = match self {
@@ -199,12 +186,14 @@ impl zkVMInstance {
             }
         };
 
-        let expected = expected_public_values(chain_id, new_payload_request_root)?;
+        let expected = expected_public_values(new_payload_request_root, chain_config);
+        let len = expected.len();
 
-        // For zkVM with fixed size public values, ensure all padding are zeros.
-        if public_values.len() >= 32
-            && public_values[..32] == expected
-            && public_values[32..].iter().all(|byte| *byte == 0)
+        // For zkVM with fixed size public values, ensure all padding after the
+        // SSZ-encoded result are zeros.
+        if public_values.len() >= len
+            && public_values[..len] == expected[..]
+            && public_values[len..].iter().all(|byte| *byte == 0)
         {
             Ok(())
         } else {
@@ -250,6 +239,33 @@ impl zkVMInstance {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct MockProof {
+    public_values: Vec<u8>,
+    proof: Vec<u8>,
+}
+
+impl MockProof {
+    pub(crate) fn new(public_values: Vec<u8>, proof_size: usize) -> Self {
+        let proof = rng()
+            .random_iter()
+            .take(proof_size.saturating_sub(public_values.len() + 16))
+            .collect();
+        Self {
+            public_values,
+            proof,
+        }
+    }
+
+    pub(crate) fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        Ok(bincode::serialize(&self)?)
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        Ok(bincode::deserialize(bytes)?)
+    }
+}
+
 /// Mock zkVM for testing.
 #[derive(Debug, Clone)]
 pub(crate) struct MockzkVM {
@@ -283,8 +299,8 @@ impl MockzkVM {
     pub(crate) async fn prove(&self, input: &StatelessInput) -> anyhow::Result<Vec<u8>> {
         let start = Instant::now();
 
-        let (hash, gas_used) = execute(self.el_kind, input)?;
-        let public_values = hash.to_vec();
+        let stateless_output_bytes = execute(self.el_kind, input.stateless_input_bytes())?;
+        let gas_used = input.gas_used();
 
         let duration = match &self.mock_proving_time {
             MockProvingTime::Constant { ms } => Duration::from_millis(*ms),
@@ -302,25 +318,18 @@ impl MockzkVM {
             anyhow::bail!("mocking failure");
         }
 
-        let mut proof = public_values;
-        proof.resize(self.mock_proof_size as usize, 0);
-        rand::fill(&mut proof[32..]);
-        Ok(proof)
+        MockProof::new(stateless_output_bytes, self.mock_proof_size as usize).to_bytes()
     }
 
-    /// Simulate proof verification by checking proof size.
+    /// Simulate proof verification by decoding the mock proof into its public values.
     pub(crate) async fn verify(&self, proof: &[u8]) -> anyhow::Result<PublicValues> {
         sleep(Duration::from_millis(10)).await;
 
-        if proof.len() >= 32 {
-            Ok(proof[..32].into())
-        } else {
-            anyhow::bail!("invalid proof")
-        }
+        Ok(MockProof::from_bytes(proof)?.public_values.into())
     }
 }
 
-fn execute(el_kind: ElKind, input: &StatelessInput) -> anyhow::Result<([u8; 32], u64)> {
+fn execute(el_kind: ElKind, input_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     struct Host;
 
     impl Platform for Host {
@@ -329,35 +338,26 @@ fn execute(el_kind: ElKind, input: &StatelessInput) -> anyhow::Result<([u8; 32],
         }
 
         fn write_output(_: &[u8]) {}
-
-        fn print(_: &str) {}
     }
 
-    let public_values = match el_kind {
-        ElKind::Ethrex => {
-            let input = build_eip8025_input(Eip8025InputSource::Legacy {
-                stateless_input: input,
-                valid_block: true,
-            })?;
-            let output = StatelessValidatorEthrexGuest::compute::<Host>(input);
-            Sha256::digest(output.serialize()).into()
-        }
+    let output_bytes = match el_kind {
         ElKind::Reth => {
-            let input = StatelessValidatorRethInput::new(input, true)?;
-            let output = StatelessValidatorRethGuest::compute::<Host>(input);
-            Sha256::digest(output.serialize()).into()
+            ere_guests_stateless_validator_reth::guest::run_stateless_guest::<Host>(input_bytes)
+        }
+        ElKind::Ethrex => {
+            ere_guests_stateless_validator_ethrex::guest::run_stateless_guest::<Host>(input_bytes)
         }
     };
-    Ok((public_values, input.block.header.gas_used))
+    Ok(output_bytes)
 }
 
-/// Computes the expected public values hash for a given payload root.
+/// Computes the expected public values for a successful validation of the given payload root
+/// and chain config.
 pub(crate) fn expected_public_values(
-    chain_id: u64,
     new_payload_request_root: Hash256,
-) -> anyhow::Result<[u8; 32]> {
-    let output = StatelessValidatorOutput::new(new_payload_request_root.0, true, chain_id);
-    Ok(Sha256::digest(output.serialize()).into())
+    chain_config: &ChainConfig,
+) -> Vec<u8> {
+    StatelessValidationResult::new(new_payload_request_root.0, true, chain_config.clone()).to_ssz()
 }
 
 #[cfg(test)]

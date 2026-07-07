@@ -19,6 +19,7 @@ use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
 use zkboost_types::{Hash256, ProofEvent, ProofType};
 
 use crate::{
+    chain_config::BlobParams,
     dashboard::{DashboardEvent, DashboardState},
     metrics::http_metrics_middleware,
     proof::{ProofServiceMessage, zkvm::zkVMInstance},
@@ -29,7 +30,8 @@ mod v1;
 
 /// Shared application state for all HTTP handlers.
 pub(crate) struct AppState {
-    pub(crate) chain_id: u64,
+    /// Per-fork EL blob fee parameters used to complete CL sent chain configs.
+    pub(crate) blob_params: BlobParams,
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     pub(crate) proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
     pub(crate) metrics: PrometheusHandle,
@@ -43,7 +45,7 @@ impl AppState {
     /// Creates shared application state for the HTTP handlers.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        chain_id: u64,
+        blob_params: BlobParams,
         zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
         proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
         metrics: PrometheusHandle,
@@ -53,7 +55,7 @@ impl AppState {
         dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
     ) -> Self {
         Self {
-            chain_id,
+            blob_params,
             zkvms,
             proof_cache,
             metrics,
@@ -124,6 +126,7 @@ pub(crate) mod tests {
     use zkboost_types::ProofType;
 
     use crate::{
+        chain_config::BlobParams,
         config::{MockProvingTime, zkVMConfig},
         dashboard::DashboardState,
         http::{AppState, router},
@@ -131,7 +134,10 @@ pub(crate) mod tests {
     };
 
     pub(crate) async fn mock_app_state() -> Arc<AppState> {
-        let chain_id = 1;
+        mock_app_state_with_blob_params(BlobParams::new()).await
+    }
+
+    pub(crate) async fn mock_app_state_with_blob_params(blob_params: BlobParams) -> Arc<AppState> {
         let proof_type = ProofType::RethZisk;
         let mock_config = zkVMConfig::Mock {
             proof_type,
@@ -153,7 +159,7 @@ pub(crate) mod tests {
         let (_, dashboard_event_rx) = broadcast::channel(16);
 
         Arc::new(AppState::new(
-            chain_id,
+            blob_params,
             zkvms,
             proof_cache,
             metrics,

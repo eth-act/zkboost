@@ -9,9 +9,11 @@ use std::{
     collections::HashSet, num::NonZeroUsize, panic::AssertUnwindSafe, sync::Arc, time::Duration,
 };
 
+use alloy_primitives::Bytes;
+use alloy_rpc_types_debug::ExecutionWitness as AlloyExecutionWitness;
+use ere_guests_stateless_validator_common::guest::input::ExecutionWitness;
 use futures::FutureExt;
 use lru::LruCache;
-use stateless::ExecutionWitness;
 use tokio::{
     sync::mpsc,
     task::{JoinHandle, JoinSet},
@@ -19,7 +21,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span, debug, error, info, info_span, record_all, trace, warn};
-use zkboost_types::Hash256;
+use zkboost_types::{Hash256, SszList};
 
 use crate::{
     dashboard::DashboardMessage, el_client::ElClient, metrics::record_witness_fetch,
@@ -44,7 +46,7 @@ pub(crate) struct WitnessService {
     tasks: JoinSet<TaskResult>,
 }
 
-type TaskResult = (Hash256, Option<(Arc<ExecutionWitness>, usize)>);
+type TaskResult = (Hash256, Option<(AlloyExecutionWitness, usize)>);
 
 impl WitnessService {
     /// Creates a new witness service with the given EL client and proof sender.
@@ -108,33 +110,51 @@ impl WitnessService {
     async fn handle_task_result(
         &mut self,
         block_hash: Hash256,
-        witness: Option<(Arc<ExecutionWitness>, usize)>,
+        witness: Option<(AlloyExecutionWitness, usize)>,
     ) {
         self.requested.remove(&block_hash);
         match witness {
             Some((witness, witness_size)) => {
-                self.witness_cache.put(block_hash, witness.clone());
+                match from_rpc_witness(witness) {
+                    Ok(witness) => {
+                        let witness = Arc::new(witness);
+                        self.witness_cache.put(block_hash, witness.clone());
 
-                info!(%block_hash, "fetched witness");
+                        info!(%block_hash, "fetched witness");
 
-                if let Err(error) = self
-                    .proof_service_tx
-                    .send(ProofServiceMessage::WitnessAvailable {
-                        block_hash,
-                        witness,
-                    })
-                    .await
-                {
-                    error!(%error, "witness available send failed");
-                }
+                        if let Err(error) = self
+                            .proof_service_tx
+                            .send(ProofServiceMessage::WitnessAvailable {
+                                block_hash,
+                                witness,
+                            })
+                            .await
+                        {
+                            error!(%error, "witness available send failed");
+                        }
 
-                let _ = self
-                    .dashboard_service_tx
-                    .try_send(DashboardMessage::fetch_witness_end(
-                        block_hash,
-                        witness_size,
-                        true,
-                    ));
+                        let _ = self.dashboard_service_tx.try_send(
+                            DashboardMessage::fetch_witness_end(block_hash, witness_size, true),
+                        );
+                    }
+                    Err(error) => {
+                        error!(%error, "incompatible with SSZ container limit");
+
+                        if let Err(send_error) = self
+                            .proof_service_tx
+                            .send(ProofServiceMessage::WitnessIncompatible {
+                                block_hash,
+                                error: error.to_string(),
+                            })
+                            .await
+                        {
+                            error!(%send_error, "witness incompatible send failed");
+                        }
+                        let _ = self.dashboard_service_tx.try_send(
+                            DashboardMessage::fetch_witness_end(block_hash, witness_size, false),
+                        );
+                    }
+                };
             }
             None => {
                 error!(%block_hash, "fetching witness timed out");
@@ -227,7 +247,7 @@ async fn fetch_witness(
     match timeout(witness_timeout, AssertUnwindSafe(fut).catch_unwind()).await {
         Ok(Ok((witness, witness_size))) => {
             record_witness_fetch("success", fetch_start.elapsed(), witness_size);
-            (block_hash, Some((Arc::new(witness), witness_size)))
+            (block_hash, Some((witness, witness_size)))
         }
         Ok(Err(_)) => {
             record_witness_fetch("panic", fetch_start.elapsed(), 0);
@@ -240,4 +260,30 @@ async fn fetch_witness(
             (block_hash, None)
         }
     }
+}
+
+/// Converts the RPC debug execution witness into the `ExecutionWitness`.
+fn from_rpc_witness(value: AlloyExecutionWitness) -> anyhow::Result<ExecutionWitness> {
+    Ok(ExecutionWitness {
+        state: ssz_bytes_list(value.state, "witness state")?,
+        codes: ssz_bytes_list(value.codes, "witness codes")?,
+        headers: ssz_bytes_list(value.headers, "witness headers")?,
+    })
+}
+
+fn ssz_bytes_list<const M: usize, const N: usize>(
+    items: Vec<Bytes>,
+    label: &str,
+) -> anyhow::Result<SszList<SszList<u8, M>, N>> {
+    let list = items
+        .into_iter()
+        .map(|item| SszList::try_from(Vec::from(item)))
+        .collect::<Result<_, _>>()
+        .map_err(|err| anyhow::anyhow!("{label} item length should be within bounds: {err:?}"))?;
+    ssz_list(list, label)
+}
+
+fn ssz_list<T, const N: usize>(values: Vec<T>, label: &str) -> anyhow::Result<SszList<T, N>> {
+    SszList::try_from(values)
+        .map_err(|err| anyhow::anyhow!("{label} length should be within bounds: {err:?}"))
 }

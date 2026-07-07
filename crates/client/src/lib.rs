@@ -11,12 +11,12 @@
 //! # Example
 //!
 //! ```ignore
-//! use zkboost_client::{zkBoostClient, MainnetEthSpec, NewPayloadRequest};
-//! use zkboost_types::ProofType;
+//! use zkboost_client::{zkBoostClient, NewPayloadRequest};
+//! use zkboost_types::{ChainConfig, ProofType};
 //!
-//! # async fn example(request: NewPayloadRequest<MainnetEthSpec>) -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example(request: NewPayloadRequest, chain_config: ChainConfig) -> Result<(), Box<dyn std::error::Error>> {
 //! let client = zkBoostClient::new("http://localhost:3000".parse()?);
-//! let resp = client.request_proof(&request, &[ProofType::RethSP1]).await?;
+//! let resp = client.request_proof(&request, &chain_config, &[ProofType::RethSP1]).await?;
 //! println!("root: {:?}", resp.new_payload_request_root);
 //! # Ok(())
 //! # }
@@ -38,10 +38,10 @@ use url::Url;
 pub use {
     error::Error,
     zkboost_types::{
-        Encode, FailureReason, Hash256, MainnetEthSpec,
-        NewPayloadRequest, ProofComplete, ProofEvent, ProofFailure, ProofRequestResponse,
-        ProofStatus, ProofType, ProofVerificationResponse,
-        ProofEventParseError,
+        ChainConfig, FailureReason, Hash256,
+        NewPayloadRequest, ProofComplete, ProofEvent, ProofFailure, ProofRequestBody,
+        ProofRequestResponse, ProofStatus, ProofType, ProofVerificationBody,
+        ProofVerificationResponse, ProofEventParseError, SszEncode,
     },
 };
 
@@ -74,23 +74,27 @@ impl zkBoostClient {
 
     /// Submit a [`NewPayloadRequest`] for proof generation.
     ///
-    /// Sends `POST /v1/execution_proof_requests?proof_types=...` with the SSZ-encoded body. Returns
-    /// the computed `new_payload_request_root` from the server.
+    /// Sends `POST /v1/execution_proof_requests` with an SSZ-encoded [`ProofRequestBody`] carrying
+    /// the proof types, payload, and chain config. Returns the computed
+    /// `new_payload_request_root` from the server.
     pub async fn request_proof(
         &self,
-        new_payload_request: &NewPayloadRequest<MainnetEthSpec>,
+        new_payload_request: &NewPayloadRequest,
+        chain_config: &ChainConfig,
         proof_types: &[ProofType],
     ) -> Result<ProofRequestResponse, Error> {
-        let mut url = self.endpoint.join("/v1/execution_proof_requests")?;
-        let proof_types = Vec::from_iter(proof_types.iter().map(ProofType::as_str)).join(",");
-        url.query_pairs_mut()
-            .append_pair("proof_types", &proof_types);
+        let url = self.endpoint.join("/v1/execution_proof_requests")?;
+        let body = ProofRequestBody {
+            new_payload_request: new_payload_request.clone(),
+            chain_config: chain_config.clone(),
+            proof_types: proof_types.to_vec(),
+        };
 
         let response = self
             .http_client
             .post(url)
             .header(CONTENT_TYPE, APPLICATION_OCTET_STREAM)
-            .body(new_payload_request.as_ssz_bytes())
+            .body(body.to_ssz())
             .send()
             .await?;
 
@@ -152,27 +156,28 @@ impl zkBoostClient {
 
     /// Verify a proof against the server.
     ///
-    /// Sends `POST /v1/execution_proof_verifications?new_payload_request_root=...&proof_type=...`
-    /// with the raw proof bytes as the request body.
+    /// Sends `POST /v1/execution_proof_verifications` with an SSZ-encoded [`ProofVerificationBody`]
+    /// carrying the root, chain config, proof type, and proof bytes.
     pub async fn verify_proof(
         &self,
         new_payload_request_root: Hash256,
+        chain_config: &ChainConfig,
         proof_type: ProofType,
         proof: &[u8],
     ) -> Result<ProofVerificationResponse, Error> {
-        let mut url = self.endpoint.join("/v1/execution_proof_verifications")?;
-        url.query_pairs_mut()
-            .append_pair(
-                "new_payload_request_root",
-                &new_payload_request_root.to_string(),
-            )
-            .append_pair("proof_type", proof_type.as_str());
+        let url = self.endpoint.join("/v1/execution_proof_verifications")?;
+        let body = ProofVerificationBody {
+            new_payload_request_root: new_payload_request_root.0,
+            chain_config: chain_config.clone(),
+            proof_type,
+            proof: proof.to_vec(),
+        };
 
         let response = self
             .http_client
             .post(url)
             .header(CONTENT_TYPE, APPLICATION_OCTET_STREAM)
-            .body(proof.to_vec())
+            .body(body.to_ssz())
             .send()
             .await?;
 
