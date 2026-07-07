@@ -10876,14 +10876,21 @@ name = "zkboost-client"
 version = "0.9.0"
 dependencies = [
  "async-stream",
+ "axum",
  "bytes",
  "futures",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "reqwest",
  "reqwest-eventsource",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "tokio-stream",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "url",
  "zkboost-types",
 ]
