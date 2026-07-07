@@ -8944,8 +8944,8 @@ dependencies = [
 
 [[package]]
 name = "stateless-validator-common"
-version = "0.12.1"
-source = "git+https://github.com/eth-act/ere-guests?rev=e7db7675a3d518a3de38283b02b906052cd0bf8c#e7db7675a3d518a3de38283b02b906052cd0bf8c"
+version = "0.13.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.13.0#cffc3f1a299e0e5f097305775d6ba1141b5f9546"
 dependencies = [
  "const-hex",
  "libssz",
@@ -8958,8 +8958,8 @@ dependencies = [
 
 [[package]]
 name = "stateless-validator-ethrex"
-version = "0.12.1"
-source = "git+https://github.com/eth-act/ere-guests?rev=e7db7675a3d518a3de38283b02b906052cd0bf8c#e7db7675a3d518a3de38283b02b906052cd0bf8c"
+version = "0.13.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.13.0#cffc3f1a299e0e5f097305775d6ba1141b5f9546"
 dependencies = [
  "ere-platform-core",
  "ere-util-build",
@@ -8973,8 +8973,8 @@ dependencies = [
 
 [[package]]
 name = "stateless-validator-reth"
-version = "0.12.1"
-source = "git+https://github.com/eth-act/ere-guests?rev=e7db7675a3d518a3de38283b02b906052cd0bf8c#e7db7675a3d518a3de38283b02b906052cd0bf8c"
+version = "0.13.0"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.13.0#cffc3f1a299e0e5f097305775d6ba1141b5f9546"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
@@ -10905,7 +10905,6 @@ dependencies = [
  "bytes",
  "clap",
  "ere-cluster-client-zisk",
- "ere-platform-core",
  "ere-server-client",
  "ere-verifier",
  "ere-verifier-zisk",

@@ -34,3 +34,10 @@ spamoor_params:
       config:
         throughput: 1
 
+port_publisher:
+  el:
+    enabled: true
+    public_port_start: 32000
+  cl:
+    enabled: true
+    public_port_start: 33000

@@ -1,5 +1,5 @@
 port = 3000
-el_endpoint = 
+el_endpoint = "http://host.docker.internal:32003"
 
 [dashboard]
 enabled = true

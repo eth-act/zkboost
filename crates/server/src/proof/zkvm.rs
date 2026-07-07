@@ -5,7 +5,7 @@ use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use ere_guests_stateless_validator_common::guest::StatelessValidationResult;
-use ere_platform_core::Platform;
+use ere_guests_stateless_validator_ethrex::guest::Platform;
 use ere_server_client::{EncodedProof, Input, PublicValues, zkVMClient};
 use ere_verifier::Verifier;
 use rand::{Rng, rng};

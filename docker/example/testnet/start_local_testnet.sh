@@ -87,11 +87,4 @@ fi
 
 kurtosis run --enclave $ENCLAVE_NAME github.com/ethpandaops/ethereum-package@$ETHEREUM_PKG_VERSION --args-file $NETWORK_PARAMS_FILE
 
-# Extract the EL container name and generate the zkboost config file.
-EL_NAME=el-1-reth-lighthouse
-EL_UUID=$(kurtosis enclave inspect "$ENCLAVE_NAME" --full-uuids | grep "$EL_NAME" | awk '{print $1}')
-EL_ENDPOINT="http://$EL_NAME--$EL_UUID:8545"
-sed "s|^el_endpoint =.*|el_endpoint = \"$EL_ENDPOINT\"|" "$SCRIPT_DIR/zkboost/config.toml.tmpl" > "$SCRIPT_DIR/zkboost/config.toml"
-echo "Generated zkboost/config.toml with EL endpoint: $EL_ENDPOINT"
-
 echo "Started!"

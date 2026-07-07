@@ -62,7 +62,8 @@ services:
       - ./zkboost/config.toml:/app/config.toml:ro
     networks:
       - zkboost
-      - kurtosis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -74,6 +75,3 @@ services:
 networks:
   zkboost:
     name: zkboost-local-testnet
-  kurtosis:
-    external: true
-    name: kt-local-testnet
