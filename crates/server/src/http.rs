@@ -22,7 +22,7 @@ use crate::{
     chain_config::BlobParams,
     dashboard::{DashboardEvent, DashboardState},
     metrics::http_metrics_middleware,
-    proof::{ProofServiceMessage, zkvm::zkVMInstance},
+    proof::{FailureCache, ProofServiceMessage, zkvm::zkVMInstance},
 };
 
 mod dashboard;
@@ -34,6 +34,7 @@ pub(crate) struct AppState {
     pub(crate) blob_params: BlobParams,
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     pub(crate) proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+    pub(crate) failure_cache: FailureCache,
     pub(crate) metrics: PrometheusHandle,
     pub(crate) dashboard: Option<Arc<RwLock<DashboardState>>>,
     pub(crate) proof_service_tx: mpsc::Sender<ProofServiceMessage>,
@@ -48,6 +49,7 @@ impl AppState {
         blob_params: BlobParams,
         zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
         proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+        failure_cache: FailureCache,
         metrics: PrometheusHandle,
         dashboard: Option<Arc<RwLock<DashboardState>>>,
         proof_service_tx: mpsc::Sender<ProofServiceMessage>,
@@ -58,6 +60,7 @@ impl AppState {
             blob_params,
             zkvms,
             proof_cache,
+            failure_cache,
             metrics,
             dashboard,
             proof_service_tx,
@@ -187,6 +190,7 @@ pub(crate) mod tests {
         let zkvms = Arc::new(HashMap::from_iter([(proof_type, zkvm)]));
 
         let proof_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
+        let failure_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
 
         let metrics = PrometheusBuilder::new().build_recorder().handle();
         let dashboard = Arc::new(RwLock::new(DashboardState::new(vec![proof_type], 256))).into();
@@ -199,6 +203,7 @@ pub(crate) mod tests {
             blob_params,
             zkvms,
             proof_cache,
+            failure_cache,
             metrics,
             dashboard,
             proof_service_tx,

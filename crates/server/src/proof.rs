@@ -61,9 +61,14 @@ struct PendingRequest {
     span: Span,
 }
 
+/// Bounded cache of terminal proof failures, replayed to SSE subscribers that subscribe after
+/// the live `proof_failure` event was broadcast (mirroring the completed-proof cache).
+pub(crate) type FailureCache = Arc<RwLock<LruCache<(Hash256, ProofType), ProofFailure>>>;
+
 /// Manages proof lifecycle: pending, enqueued, and completed proof requests.
 pub(crate) struct ProofService {
     proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+    failure_cache: FailureCache,
     proof_event_tx: broadcast::Sender<ProofEvent>,
     witness_service_tx: mpsc::Sender<WitnessServiceMessage>,
     dashboard_service_tx: mpsc::Sender<DashboardMessage>,
@@ -75,12 +80,14 @@ impl ProofService {
     /// Creates a new proof service with the given dependencies.
     pub(crate) fn new(
         proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+        failure_cache: FailureCache,
         proof_event_tx: broadcast::Sender<ProofEvent>,
         witness_service_tx: mpsc::Sender<WitnessServiceMessage>,
         dashboard_service_tx: mpsc::Sender<DashboardMessage>,
     ) -> Self {
         Self {
             proof_cache,
+            failure_cache,
             proof_event_tx,
             witness_service_tx,
             dashboard_service_tx,
@@ -141,6 +148,12 @@ impl ProofService {
                     .write()
                     .await
                     .put((new_payload_request_root, proof_type), proof);
+                // A retried request can succeed after an earlier failure; drop the stale
+                // failure so subscribers are not replayed both outcomes.
+                self.failure_cache
+                    .write()
+                    .await
+                    .pop(&(new_payload_request_root, proof_type));
                 let _ = self.proof_event_tx.send(
                     ProofComplete {
                         new_payload_request_root,
@@ -158,7 +171,8 @@ impl ProofService {
                     FailureReason::ProvingError,
                     error,
                     duration,
-                );
+                )
+                .await;
             }
             ProofResult::Timeout => {
                 error!(%block_hash, block_number, %proof_type, "proving timed out");
@@ -171,7 +185,8 @@ impl ProofService {
                         duration.as_secs_f64()
                     ),
                     duration,
-                );
+                )
+                .await;
             }
         }
 
@@ -259,7 +274,8 @@ impl ProofService {
                             FailureReason::InternalError,
                             format!("witness service unavailable: {error}"),
                             Duration::ZERO,
-                        );
+                        )
+                        .await;
                     }
                     return;
                 }
@@ -304,7 +320,8 @@ impl ProofService {
                                 FailureReason::ProvingError,
                                 format!("input construction failed: {e}"),
                                 Duration::ZERO,
-                            );
+                            )
+                            .await;
                         }
                         return;
                     }
@@ -316,7 +333,8 @@ impl ProofService {
                         proof_type,
                         input.clone(),
                         request.span.clone(),
-                    );
+                    )
+                    .await;
                 }
             }
             ProofServiceMessage::WitnessTimeout { block_hash } => {
@@ -333,7 +351,8 @@ impl ProofService {
                         FailureReason::WitnessTimeout,
                         format!("witness timeout for block {block_hash}"),
                         Duration::ZERO,
-                    );
+                    )
+                    .await;
                 }
             }
             ProofServiceMessage::WitnessIncompatible { block_hash, error } => {
@@ -350,13 +369,14 @@ impl ProofService {
                         FailureReason::ProvingError,
                         format!("witness incompatible: {error}"),
                         Duration::ZERO,
-                    );
+                    )
+                    .await;
                 }
             }
         }
     }
 
-    fn send_worker_input(
+    async fn send_worker_input(
         &mut self,
         worker_input_txs: &HashMap<ProofType, mpsc::Sender<WorkerInput>>,
         proof_type: ProofType,
@@ -374,7 +394,8 @@ impl ProofService {
                 FailureReason::InternalError,
                 format!("no zkVM worker for proof type '{proof_type}'"),
                 Duration::ZERO,
-            );
+            )
+            .await;
             return;
         };
 
@@ -397,12 +418,13 @@ impl ProofService {
                     FailureReason::InternalError,
                     format!("worker input send failed: {reason}"),
                     Duration::ZERO,
-                );
+                )
+                .await;
             }
         }
     }
 
-    fn fail_request(
+    async fn fail_request(
         &mut self,
         new_payload_request_root: Hash256,
         proof_type: ProofType,
@@ -412,15 +434,19 @@ impl ProofService {
     ) {
         self.requested
             .remove(&(new_payload_request_root, proof_type));
-        let _ = self.proof_event_tx.send(
-            ProofFailure {
-                new_payload_request_root,
-                proof_type,
-                reason,
-                error,
-            }
-            .into(),
-        );
+        let failure = ProofFailure {
+            new_payload_request_root,
+            proof_type,
+            reason,
+            error,
+        };
+        // Cache the terminal failure so subscribers that missed the live broadcast get it
+        // replayed on subscribe, exactly like completed proofs.
+        self.failure_cache
+            .write()
+            .await
+            .put((new_payload_request_root, proof_type), failure.clone());
+        let _ = self.proof_event_tx.send(failure.into());
         record_prove(
             proof_type,
             match reason {
@@ -429,6 +455,144 @@ impl ProofService {
             },
             duration,
             0,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+
+    use super::*;
+
+    /// Channels whose receivers must outlive the service under test.
+    struct TestChannels {
+        proof_event_rx: broadcast::Receiver<ProofEvent>,
+        _witness_service_rx: mpsc::Receiver<WitnessServiceMessage>,
+        _dashboard_service_rx: mpsc::Receiver<DashboardMessage>,
+    }
+
+    fn test_service(failure_capacity: usize) -> (ProofService, TestChannels) {
+        let proof_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(8).unwrap())));
+        let failure_cache = Arc::new(RwLock::new(LruCache::new(
+            NonZeroUsize::new(failure_capacity).unwrap(),
+        )));
+        let (proof_event_tx, proof_event_rx) = broadcast::channel(16);
+        let (witness_service_tx, _witness_service_rx) = mpsc::channel(4);
+        let (dashboard_service_tx, _dashboard_service_rx) = mpsc::channel(4);
+        let service = ProofService::new(
+            proof_cache,
+            failure_cache,
+            proof_event_tx,
+            witness_service_tx,
+            dashboard_service_tx,
+        );
+        (
+            service,
+            TestChannels {
+                proof_event_rx,
+                _witness_service_rx,
+                _dashboard_service_rx,
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn test_failure_cache_respects_lru_bound() {
+        // Arrange
+        let (mut service, _channels) = test_service(2);
+
+        // Act
+        for byte in [1u8, 2, 3] {
+            service
+                .fail_request(
+                    Hash256::repeat_byte(byte),
+                    ProofType::RethZisk,
+                    FailureReason::ProvingError,
+                    "boom".to_owned(),
+                    Duration::ZERO,
+                )
+                .await;
+        }
+
+        // Assert: capacity is 2, so the oldest failure was evicted.
+        let cache = service.failure_cache.read().await;
+        assert_eq!(cache.len(), 2);
+        assert!(!cache.contains(&(Hash256::repeat_byte(1), ProofType::RethZisk)));
+        assert!(cache.contains(&(Hash256::repeat_byte(2), ProofType::RethZisk)));
+        assert!(cache.contains(&(Hash256::repeat_byte(3), ProofType::RethZisk)));
+    }
+
+    #[tokio::test]
+    async fn test_fail_request_caches_and_broadcasts_same_failure() {
+        // Arrange
+        let (mut service, mut channels) = test_service(4);
+        let root = Hash256::repeat_byte(7);
+
+        // Act
+        service
+            .fail_request(
+                root,
+                ProofType::RethZisk,
+                FailureReason::WitnessTimeout,
+                "witness timeout".to_owned(),
+                Duration::ZERO,
+            )
+            .await;
+
+        // Assert: the broadcast event and the cached failure are identical.
+        let broadcast_event = channels.proof_event_rx.try_recv().unwrap();
+        let cached = service
+            .failure_cache
+            .read()
+            .await
+            .peek(&(root, ProofType::RethZisk))
+            .cloned()
+            .expect("failure should be cached");
+        assert_eq!(broadcast_event, ProofEvent::ProofFailure(cached));
+    }
+
+    #[tokio::test]
+    async fn test_completed_proof_evicts_stale_cached_failure() {
+        // Arrange: a cached failure for a request that later succeeds on retry.
+        let (mut service, _channels) = test_service(4);
+        let root = Hash256::repeat_byte(9);
+        service
+            .fail_request(
+                root,
+                ProofType::RethZisk,
+                FailureReason::ProvingError,
+                "boom".to_owned(),
+                Duration::ZERO,
+            )
+            .await;
+
+        // Act
+        service
+            .handle_worker_output(WorkerOutput {
+                new_payload_request_root: root,
+                block_hash: Hash256::repeat_byte(1),
+                block_number: 1,
+                proof_type: ProofType::RethZisk,
+                proof_result: ProofResult::Ok(Bytes::from_static(b"proof bytes")),
+                duration: Duration::ZERO,
+            })
+            .await;
+
+        // Assert: only the completion remains; the stale failure is gone.
+        assert!(
+            !service
+                .failure_cache
+                .read()
+                .await
+                .contains(&(root, ProofType::RethZisk))
+        );
+        assert!(
+            service
+                .proof_cache
+                .read()
+                .await
+                .contains(&(root, ProofType::RethZisk))
         );
     }
 }

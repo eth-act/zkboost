@@ -111,6 +111,12 @@ impl zkBoostServer {
             NonZeroUsize::new(self.config.proof_cache_size * self.zkvms.len())
                 .expect("proof_cache_size must be non-zero"),
         )));
+        // Terminal failures are cached with the same bound as completed proofs, so late SSE
+        // subscribers can have missed failure events replayed.
+        let failure_cache = Arc::new(RwLock::new(LruCache::new(
+            NonZeroUsize::new(self.config.proof_cache_size * self.zkvms.len())
+                .expect("proof_cache_size must be non-zero"),
+        )));
 
         let (proof_service_tx, proof_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (witness_service_tx, witness_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
@@ -152,6 +158,7 @@ impl zkBoostServer {
 
         let proof_service = ProofService::new(
             proof_cache.clone(),
+            failure_cache.clone(),
             proof_event_tx,
             witness_service_tx,
             dashboard_service_tx.clone(),
@@ -189,6 +196,7 @@ impl zkBoostServer {
             self.blob_params,
             self.zkvms.clone(),
             proof_cache,
+            failure_cache,
             self.metrics,
             dashboard,
             proof_service_tx,
