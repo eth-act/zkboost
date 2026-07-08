@@ -184,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_unknown_proof_type_returns_bad_request() {
-        let body = proof_request_body(vec![ProofType::EthrexRisc0]);
+        let body = proof_request_body(vec![ProofType::EthrexOpenVM]);
         assert_eq!(send(mock_app_state().await, body).await, 400);
     }
 

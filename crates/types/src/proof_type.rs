@@ -27,16 +27,14 @@ use strum::IntoEnumIterator;
 )]
 #[serde(into = "String", try_from = "String")]
 pub enum ProofType {
-    /// Ethrex with RISC Zero backend.
-    EthrexRisc0,
+    /// Ethrex with OpenVM backend.
+    EthrexOpenVM,
     /// Ethrex with SP1 backend.
     EthrexSP1,
     /// Ethrex with Zisk backend.
     EthrexZisk,
     /// Reth with OpenVM backend.
     RethOpenVM,
-    /// Reth with RISC Zero backend.
-    RethRisc0,
     /// Reth with SP1 backend.
     RethSP1,
     /// Reth with Zisk backend.
@@ -56,17 +54,16 @@ impl ProofType {
     /// Returns the execution layer kind for this proof type.
     pub fn el_kind(&self) -> ElKind {
         match self {
-            Self::EthrexRisc0 | Self::EthrexSP1 | Self::EthrexZisk => ElKind::Ethrex,
-            Self::RethOpenVM | Self::RethRisc0 | Self::RethSP1 | Self::RethZisk => ElKind::Reth,
+            Self::EthrexOpenVM | Self::EthrexSP1 | Self::EthrexZisk => ElKind::Ethrex,
+            Self::RethOpenVM | Self::RethSP1 | Self::RethZisk => ElKind::Reth,
         }
     }
 
     /// Returns the zkVM kind for this proof type.
     pub fn zkvm_kind(&self) -> zkVMKind {
         match self {
-            Self::EthrexRisc0 | Self::RethRisc0 => zkVMKind::Risc0,
             Self::EthrexSP1 | Self::RethSP1 => zkVMKind::SP1,
-            Self::RethOpenVM => zkVMKind::OpenVM,
+            Self::EthrexOpenVM | Self::RethOpenVM => zkVMKind::OpenVM,
             Self::EthrexZisk | Self::RethZisk => zkVMKind::Zisk,
         }
     }
@@ -74,11 +71,10 @@ impl ProofType {
     /// Returns the string representation.
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::EthrexRisc0 => "ethrex-risc0",
+            Self::EthrexOpenVM => "ethrex-openvm",
             Self::EthrexSP1 => "ethrex-sp1",
             Self::EthrexZisk => "ethrex-zisk",
             Self::RethOpenVM => "reth-openvm",
-            Self::RethRisc0 => "reth-risc0",
             Self::RethSP1 => "reth-sp1",
             Self::RethZisk => "reth-zisk",
         }
@@ -120,13 +116,12 @@ impl SszDecode for ProofType {
             });
         }
         match bytes[0] {
-            0 => Ok(Self::EthrexRisc0),
+            0 => Ok(Self::EthrexOpenVM),
             1 => Ok(Self::EthrexSP1),
             2 => Ok(Self::EthrexZisk),
             3 => Ok(Self::RethOpenVM),
-            4 => Ok(Self::RethRisc0),
-            5 => Ok(Self::RethSP1),
-            6 => Ok(Self::RethZisk),
+            4 => Ok(Self::RethSP1),
+            5 => Ok(Self::RethZisk),
             other => Err(DecodeError::InvalidUnionSelector(other)),
         }
     }
@@ -143,11 +138,10 @@ impl FromStr for ProofType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
-            "ethrex-risc0" => Self::EthrexRisc0,
+            "ethrex-openvm" => Self::EthrexOpenVM,
             "ethrex-sp1" => Self::EthrexSP1,
             "ethrex-zisk" => Self::EthrexZisk,
             "reth-openvm" => Self::RethOpenVM,
-            "reth-risc0" => Self::RethRisc0,
             "reth-sp1" => Self::RethSP1,
             "reth-zisk" => Self::RethZisk,
             _ => return Err(ProofTypeParseError(s.to_string())),
@@ -206,8 +200,8 @@ mod tests {
     #[test]
     fn test_proof_type_ssz_rejects_unknown_discriminant() {
         assert_eq!(
-            ProofType::from_ssz_bytes(&[7]),
-            Err(DecodeError::InvalidUnionSelector(7))
+            ProofType::from_ssz_bytes(&[6]),
+            Err(DecodeError::InvalidUnionSelector(6))
         );
         assert!(matches!(
             ProofType::from_ssz_bytes(&[0, 0]),

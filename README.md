@@ -100,21 +100,20 @@ mock_proving_time = { kind = "linear", ms_per_mgas = 300 }
 # Simulated failure (always returns a proving error)
 [[zkvm]]
 kind = "mock"
-proof_type = "reth-risc0"
+proof_type = "reth-openvm"
 mock_failure = true
 ```
 
 Available proof types:
 
-| Index | Name           | EL       | zkVM      |
-| ----- | -------------- | -------- | --------- |
-| `0`   | `ethrex-risc0` | `ethrex` | RISC Zero |
-| `1`   | `ethrex-sp1`   | `ethrex` | SP1       |
-| `2`   | `ethrex-zisk`  | `ethrex` | ZisK      |
-| `3`   | `reth-openvm`  | `reth`   | OpenVM    |
-| `4`   | `reth-risc0`   | `reth`   | RISC Zero |
-| `5`   | `reth-sp1`     | `reth`   | SP1       |
-| `6`   | `reth-zisk`    | `reth`   | ZisK      |
+| Index | Name            | EL       | zkVM   |
+| ----- | --------------- | -------- | ------ |
+| `0`   | `ethrex-openvm` | `ethrex` | OpenVM |
+| `1`   | `ethrex-sp1`    | `ethrex` | SP1    |
+| `2`   | `ethrex-zisk`   | `ethrex` | ZisK   |
+| `3`   | `reth-openvm`   | `reth`   | OpenVM |
+| `4`   | `reth-sp1`      | `reth`   | SP1    |
+| `5`   | `reth-zisk`     | `reth`   | ZisK   |
 
 ## API
 

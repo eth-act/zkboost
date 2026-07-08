@@ -295,11 +295,10 @@
             "ProofType": {
                 "type": "string",
                 "enum": [
-                    "ethrex-risc0",
+                    "ethrex-openvm",
                     "ethrex-sp1",
                     "ethrex-zisk",
                     "reth-openvm",
-                    "reth-risc0",
                     "reth-sp1",
                     "reth-zisk"
                 ],

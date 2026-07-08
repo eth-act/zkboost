@@ -153,7 +153,7 @@ mod tests {
     #[tokio::test]
     async fn test_unknown_proof_type_returns_not_found() {
         let proof = mock_proof(&bpo2_config(None), Hash256::ZERO, 256);
-        let body = verification_body(ProofType::EthrexRisc0, Hash256::ZERO, proof);
+        let body = verification_body(ProofType::EthrexOpenVM, Hash256::ZERO, proof);
         let response = send(mock_app_state().await, body).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
