@@ -54,7 +54,7 @@ port = 3000
 # Ethereum execution layer JSON-RPC endpoint (required)
 el_endpoint = "http://localhost:8545"
 
-# Optional local chain config JSON file
+# Optional local EL chain config JSON file.
 # chain_config_path = "path/to/chain_config.json"
 
 # Timeout for witness fetching in seconds (default: 12)
@@ -100,35 +100,34 @@ mock_proving_time = { kind = "linear", ms_per_mgas = 300 }
 # Simulated failure (always returns a proving error)
 [[zkvm]]
 kind = "mock"
-proof_type = "reth-risc0"
+proof_type = "reth-openvm"
 mock_failure = true
 ```
 
 Available proof types:
 
-| Index | Name           | EL       | zkVM      |
-| ----- | -------------- | -------- | --------- |
-| `0`   | `ethrex-risc0` | `ethrex` | RISC Zero |
-| `1`   | `ethrex-sp1`   | `ethrex` | SP1       |
-| `2`   | `ethrex-zisk`  | `ethrex` | ZisK      |
-| `3`   | `reth-openvm`  | `reth`   | OpenVM    |
-| `4`   | `reth-risc0`   | `reth`   | RISC Zero |
-| `5`   | `reth-sp1`     | `reth`   | SP1       |
-| `6`   | `reth-zisk`    | `reth`   | ZisK      |
+| Index | Name            | EL       | zkVM   |
+| ----- | --------------- | -------- | ------ |
+| `0`   | `ethrex-openvm` | `ethrex` | OpenVM |
+| `1`   | `ethrex-sp1`    | `ethrex` | SP1    |
+| `2`   | `ethrex-zisk`   | `ethrex` | ZisK   |
+| `3`   | `reth-openvm`   | `reth`   | OpenVM |
+| `4`   | `reth-sp1`      | `reth`   | SP1    |
+| `5`   | `reth-zisk`     | `reth`   | ZisK   |
 
 ## API
 
 The following endpoints are available:
 
-| Method | Endpoint                                                       | Purpose                                                       |
-| ------ | -------------------------------------------------------------- | ------------------------------------------------------------- |
-| `POST` | `/v1/execution_proof_requests?proof_types=`                    | Submit SSZ-encoded `NewPayloadRequest` to request for a proof |
-| `GET`  | `/v1/execution_proof_requests?new_payload_request_root=`       | SSE stream of proof result                                    |
-| `GET`  | `/v1/execution_proofs/{new_payload_request_root}/{proof_type}` | Fetch a completed proof                                       |
-| `POST` | `/v1/execution_proof_verifications`                            | Verify a proof                                                |
-| `GET`  | `/v1/proof_types`                                              | List configured proof types and capabilities                  |
-| `GET`  | `/health`                                                      | Health check                                                  |
-| `GET`  | `/metrics`                                                     | Prometheus metrics                                            |
+| Method | Endpoint                                                       | Purpose                                                  |
+| ------ | -------------------------------------------------------------- | -------------------------------------------------------- |
+| `POST` | `/v1/execution_proof_requests`                                 | Submit SSZ-encoded `ProofRequestBody` to request a proof |
+| `GET`  | `/v1/execution_proof_requests?new_payload_request_root=`       | SSE stream of proof result                               |
+| `GET`  | `/v1/execution_proofs/{new_payload_request_root}/{proof_type}` | Fetch a completed proof                                  |
+| `POST` | `/v1/execution_proof_verifications`                            | Verify a proof via SSZ-encoded `ProofVerificationBody`   |
+| `GET`  | `/v1/proof_types`                                              | List configured proof types and capabilities             |
+| `GET`  | `/health`                                                      | Health check                                             |
+| `GET`  | `/metrics`                                                     | Prometheus metrics                                       |
 
 See [openapi.json](openapi.json) for the full API specification ([rendered](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/eth-act/zkboost/master/openapi.json)).
 

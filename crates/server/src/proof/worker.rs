@@ -14,12 +14,12 @@ use zkboost_types::{Hash256, ProofType};
 
 use crate::{
     dashboard::DashboardMessage,
-    proof::{input::NewPayloadRequestWithWitness, zkvm::zkVMInstance},
+    proof::{input::StatelessInput, zkvm::zkVMInstance},
 };
 
 /// Input sent to a per-zkVM worker for proof generation.
 pub(crate) struct WorkerInput {
-    pub(crate) payload: Arc<NewPayloadRequestWithWitness>,
+    pub(crate) stateless_input: Arc<StatelessInput>,
     pub(crate) span: Span,
 }
 
@@ -71,9 +71,9 @@ pub(crate) async fn run_worker(
             },
         };
 
-        let new_payload_request_root = input.payload.root();
-        let block_hash = input.payload.block_hash();
-        let block_number = input.payload.block_number();
+        let new_payload_request_root = input.stateless_input.root();
+        let block_hash = input.stateless_input.block_hash();
+        let block_number = input.stateless_input.block_number();
 
         info!(%block_hash, %proof_type, "proving");
 
@@ -89,7 +89,7 @@ pub(crate) async fn run_worker(
             dashboard_service_tx.try_send(DashboardMessage::prove_start(block_hash, proof_type));
 
         let start = Instant::now();
-        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.payload))
+        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.stateless_input))
             .instrument(span.clone())
             .await
         {

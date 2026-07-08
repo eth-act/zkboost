@@ -21,5 +21,5 @@ mock_failure = true
 
 [[zkvm]]
 kind = "mock"
-proof_type = "reth-risc0"
+proof_type = "reth-openvm"
 mock_proving_time = { kind = "random", min_ms = 8000, max_ms = 16000 }

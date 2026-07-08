@@ -16,30 +16,14 @@
             "post": {
                 "operationId": "postExecutionProofRequests",
                 "summary": "Submit an execution proof request",
-                "description": "Accepts an SSZ-encoded NewPayloadRequest and enqueues proof generation for the specified proof types. Returns the tree-hash root computed from the submitted payload.",
-                "parameters": [
-                    {
-                        "name": "proof_types",
-                        "in": "query",
-                        "required": true,
-                        "description": "Comma-separated list of proof types to generate. Must contain at least one valid value. Whitespace around commas is trimmed.",
-                        "schema": {
-                            "type": "string",
-                            "examples": [
-                                "reth-sp1",
-                                "reth-sp1,ethrex-risc0"
-                            ]
-                        }
-                    }
-                ],
+                "description": "Accepts an SSZ-encoded ProofRequestBody (payload, chain config, and proof types) and enqueues proof generation. Returns the tree-hash root computed from the submitted payload.",
                 "requestBody": {
                     "required": true,
-                    "description": "SSZ-encoded NewPayloadRequest (transparent union across fork variants). The Content-Type header SHOULD be set to application/octet-stream, but the server does not enforce it.",
+                    "description": "SSZ-encoded ProofRequestBody containing the NewPayloadRequest (transparent union across fork variants), the chain config, and the proof types to generate.",
                     "content": {
                         "application/octet-stream": {
                             "schema": {
-                                "type": "string",
-                                "format": "binary"
+                                "$ref": "#/components/schemas/ProofRequestBody"
                             }
                         }
                     }
@@ -192,35 +176,14 @@
             "post": {
                 "operationId": "postExecutionProofVerifications",
                 "summary": "Verify an execution proof",
-                "description": "Verifies proof bytes against the server's configured zkVM backend. A 200 response with `INVALID` status means verification ran successfully but the proof did not pass. HTTP error codes (4xx, 5xx) mean the request itself was malformed or the server could not process it.",
-                "parameters": [
-                    {
-                        "name": "new_payload_request_root",
-                        "in": "query",
-                        "required": true,
-                        "description": "The tree hash root of the NewPayloadRequest the proof was generated for. The server passes this value to the zkVM verifier to check that the proof's public values match the expected payload root.",
-                        "schema": {
-                            "$ref": "#/components/schemas/Hash256"
-                        }
-                    },
-                    {
-                        "name": "proof_type",
-                        "in": "query",
-                        "required": true,
-                        "description": "The proof type to verify.",
-                        "schema": {
-                            "$ref": "#/components/schemas/ProofType"
-                        }
-                    }
-                ],
+                "description": "Verifies an SSZ-encoded ProofVerificationBody against the server's configured zkVM backend. A 200 response with `INVALID` status means verification ran successfully but the proof did not pass. HTTP error codes (4xx, 5xx) mean the request itself was malformed or the server could not process it.",
                 "requestBody": {
                     "required": true,
-                    "description": "Raw proof bytes. The Content-Type header SHOULD be set to application/octet-stream, but the server does not enforce it.",
+                    "description": "SSZ-encoded ProofVerificationBody containing the payload root, the chain config, the proof type, and the proof bytes.",
                     "content": {
                         "application/octet-stream": {
                             "schema": {
-                                "type": "string",
-                                "format": "binary"
+                                "$ref": "#/components/schemas/ProofVerificationBody"
                             }
                         }
                     }
@@ -246,6 +209,20 @@
                                             "status": "INVALID"
                                         }
                                     }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid SSZ body.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "code": 400,
+                                    "message": "invalid SSZ body: OffsetOutOfBounds(0)"
                                 }
                             }
                         }
@@ -305,36 +282,149 @@
     },
     "components": {
         "schemas": {
-            "Hash256": {
-                "type": "string",
-                "pattern": "^0x[0-9a-f]{64}$",
-                "minLength": 66,
-                "maxLength": 66,
-                "description": "A 32-byte hash represented as a 0x-prefixed lowercase hex string (66 characters total). The 0x prefix is required in both requests and responses.",
-                "examples": [
-                    "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-                ]
+            "ProofRequestBody": {
+                "type": "object",
+                "required": [
+                    "new_payload_request",
+                    "chain_config",
+                    "proof_types"
+                ],
+                "properties": {
+                    "new_payload_request": {
+                        "$ref": "#/components/schemas/NewPayloadRequest"
+                    },
+                    "chain_config": {
+                        "$ref": "#/components/schemas/ChainConfig"
+                    },
+                    "proof_types": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProofType"
+                        },
+                        "description": "Proof types to generate for this payload. Must be non-empty with no duplicates."
+                    }
+                },
+                "description": "Logical field layout of the body for POST /v1/execution_proof_requests. The wire format is SSZ (application/octet-stream), not JSON."
+            },
+            "NewPayloadRequest": {
+                "type": "object",
+                "description": "Consensus-layer new-payload request, an SSZ transparent union across fork variants (Bellatrix, Capella, Deneb, Electra/Fulu, Gloas). See the consensus-specs NewPayloadRequest for the per-variant field layout.",
+                "properties": {
+                    "execution_payload": {
+                        "type": "object",
+                        "description": "The fork-dependent ExecutionPayload."
+                    }
+                }
+            },
+            "ChainConfig": {
+                "type": "object",
+                "required": [
+                    "chain_id",
+                    "active_fork"
+                ],
+                "properties": {
+                    "chain_id": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "description": "EIP-155 chain id."
+                    },
+                    "active_fork": {
+                        "$ref": "#/components/schemas/ForkConfig"
+                    }
+                },
+                "description": "The chain configuration the proof is verified against. It carries chain_id and the resolved active fork."
+            },
+            "ForkConfig": {
+                "type": "object",
+                "required": [
+                    "fork",
+                    "activation",
+                    "blob_schedule"
+                ],
+                "properties": {
+                    "fork": {
+                        "$ref": "#/components/schemas/ProtocolFork"
+                    },
+                    "activation": {
+                        "$ref": "#/components/schemas/ForkActivation"
+                    },
+                    "blob_schedule": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "$ref": "#/components/schemas/BlobSchedule"
+                        },
+                        "description": "Zero or one blob schedule. Present for blob-bearing forks (Cancun onward), empty otherwise."
+                    }
+                },
+                "description": "The protocol fork active for the block, with its activation point and blob schedule."
+            },
+            "ProtocolFork": {
+                "type": "integer",
+                "format": "uint64",
+                "description": "SSZ enum discriminant selecting the active execution-layer fork, in fork order"
+            },
+            "ForkActivation": {
+                "type": "object",
+                "description": "Activation point of the fork. At least one of block_number or timestamp is set, each SSZ-encoded as a list of zero or one element.",
+                "properties": {
+                    "block_number": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64"
+                        },
+                        "description": "Activation block number, for pre-merge forks."
+                    },
+                    "timestamp": {
+                        "type": "array",
+                        "maxItems": 1,
+                        "items": {
+                            "type": "integer",
+                            "format": "uint64"
+                        },
+                        "description": "Activation timestamp, for post-merge forks."
+                    }
+                }
+            },
+            "BlobSchedule": {
+                "type": "object",
+                "required": [
+                    "target",
+                    "max",
+                    "base_fee_update_fraction"
+                ],
+                "properties": {
+                    "target": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "description": "Target blobs per block."
+                    },
+                    "max": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "description": "Maximum blobs per block."
+                    },
+                    "base_fee_update_fraction": {
+                        "type": "integer",
+                        "format": "uint64",
+                        "description": "Blob base fee update fraction."
+                    }
+                },
+                "description": "EIP-7840 blob parameters for the active fork. The consensus layer provides max, which the server validates against its execution-layer genesis. target and base_fee_update_fraction may be 0 while the consensus config does not expose them, in which case the server fills them from the execution-layer genesis."
             },
             "ProofType": {
                 "type": "string",
                 "enum": [
-                    "ethrex-risc0",
+                    "ethrex-openvm",
                     "ethrex-sp1",
                     "ethrex-zisk",
                     "reth-openvm",
-                    "reth-risc0",
                     "reth-sp1",
                     "reth-zisk"
                 ],
                 "description": "Case-sensitive identifier for an EL/zkVM combination."
-            },
-            "ProofStatus": {
-                "type": "string",
-                "enum": [
-                    "VALID",
-                    "INVALID"
-                ],
-                "description": "Verification result. VALID means the proof passed verification. INVALID means verification ran but the proof did not pass."
             },
             "ProofRequestResponse": {
                 "type": "object",
@@ -348,17 +438,15 @@
                 },
                 "description": "Response for a successful proof request submission."
             },
-            "ProofVerificationResponse": {
-                "type": "object",
-                "required": [
-                    "status"
-                ],
-                "properties": {
-                    "status": {
-                        "$ref": "#/components/schemas/ProofStatus"
-                    }
-                },
-                "description": "Response for a proof verification request."
+            "Hash256": {
+                "type": "string",
+                "pattern": "^0x[0-9a-f]{64}$",
+                "minLength": 66,
+                "maxLength": 66,
+                "description": "A 32-byte hash represented as a 0x-prefixed lowercase hex string (66 characters total). The 0x prefix is required in both requests and responses.",
+                "examples": [
+                    "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+                ]
             },
             "ErrorResponse": {
                 "type": "object",
@@ -394,16 +482,6 @@
                 },
                 "description": "SSE event payload for `proof_complete`. The proof can be downloaded at `/v1/execution_proofs/{new_payload_request_root}/{proof_type}`."
             },
-            "FailureReason": {
-                "type": "string",
-                "enum": [
-                    "witness_timeout",
-                    "proving_timeout",
-                    "proving_error",
-                    "internal_error"
-                ],
-                "description": "Reason a proof request failed. witness_timeout: witness fetch timed out. proving_timeout: proof generation timed out. proving_error: a general error occurred during proving. internal_error: an internal error occurred."
-            },
             "ProofFailureEvent": {
                 "type": "object",
                 "required": [
@@ -429,14 +507,77 @@
                 },
                 "description": "SSE event payload for `proof_failure`."
             },
-            "BackendKind": {
+            "FailureReason": {
                 "type": "string",
                 "enum": [
-                    "ere",
-                    "mock",
-                    "verifier"
+                    "witness_timeout",
+                    "proving_timeout",
+                    "proving_error",
+                    "internal_error"
                 ],
-                "description": "Backend kind for a zkVM instance. ere: remote ere-server backend. mock: in-process mock backend for testing. verifier: in-process verifier-only backend (cannot prove)."
+                "description": "Reason a proof request failed. witness_timeout: witness fetch timed out. proving_timeout: proof generation timed out. proving_error: a general error occurred during proving. internal_error: an internal error occurred."
+            },
+            "ProofVerificationBody": {
+                "type": "object",
+                "required": [
+                    "new_payload_request_root",
+                    "chain_config",
+                    "proof_type",
+                    "proof"
+                ],
+                "properties": {
+                    "new_payload_request_root": {
+                        "$ref": "#/components/schemas/Hash256"
+                    },
+                    "chain_config": {
+                        "$ref": "#/components/schemas/ChainConfig"
+                    },
+                    "proof_type": {
+                        "$ref": "#/components/schemas/ProofType"
+                    },
+                    "proof": {
+                        "type": "string",
+                        "format": "binary",
+                        "description": "The proof bytes to verify."
+                    }
+                },
+                "description": "Logical field layout of the body for POST /v1/execution_proof_verifications. The wire format is SSZ (application/octet-stream), not JSON."
+            },
+            "ProofVerificationResponse": {
+                "type": "object",
+                "required": [
+                    "status"
+                ],
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/ProofStatus"
+                    }
+                },
+                "description": "Response for a proof verification request."
+            },
+            "ProofStatus": {
+                "type": "string",
+                "enum": [
+                    "VALID",
+                    "INVALID"
+                ],
+                "description": "Verification result. VALID means the proof passed verification. INVALID means verification ran but the proof did not pass."
+            },
+            "ProofTypesResponse": {
+                "type": "object",
+                "required": [
+                    "proof_types"
+                ],
+                "properties": {
+                    "proof_types": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ProofTypeInfo"
+                        },
+                        "description": "List of initialized proof types, sorted by proof_type."
+                    }
+                },
+                "description": "Response for GET /v1/proof_types."
             },
             "ProofTypeInfo": {
                 "type": "object",
@@ -464,21 +605,14 @@
                 },
                 "description": "Information about a single initialized proof type."
             },
-            "ProofTypesResponse": {
-                "type": "object",
-                "required": [
-                    "proof_types"
+            "BackendKind": {
+                "type": "string",
+                "enum": [
+                    "ere",
+                    "mock",
+                    "verifier"
                 ],
-                "properties": {
-                    "proof_types": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/ProofTypeInfo"
-                        },
-                        "description": "List of initialized proof types, sorted by proof_type."
-                    }
-                },
-                "description": "Response for GET /v1/proof_types."
+                "description": "Backend kind for a zkVM instance. ere: remote ere-server backend. mock: in-process mock backend for testing. verifier: in-process verifier-only backend (cannot prove)."
             }
         }
     }

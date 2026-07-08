@@ -65,35 +65,31 @@ url = { version = "2.5.7", features = ["serde"] }
 # lighthouse
 ethereum_serde_utils = "0.8.0"
 lighthouse_types = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "types" }
-ssz = { package = "ethereum_ssz", version = "0.10" }
-ssz_derive = { package = "ethereum_ssz_derive", version = "0.10" }
-ssz_types = "0.14"
-superstruct = "0.10"
-tree_hash = "0.12"
-tree_hash_derive = "0.12"
+
+# libssz
+libssz = "0.2.2"
+libssz-derive = "0.2.2"
 
 # alloy
+alloy-consensus = "2"
 alloy-eips = "2"
 alloy-genesis = "2"
-alloy-primitives = "1.5"
+alloy-primitives = { version = "1.6", features = ["k256", "serde"] }
+alloy-rpc-types-debug = "2"
 alloy-rpc-types-engine = "2"
 alloy-rpc-types-eth = "2"
 
-# reth
-reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v2.1.0", default-features = false }
-stateless = { git = "https://github.com/paradigmxyz/stateless", rev = "e5480e71a8031641ff471cad9dc482a7a14b32d5", default-features = false }
-
 # ere
-ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
-ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
-ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
-ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
-ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.12.1" }
+ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.13.0" }
+ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.13.0" }
+ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.13.0" }
+ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.13.0" }
+ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.13.0" }
 
 # ere-guests
-ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.12.1", package = "stateless-validator-common" }
-ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.12.1", features = ["host"], package = "stateless-validator-ethrex" }
-ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.12.1", features = ["host"], package = "stateless-validator-reth" }
+ere-guests-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.13.0", features = ["host"], package = "stateless-validator-common" }
+ere-guests-stateless-validator-ethrex = { git = "https://github.com/eth-act/ere-guests", tag = "v0.13.0", features = ["host"], package = "stateless-validator-ethrex" }
+ere-guests-stateless-validator-reth = { git = "https://github.com/eth-act/ere-guests", tag = "v0.13.0", features = ["host"], package = "stateless-validator-reth" }
 
 # local
 zkboost-client = { path = "crates/client" }

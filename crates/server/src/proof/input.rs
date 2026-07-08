@@ -1,68 +1,60 @@
-//! Converts a `NewPayloadRequest` and its `ExecutionWitness` into zkVM `Input` for Reth or Ethrex
-//! guest programs.
+//! Assembles the `StatelessInput` from a `NewPayloadRequest`, its execution witness, and
+//! chain config, then encodes it once to schema-id-prefixed SSZ bytes consumed by every
+//! zkVM backend.
 
-use std::sync::Arc;
+use alloy_consensus::{EthereumTxEnvelope, TxEip4844};
+use alloy_eips::Decodable2718;
+use anyhow::Context;
+use ere_guests_stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
+use zkboost_types::{ChainConfig, ExecutionWitness, Hash256, NewPayloadRequest};
 
-use alloy_eips::{eip4895::Withdrawal as AlloyWithdrawal, eip7685::RequestsOrHash};
-use alloy_genesis::ChainConfig;
-use alloy_primitives::{B256, Bloom, Bytes};
-use alloy_rpc_types_engine::{
-    CancunPayloadFields, ExecutionData, ExecutionPayload as AlloyExecutionPayload,
-    ExecutionPayloadSidecar, ExecutionPayloadV1 as AlloyExecutionPayloadV1,
-    ExecutionPayloadV2 as AlloyExecutionPayloadV2, ExecutionPayloadV3 as AlloyExecutionPayloadV3,
-    PraguePayloadFields,
-};
-use ere_guests_stateless_validator_ethrex::host::{Eip8025InputSource, build_eip8025_input};
-use ere_guests_stateless_validator_reth::{
-    guest::{StatelessValidatorRethInput, codec::Encode},
-    host::StatelessInput,
-};
-use ere_server_client::Input;
-use stateless::ExecutionWitness;
-use zkboost_types::{ElKind, Hash256, MainnetEthSpec, NewPayloadRequest};
-
-/// Combines a `NewPayloadRequest` with its execution witness and chain config, eagerly computing
-/// the `StatelessInput`.
+/// A wrapper for `stateless_input_bytes` with payload metadata.
 #[derive(Debug)]
-pub(crate) struct NewPayloadRequestWithWitness {
+pub(crate) struct StatelessInput {
+    stateless_input_bytes: Vec<u8>,
     new_payload_request_root: Hash256,
-    stateless_input: StatelessInput,
     block_hash: Hash256,
+    block_number: u64,
+    gas_used: u64,
 }
 
-impl NewPayloadRequestWithWitness {
-    /// Constructs a new instance by eagerly computing the `StatelessInput`.
+impl StatelessInput {
+    /// Builds the `StatelessInput`.
     pub(crate) fn new(
-        new_payload_request: &NewPayloadRequest<MainnetEthSpec>,
+        new_payload_request: &NewPayloadRequest,
         new_payload_request_root: Hash256,
-        witness: Arc<ExecutionWitness>,
-        chain_config: Arc<ChainConfig>,
+        witness: &ExecutionWitness,
+        chain_config: &ChainConfig,
     ) -> anyhow::Result<Self> {
-        let block_hash = new_payload_request.block_hash();
-        let execution_data = new_payload_request_to_execution_data(new_payload_request)?;
-        let block = execution_data
-            .payload
-            .try_into_block_with_sidecar(&execution_data.sidecar)?;
-        let stateless_input = StatelessInput {
-            block,
-            witness: Arc::unwrap_or_clone(witness),
-            chain_config: Arc::unwrap_or_clone(chain_config),
-        };
+        let block_hash = Hash256::from(new_payload_request.block_hash());
+        let block_number = new_payload_request.block_number();
+        let gas_used = new_payload_request.gas_used();
+
+        let stateless_input_bytes = ere_guests_stateless_validator_common::guest::StatelessInput {
+            new_payload_request: new_payload_request.clone(),
+            witness: witness.clone(),
+            chain_config: chain_config.clone(),
+            public_keys: recover_public_keys(new_payload_request)?.try_into()?,
+        }
+        .to_schema_prefixed_ssz();
+
         Ok(Self {
             new_payload_request_root,
-            stateless_input,
+            stateless_input_bytes,
             block_hash,
+            block_number,
+            gas_used,
         })
     }
 
-    /// Returns tree hash root of `NewPayloadRequest`.
+    /// Returns the hash-tree-root of the `NewPayloadRequest`.
     pub(crate) fn root(&self) -> Hash256 {
         self.new_payload_request_root
     }
 
-    /// Returns stateless input.
-    pub(crate) fn stateless_input(&self) -> &StatelessInput {
-        &self.stateless_input
+    /// Returns the schema-id-prefixed SSZ bytes used as zkVM stdin.
+    pub(crate) fn stateless_input_bytes(&self) -> &[u8] {
+        &self.stateless_input_bytes
     }
 
     /// Returns the block hash.
@@ -72,190 +64,30 @@ impl NewPayloadRequestWithWitness {
 
     /// Returns the block number.
     pub(crate) fn block_number(&self) -> u64 {
-        self.stateless_input.block.number
+        self.block_number
     }
 
-    /// Generates zkVM input for the given EL kind.
-    pub(crate) fn to_zkvm_input(&self, el_kind: ElKind) -> anyhow::Result<Input> {
-        let stdin = match el_kind {
-            ElKind::Ethrex => build_eip8025_input(Eip8025InputSource::Legacy {
-                stateless_input: &self.stateless_input,
-                valid_block: true,
-            })?
-            .encode_to_vec()?,
-            ElKind::Reth => {
-                StatelessValidatorRethInput::new(&self.stateless_input, true)?.encode_to_vec()?
-            }
-        };
-        Ok(Input::new().with_stdin(stdin))
+    /// Returns the gas used by the block, for mock proving-time simulation.
+    pub(crate) fn gas_used(&self) -> u64 {
+        self.gas_used
     }
 }
 
-macro_rules! convert_payload_to_v1 {
-    ($payload:expr) => {{
-        let payload = $payload;
-        AlloyExecutionPayloadV1 {
-            parent_hash: payload.parent_hash.0,
-            fee_recipient: payload.fee_recipient,
-            state_root: payload.state_root,
-            receipts_root: payload.receipts_root,
-            logs_bloom: Bloom::from_slice(&payload.logs_bloom),
-            prev_randao: payload.prev_randao,
-            block_number: payload.block_number,
-            gas_limit: payload.gas_limit,
-            gas_used: payload.gas_used,
-            timestamp: payload.timestamp,
-            extra_data: Bytes::copy_from_slice(payload.extra_data.as_ref()),
-            base_fee_per_gas: payload.base_fee_per_gas,
-            block_hash: payload.block_hash.0,
-            transactions: payload
-                .transactions
-                .iter()
-                .map(|tx| Bytes::copy_from_slice(tx.as_ref()))
-                .collect(),
-        }
-    }};
-}
-
-macro_rules! convert_payload_to_v1_with_withdrawals {
-    ($payload:expr) => {{
-        let payload = $payload;
-        let v1 = convert_payload_to_v1!(payload);
-        let withdrawals: Vec<AlloyWithdrawal> =
-            payload.withdrawals.iter().map(convert_withdrawal).collect();
-        (v1, withdrawals)
-    }};
-}
-
-fn new_payload_request_to_execution_data(
-    request: &NewPayloadRequest<MainnetEthSpec>,
-) -> anyhow::Result<ExecutionData> {
-    match request {
-        NewPayloadRequest::Bellatrix(inner) => {
-            let v1 = convert_payload_to_v1!(&inner.execution_payload);
-            Ok(ExecutionData::new(
-                AlloyExecutionPayload::V1(v1),
-                ExecutionPayloadSidecar::none(),
-            ))
-        }
-        NewPayloadRequest::Capella(inner) => {
-            let (v1, withdrawals) =
-                convert_payload_to_v1_with_withdrawals!(&inner.execution_payload);
-            let v2 = AlloyExecutionPayloadV2 {
-                payload_inner: v1,
-                withdrawals,
-            };
-            Ok(ExecutionData::new(
-                AlloyExecutionPayload::V2(v2),
-                ExecutionPayloadSidecar::none(),
-            ))
-        }
-        NewPayloadRequest::Deneb(inner) => {
-            let (v1, withdrawals) =
-                convert_payload_to_v1_with_withdrawals!(&inner.execution_payload);
-            let v3 = AlloyExecutionPayloadV3 {
-                payload_inner: AlloyExecutionPayloadV2 {
-                    payload_inner: v1,
-                    withdrawals,
-                },
-                blob_gas_used: inner.execution_payload.blob_gas_used,
-                excess_blob_gas: inner.execution_payload.excess_blob_gas,
-            };
-            let versioned_hashes = inner
-                .versioned_hashes
-                .iter()
-                .map(|versioned_hash| B256::from(versioned_hash.0))
-                .collect();
-            let cancun_fields =
-                CancunPayloadFields::new(inner.parent_beacon_block_root, versioned_hashes);
-            Ok(ExecutionData::new(
-                AlloyExecutionPayload::V3(v3),
-                ExecutionPayloadSidecar::v3(cancun_fields),
-            ))
-        }
-        NewPayloadRequest::Electra(inner) => {
-            let (v1, withdrawals) =
-                convert_payload_to_v1_with_withdrawals!(&inner.execution_payload);
-            let v3 = AlloyExecutionPayloadV3 {
-                payload_inner: AlloyExecutionPayloadV2 {
-                    payload_inner: v1,
-                    withdrawals,
-                },
-                blob_gas_used: inner.execution_payload.blob_gas_used,
-                excess_blob_gas: inner.execution_payload.excess_blob_gas,
-            };
-            let versioned_hashes = inner
-                .versioned_hashes
-                .iter()
-                .map(|versioned_hash| B256::from(versioned_hash.0))
-                .collect();
-            let cancun_fields =
-                CancunPayloadFields::new(inner.parent_beacon_block_root, versioned_hashes);
-            let requests_hash = inner.execution_requests.requests_hash();
-            let prague_fields = PraguePayloadFields::new(RequestsOrHash::Hash(requests_hash));
-            Ok(ExecutionData::new(
-                AlloyExecutionPayload::V3(v3),
-                ExecutionPayloadSidecar::v4(cancun_fields, prague_fields),
-            ))
-        }
-        NewPayloadRequest::Fulu(inner) => {
-            let (v1, withdrawals) =
-                convert_payload_to_v1_with_withdrawals!(&inner.execution_payload);
-            let v3 = AlloyExecutionPayloadV3 {
-                payload_inner: AlloyExecutionPayloadV2 {
-                    payload_inner: v1,
-                    withdrawals,
-                },
-                blob_gas_used: inner.execution_payload.blob_gas_used,
-                excess_blob_gas: inner.execution_payload.excess_blob_gas,
-            };
-            let versioned_hashes = inner
-                .versioned_hashes
-                .iter()
-                .map(|versioned_hash| B256::from(versioned_hash.0))
-                .collect();
-            let cancun_fields =
-                CancunPayloadFields::new(inner.parent_beacon_block_root, versioned_hashes);
-            let requests_hash = inner.execution_requests.requests_hash();
-            let prague_fields = PraguePayloadFields::new(RequestsOrHash::Hash(requests_hash));
-            Ok(ExecutionData::new(
-                AlloyExecutionPayload::V3(v3),
-                ExecutionPayloadSidecar::v4(cancun_fields, prague_fields),
-            ))
-        }
-        NewPayloadRequest::Gloas(inner) => {
-            let (v1, withdrawals) =
-                convert_payload_to_v1_with_withdrawals!(&inner.execution_payload);
-            let v3 = AlloyExecutionPayloadV3 {
-                payload_inner: AlloyExecutionPayloadV2 {
-                    payload_inner: v1,
-                    withdrawals,
-                },
-                blob_gas_used: inner.execution_payload.blob_gas_used,
-                excess_blob_gas: inner.execution_payload.excess_blob_gas,
-            };
-            let versioned_hashes = inner
-                .versioned_hashes
-                .iter()
-                .map(|versioned_hash| B256::from(versioned_hash.0))
-                .collect();
-            let cancun_fields =
-                CancunPayloadFields::new(inner.parent_beacon_block_root, versioned_hashes);
-            let requests_hash = inner.execution_requests.requests_hash();
-            let prague_fields = PraguePayloadFields::new(RequestsOrHash::Hash(requests_hash));
-            Ok(ExecutionData::new(
-                AlloyExecutionPayload::V3(v3),
-                ExecutionPayloadSidecar::v4(cancun_fields, prague_fields),
-            ))
-        }
-    }
-}
-
-fn convert_withdrawal(withdrawal: &zkboost_types::Withdrawal) -> AlloyWithdrawal {
-    AlloyWithdrawal {
-        index: withdrawal.index,
-        validator_index: withdrawal.validator_index,
-        address: withdrawal.address,
-        amount: withdrawal.amount,
-    }
+/// Recovers public keys from transaction signatures in the payload.
+fn recover_public_keys(
+    new_payload_request: &NewPayloadRequest,
+) -> anyhow::Result<Vec<[u8; PUBLIC_KEY_BYTES]>> {
+    new_payload_request
+        .transactions()
+        .into_iter()
+        .enumerate()
+        .map(|(i, tx)| {
+            let tx = EthereumTxEnvelope::<TxEip4844>::decode_2718(&mut tx.as_ref())
+                .with_context(|| format!("failed to decode tx #{i}"))?;
+            tx.signature()
+                .recover_from_prehash(&tx.signature_hash())
+                .map(|key| key.to_encoded_point(false).as_bytes().try_into().unwrap())
+                .with_context(|| format!("failed to recover signature for tx #{i}"))
+        })
+        .collect()
 }

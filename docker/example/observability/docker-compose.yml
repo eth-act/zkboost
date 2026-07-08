@@ -32,7 +32,7 @@ services:
       - "--zkboost-endpoint"
       - "http://zkboost:3000"
       - "--proof-types"
-      - "ethrex-zisk,reth-zisk,reth-sp1,reth-risc0"
+      - "ethrex-zisk,reth-zisk,reth-sp1,reth-openvm"
     networks:
       - zkboost
     extra_hosts:

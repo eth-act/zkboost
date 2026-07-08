@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use zkboost_types::{Hash256, MainnetEthSpec, NewPayloadRequest, ProofType};
+use zkboost_types::{Hash256, NewPayloadRequest, ProofType};
 
 use crate::proof::worker::ProofResult as WorkerProofResult;
 
@@ -177,14 +177,14 @@ pub(crate) enum DashboardMessage {
 
 impl DashboardMessage {
     pub(crate) fn request_proof(
-        request: &NewPayloadRequest<MainnetEthSpec>,
+        request: &NewPayloadRequest,
         proof_types: &HashSet<ProofType>,
     ) -> Self {
         let mut proof_types: Vec<_> = proof_types.iter().copied().collect();
         proof_types.sort();
         Self::RequestProof {
             block_number: request.block_number(),
-            block_hash: request.block_hash(),
+            block_hash: Hash256::from(request.block_hash()),
             block_timestamp: request.timestamp(),
             gas_used: request.gas_used(),
             proof_types,

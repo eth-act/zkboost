@@ -25,6 +25,7 @@ otel = [
 [dependencies]
 anyhow.workspace = true
 axum = { workspace = true, features = ["macros"] }
+bincode.workspace = true
 bytes.workspace = true
 clap = { workspace = true, features = ["derive"] }
 futures.workspace = true
@@ -35,7 +36,6 @@ rand.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sha2.workspace = true
 strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
@@ -53,15 +53,13 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "registry"] }
 url.workspace = true
 
 # alloy
+alloy-consensus.workspace = true
 alloy-eips.workspace = true
 alloy-genesis.workspace = true
 alloy-primitives.workspace = true
+alloy-rpc-types-debug.workspace = true
 alloy-rpc-types-engine.workspace = true
 alloy-rpc-types-eth.workspace = true
-
-# reth
-reth-ethereum-primitives.workspace = true
-stateless.workspace = true
 
 # ere
 ere-server-client.workspace = true

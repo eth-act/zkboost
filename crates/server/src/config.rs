@@ -66,7 +66,7 @@ pub struct Config {
     pub port: u16,
     /// EL endpoint for witness fetching.
     pub el_endpoint: Url,
-    /// Optional path to a local chain config JSON file.
+    /// Optional path to a local execution-layer chain config JSON file.
     #[serde(default)]
     pub chain_config_path: Option<PathBuf>,
     /// Timeout in seconds for witness data (both pending-proof and fetch staleness).
@@ -151,7 +151,7 @@ impl Config {
                 ..
             } = zkvm
             {
-                ensure!(*mock_proof_size >= 32, "mock_proof_size must be >= 32");
+                ensure!(*mock_proof_size >= 256, "mock_proof_size must be >= 256");
                 if let MockProvingTime::Random { min_ms, max_ms, .. } = mock_proving_time {
                     ensure!(
                         min_ms <= max_ms,
@@ -370,6 +370,22 @@ mod tests {
 
         assert!(matches!(&config.zkvm[0], zkVMConfig::Ere { .. }));
         assert!(matches!(&config.zkvm[1], zkVMConfig::Mock { .. }));
+    }
+
+    #[test]
+    fn test_chain_config_path_parsed() {
+        let toml = r#"
+            el_endpoint = "http://localhost:8545"
+            chain_config_path = "/tmp/chain_config.json"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+        "#;
+        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        assert_eq!(
+            config.chain_config_path.as_deref(),
+            Some(std::path::Path::new("/tmp/chain_config.json"))
+        );
     }
 
     #[test]

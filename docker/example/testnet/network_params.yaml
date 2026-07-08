@@ -7,10 +7,10 @@ participants:
     cl_extra_params:
       - --target-peers=3
       - --proof-engine-endpoint=http://zkboost:3000
-      - --proof-types=2,6
+      - --proof-types=2,5
     vc_extra_params:
       - --proof-engine-endpoint=http://zkboost:3000
-      - --proof-types=2,6
+      - --proof-types=2,5
     count: 2
   - cl_type: lighthouse
     cl_image: ethpandaops/lighthouse:eth-act-optional-proofs
@@ -19,7 +19,7 @@ participants:
     cl_extra_params:
       - --target-peers=3
       - --proof-engine-endpoint=http://zkboost:3000
-      - --proof-types=2,6
+      - --proof-types=2,5
     count: 1
 
 network_params:
@@ -34,3 +34,10 @@ spamoor_params:
       config:
         throughput: 1
 
+port_publisher:
+  el:
+    enabled: true
+    public_port_start: 32000
+  cl:
+    enabled: true
+    public_port_start: 33000
