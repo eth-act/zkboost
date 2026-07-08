@@ -81,3 +81,7 @@ opentelemetry_sdk = { workspace = true, features = ["testing"] }
 
 # local
 zkboost-client.workspace = true
+
+[[test]]
+name = "otel_request_span"
+required-features = ["otel"]

@@ -78,6 +78,9 @@ fn make_request_span(request: &axum::http::Request<axum::body::Body>) -> tracing
         method = %request.method(),
         uri = %request.uri(),
         version = ?request.version(),
+        // Recorded only with the `otel` feature enabled, so the log format of default-feature
+        // builds is unchanged.
+        otel.kind = tracing::field::Empty,
     );
     #[cfg(feature = "otel")]
     {
@@ -89,6 +92,14 @@ fn make_request_span(request: &axum::http::Request<axum::body::Body>) -> tracing
         // Fails only when the OpenTelemetry layer is not installed (no OTLP endpoint
         // configured), in which case there is no trace to join.
         let _ = span.set_parent(parent);
+        span.record("otel.kind", "server");
+        // OpenTelemetry HTTP semantic-convention attributes. Set as OTLP-only attributes
+        // (not tracing fields) so they are exported without duplicating the log fields above.
+        span.set_attribute("http.request.method", request.method().to_string());
+        span.set_attribute("url.path", request.uri().path().to_owned());
+        if let Some(query) = request.uri().query() {
+            span.set_attribute("url.query", query.to_owned());
+        }
     }
     span
 }
@@ -211,69 +222,10 @@ pub(crate) mod tests {
         assert_eq!(response.status(), 200);
     }
 
-    /// Sends a request carrying a W3C `traceparent` header and asserts the exported `request`
-    /// span joins the caller's trace: same trace id, parented under the caller's span id.
-    #[cfg(feature = "otel")]
-    #[tokio::test]
-    async fn test_request_span_joins_remote_trace_context() {
-        use opentelemetry::trace::TracerProvider;
-        use opentelemetry_sdk::{
-            propagation::TraceContextPropagator,
-            trace::{InMemorySpanExporter, SdkTracerProvider},
-        };
-        use tracing_subscriber::layer::SubscriberExt;
-
-        const TRACE_ID: &str = "0af7651916cd43dd8448eb211c80319c";
-        const PARENT_SPAN_ID: &str = "b7ad6b7169203331";
-
-        opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
-        let exporter = InMemorySpanExporter::default();
-        let provider = SdkTracerProvider::builder()
-            .with_simple_exporter(exporter.clone())
-            .build();
-        // Warm the `request` span callsite before installing the subscriber, so its interest
-        // cannot be mid-registration on a parallel test thread (which could leave a stale
-        // `never` interest cached after our subscriber rebuilds it).
-        let _ = super::make_request_span(&Request::builder().body(Body::empty()).unwrap());
-        let subscriber = tracing_subscriber::registry().with(
-            tracing_opentelemetry::OpenTelemetryLayer::new(provider.tracer("test")),
-        );
-        let _guard = tracing::subscriber::set_default(subscriber);
-
-        let state = mock_app_state().await;
-        // Parallel tests hitting the same callsite with no subscriber can transiently poison
-        // the global callsite interest cache, so rebuild and retry before declaring failure.
-        let mut request_span = None;
-        for _ in 0..5 {
-            tracing::callsite::rebuild_interest_cache();
-            let response = router(state.clone())
-                .oneshot(
-                    Request::builder()
-                        .uri("/v1/proof_types")
-                        .header("traceparent", format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01"))
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), 200);
-            // The request span stays open until the response body is fully consumed.
-            axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap();
-
-            provider.force_flush().unwrap();
-            let spans = exporter.get_finished_spans().unwrap();
-            if let Some(span) = spans.iter().find(|span| span.name == "request") {
-                request_span = Some(span.clone());
-                break;
-            }
-        }
-
-        let request_span = request_span.expect("request span should be exported");
-        assert_eq!(request_span.span_context.trace_id().to_string(), TRACE_ID);
-        assert_eq!(request_span.parent_span_id.to_string(), PARENT_SPAN_ID);
-    }
+    // The `otel` request-span propagation test lives in its own integration-test binary
+    // (`tests/otel_request_span.rs`): it needs a tracing subscriber that observes spans created
+    // on other tasks, and sharing a process with parallel tests poisons the global callsite
+    // interest cache.
 
     #[tokio::test]
     async fn test_unknown_route_returns_json_404() {
