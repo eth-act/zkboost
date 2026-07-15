@@ -246,6 +246,16 @@ impl ProofService {
                     return;
                 }
 
+                // These proof types have been admitted as a new attempt. Their previous
+                // terminal failures are no longer the current state and must not be replayed
+                // to subscribers while the retry is in flight.
+                {
+                    let mut failure_cache = self.failure_cache.write().await;
+                    for &proof_type in &proof_types {
+                        failure_cache.pop(&(new_payload_request_root, proof_type));
+                    }
+                }
+
                 info!(
                     %new_payload_request_root,
                     %block_hash,
@@ -463,6 +473,8 @@ impl ProofService {
 mod tests {
     use std::num::NonZeroUsize;
 
+    use zkboost_types::{HashTreeRoot, Sha2Hasher, SszDecode};
+
     use super::*;
 
     /// Channels whose receivers must outlive the service under test.
@@ -550,6 +562,62 @@ mod tests {
             .cloned()
             .expect("failure should be cached");
         assert_eq!(broadcast_event, ProofEvent::ProofFailure(cached));
+    }
+
+    #[tokio::test]
+    async fn test_retry_admission_evicts_stale_cached_failure() {
+        const NEW_PAYLOAD_REQUEST: &[u8] =
+            include_bytes!("../tests/fixture/new_payload_request.ssz");
+        const CHAIN_CONFIG: &[u8] = include_bytes!("../tests/fixture/chain_config.ssz");
+
+        // Arrange: a prior attempt failed and left a replayable terminal failure.
+        let (mut service, _channels) = test_service(4);
+        let new_payload_request = Arc::new(
+            NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST)
+                .expect("valid new payload request fixture"),
+        );
+        let new_payload_request_root =
+            Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
+        let chain_config =
+            ChainConfig::from_ssz_bytes(CHAIN_CONFIG).expect("valid chain config fixture");
+        service
+            .fail_request(
+                new_payload_request_root,
+                ProofType::RethZisk,
+                FailureReason::WitnessTimeout,
+                "witness timeout".to_owned(),
+                Duration::ZERO,
+            )
+            .await;
+
+        // Act: resubmitting the same root and proof type is admitted as a new attempt.
+        service
+            .handle_message(
+                ProofServiceMessage::RequestProof {
+                    new_payload_request_root,
+                    new_payload_request,
+                    chain_config,
+                    proof_types: HashSet::from([ProofType::RethZisk]),
+                    span: Span::none(),
+                },
+                &HashMap::new(),
+            )
+            .await;
+
+        // Assert: the retry remains in flight and the prior terminal failure is no longer
+        // replayable. A new failure or completion will establish the next terminal result.
+        assert!(
+            service
+                .requested
+                .contains(&(new_payload_request_root, ProofType::RethZisk))
+        );
+        assert!(
+            !service
+                .failure_cache
+                .read()
+                .await
+                .contains(&(new_payload_request_root, ProofType::RethZisk))
+        );
     }
 
     #[tokio::test]

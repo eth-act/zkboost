@@ -17,10 +17,10 @@ use crate::http::{AppState, v1::Query};
 /// Event delivery is at-least-once with latest-wins semantics. When subscribing with a
 /// `new_payload_request_root`, terminal results (completions and failures) already in the
 /// caches are replayed so events broadcast before the subscription are not lost. Replay can
-/// race a concurrent retry: a stale `proof_failure` may be delivered before the
-/// `proof_complete` of a retry that has already succeeded (a completion evicts the cached
-/// failure, but a replay that started earlier can still emit it). Subscribers must treat the
-/// most recent terminal event per `(new_payload_request_root, proof_type)` as authoritative.
+/// race a concurrent retry: admission evicts the prior cached failure, but a subscription that
+/// snapshotted it just before admission may still deliver that stale `proof_failure` before the
+/// retry's terminal event. Subscribers must treat the most recent terminal event per
+/// `(new_payload_request_root, proof_type)` as authoritative.
 #[instrument(skip_all)]
 pub(crate) async fn get_execution_proof_requests(
     State(state): State<Arc<AppState>>,

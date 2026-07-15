@@ -136,8 +136,9 @@ The following endpoints are available:
 
 Proof events on the SSE stream are delivered at-least-once with latest-wins semantics:
 terminal results (completions and failures) that happened before subscribing are replayed
-from bounded caches, and a replayed stale failure may be followed by the completion of a
-retry that has already succeeded. Clients should treat the most recent terminal event per
+from bounded caches. Admitting a retry evicts its previous failure, although a concurrent
+subscription that already snapshotted that failure may still deliver it before the retry's
+terminal event. Clients should treat the most recent terminal event per
 `(new_payload_request_root, proof_type)` as authoritative.
 
 See [openapi.json](openapi.json) for the full API specification ([rendered](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/eth-act/zkboost/master/openapi.json)).
