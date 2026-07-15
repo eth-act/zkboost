@@ -2,7 +2,7 @@
 
 use std::env;
 
-use opentelemetry::trace::TracerProvider;
+use opentelemetry::{propagation::Extractor, trace::TracerProvider};
 use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use opentelemetry_sdk::{
     Resource,
@@ -14,6 +14,20 @@ use tracing_subscriber::Registry;
 
 /// Type alias for the OpenTelemetry tracing layer.
 pub type OtelLayer = OpenTelemetryLayer<Registry, SdkTracer>;
+
+/// [`Extractor`] over HTTP headers, used to extract W3C trace context
+/// (`traceparent`/`tracestate`) from incoming requests.
+pub(crate) struct HeaderExtractor<'a>(pub(crate) &'a axum::http::HeaderMap);
+
+impl Extractor for HeaderExtractor<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|value| value.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|key| key.as_str()).collect()
+    }
+}
 
 /// Initializes OpenTelemetry tracing if `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Returns a provider
 /// handle for explicit shutdown and an optional layer to attach to the tracing subscriber.

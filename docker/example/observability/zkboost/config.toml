@@ -1,6 +1,10 @@
 port = 3000
 el_endpoint = "http://host.docker.internal:32003"
 
+# Optional HTTP headers applied to every EL JSON-RPC request.
+# [el_headers]
+# Authorization = "Bearer <token>"
+
 [dashboard]
 enabled = true
 

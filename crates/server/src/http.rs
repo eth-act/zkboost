@@ -22,7 +22,7 @@ use crate::{
     chain_config::BlobParams,
     dashboard::{DashboardEvent, DashboardState},
     metrics::http_metrics_middleware,
-    proof::{ProofServiceMessage, zkvm::zkVMInstance},
+    proof::{FailureCache, ProofServiceMessage, zkvm::zkVMInstance},
 };
 
 mod dashboard;
@@ -34,6 +34,7 @@ pub(crate) struct AppState {
     pub(crate) blob_params: BlobParams,
     pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     pub(crate) proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+    pub(crate) failure_cache: FailureCache,
     pub(crate) metrics: PrometheusHandle,
     pub(crate) dashboard: Option<Arc<RwLock<DashboardState>>>,
     pub(crate) proof_service_tx: mpsc::Sender<ProofServiceMessage>,
@@ -48,6 +49,7 @@ impl AppState {
         blob_params: BlobParams,
         zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
         proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
+        failure_cache: FailureCache,
         metrics: PrometheusHandle,
         dashboard: Option<Arc<RwLock<DashboardState>>>,
         proof_service_tx: mpsc::Sender<ProofServiceMessage>,
@@ -58,6 +60,7 @@ impl AppState {
             blob_params,
             zkvms,
             proof_cache,
+            failure_cache,
             metrics,
             dashboard,
             proof_service_tx,
@@ -67,11 +70,48 @@ impl AppState {
     }
 }
 
+/// Creates the tracing span for an incoming HTTP request.
+///
+/// With the `otel` feature enabled, W3C trace context (`traceparent`/`tracestate`) is extracted
+/// from the request headers and set as the span's parent, so spans created while handling the
+/// request join the caller's distributed trace. Without the feature this only creates the span.
+fn make_request_span(request: &axum::http::Request<axum::body::Body>) -> tracing::Span {
+    let span = tracing::info_span!(
+        "request",
+        method = %request.method(),
+        uri = %request.uri(),
+        version = ?request.version(),
+        // Recorded only with the `otel` feature enabled, so the log format of default-feature
+        // builds is unchanged.
+        otel.kind = tracing::field::Empty,
+    );
+    #[cfg(feature = "otel")]
+    {
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+        let parent = opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.extract(&crate::otel::HeaderExtractor(request.headers()))
+        });
+        // Fails only when the OpenTelemetry layer is not installed (no OTLP endpoint
+        // configured), in which case there is no trace to join.
+        let _ = span.set_parent(parent);
+        span.record("otel.kind", "server");
+        // OpenTelemetry HTTP semantic-convention attributes. Set as OTLP-only attributes
+        // (not tracing fields) so they are exported without duplicating the log fields above.
+        span.set_attribute("http.request.method", request.method().to_string());
+        span.set_attribute("url.path", request.uri().path().to_owned());
+        if let Some(query) = request.uri().query() {
+            span.set_attribute("url.query", query.to_owned());
+        }
+    }
+    span
+}
+
 /// Builds the Axum router with all endpoints and middleware.
 pub(crate) fn router(state: Arc<AppState>) -> Router {
     let api_middleware = ServiceBuilder::new()
         .layer(middleware::from_fn(http_metrics_middleware))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(make_request_span))
         .layer(CatchPanicLayer::new())
         .layer(DefaultBodyLimit::max(1 << 30));
 
@@ -150,6 +190,7 @@ pub(crate) mod tests {
         let zkvms = Arc::new(HashMap::from_iter([(proof_type, zkvm)]));
 
         let proof_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
+        let failure_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
 
         let metrics = PrometheusBuilder::new().build_recorder().handle();
         let dashboard = Arc::new(RwLock::new(DashboardState::new(vec![proof_type], 256))).into();
@@ -162,6 +203,7 @@ pub(crate) mod tests {
             blob_params,
             zkvms,
             proof_cache,
+            failure_cache,
             metrics,
             dashboard,
             proof_service_tx,
@@ -184,6 +226,11 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(response.status(), 200);
     }
+
+    // The `otel` request-span propagation test lives in its own integration-test binary
+    // (`tests/otel_request_span.rs`): it needs a tracing subscriber that observes spans created
+    // on other tasks, and sharing a process with parallel tests poisons the global callsite
+    // interest cache.
 
     #[tokio::test]
     async fn test_unknown_route_returns_json_404() {

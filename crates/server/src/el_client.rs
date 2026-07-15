@@ -3,6 +3,7 @@
 
 use alloy_genesis::ChainConfig as AlloyChainConfig;
 use alloy_rpc_types_debug::ExecutionWitness;
+use anyhow::Context;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use url::Url;
 use zkboost_types::Hash256;
@@ -15,12 +16,13 @@ pub struct ElClient {
 }
 
 impl ElClient {
-    /// Create a new EL client.
-    pub fn new(url: Url) -> Self {
-        Self {
-            url,
-            http_client: reqwest::Client::new(),
-        }
+    /// Create a new EL client. `default_headers` are applied to every request.
+    pub fn new(url: Url, default_headers: reqwest::header::HeaderMap) -> anyhow::Result<Self> {
+        let http_client = reqwest::Client::builder()
+            .default_headers(default_headers)
+            .build()
+            .context("build EL HTTP client")?;
+        Ok(Self { url, http_client })
     }
 
     /// Return url of the EL client.

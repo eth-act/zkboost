@@ -8,6 +8,25 @@
 //! - [`get_proof`](zkBoostClient::get_proof) - download completed proof bytes
 //! - [`verify_proof`](zkBoostClient::verify_proof) - verify a proof against the server
 //!
+//! # Distributed tracing
+//!
+//! With the `otel` cargo feature enabled, every outbound request carries the current
+//! `tracing` span's W3C trace context (`traceparent`/`tracestate`), injected via the global
+//! OpenTelemetry propagator, so proofs requested from an instrumented caller join its
+//! distributed trace. Without the feature no OpenTelemetry dependency is pulled in and requests
+//! are sent unchanged.
+//!
+//! Note that the global propagator defaults to a no-op: the calling application must install
+//! one, e.g.
+//!
+//! ```ignore
+//! opentelemetry::global::set_text_map_propagator(
+//!     opentelemetry_sdk::propagation::TraceContextPropagator::new(),
+//! );
+//! ```
+//!
+//! otherwise no `traceparent` header is emitted even with the feature enabled.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -22,7 +41,7 @@
 //! # }
 //! ```
 
-#![warn(unused_crate_dependencies)]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 pub mod error;
 
@@ -47,6 +66,43 @@ pub use {
 
 const APPLICATION_OCTET_STREAM: &str = "application/octet-stream";
 
+/// [`Injector`](opentelemetry::propagation::Injector) over HTTP headers, used to inject W3C trace
+/// context (`traceparent`/`tracestate`) into outbound requests.
+#[cfg(feature = "otel")]
+struct HeaderInjector<'a>(&'a mut reqwest::header::HeaderMap);
+
+#[cfg(feature = "otel")]
+impl opentelemetry::propagation::Injector for HeaderInjector<'_> {
+    fn set(&mut self, key: &str, value: String) {
+        if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_bytes())
+            && let Ok(value) = reqwest::header::HeaderValue::from_str(&value)
+        {
+            self.0.insert(name, value);
+        }
+    }
+}
+
+/// Returns headers carrying the current `tracing` span's W3C trace context
+/// (`traceparent`/`tracestate`), injected via the global OpenTelemetry propagator.
+///
+/// Without the `otel` feature this returns an empty map, so requests are sent unchanged. With
+/// the feature, the map is still empty unless the application has installed a global text-map
+/// propagator (the OpenTelemetry default is a no-op).
+fn trace_context_headers() -> reqwest::header::HeaderMap {
+    #[cfg_attr(not(feature = "otel"), expect(unused_mut))]
+    let mut headers = reqwest::header::HeaderMap::new();
+    #[cfg(feature = "otel")]
+    {
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+        let context = tracing::Span::current().context();
+        opentelemetry::global::get_text_map_propagator(|propagator| {
+            propagator.inject_context(&context, &mut HeaderInjector(&mut headers));
+        });
+    }
+    headers
+}
+
 /// HTTP client for the zkboost Proof Node API.
 #[derive(Debug, Clone)]
 #[allow(non_camel_case_types)]
@@ -65,6 +121,9 @@ impl zkBoostClient {
     }
 
     /// Creates a new client with a custom [`reqwest::Client`].
+    ///
+    /// Use this to customize transport behavior, e.g. attach extra headers to every request via
+    /// [`reqwest::ClientBuilder::default_headers`] (for authenticated endpoints).
     pub fn with_http_client(endpoint: Url, http_client: reqwest::Client) -> Self {
         Self {
             endpoint,
@@ -93,6 +152,7 @@ impl zkBoostClient {
         let response = self
             .http_client
             .post(url)
+            .headers(trace_context_headers())
             .header(CONTENT_TYPE, APPLICATION_OCTET_STREAM)
             .body(body.to_ssz())
             .send()
@@ -111,6 +171,9 @@ impl zkBoostClient {
         &self,
         filter_root: Option<Hash256>,
     ) -> impl Stream<Item = Result<ProofEvent, Error>> + Send + '_ {
+        // Capture the trace context eagerly so the subscription joins the span current at call
+        // time, not whichever span happens to be current when the stream is first polled.
+        let trace_headers = trace_context_headers();
         async_stream::try_stream! {
             let mut url = self.endpoint.join("/v1/execution_proof_requests")?;
             if let Some(new_payload_request_root) = filter_root {
@@ -118,7 +181,7 @@ impl zkBoostClient {
                     .append_pair("new_payload_request_root", &new_payload_request_root.to_string());
             }
 
-            let builder = self.http_client.get(url);
+            let builder = self.http_client.get(url).headers(trace_headers);
             let mut es = EventSource::new(builder)
                 .map_err(|e| Error::Sse(format!("failed to create event source: {e}")))?;
 
@@ -150,7 +213,8 @@ impl zkBoostClient {
             "/v1/execution_proofs/{new_payload_request_root}/{proof_type}"
         ))?;
 
-        let response = error_for_status(self.http_client.get(url).send().await?).await?;
+        let request = self.http_client.get(url).headers(trace_context_headers());
+        let response = error_for_status(request.send().await?).await?;
         Ok(response.bytes().await?)
     }
 
@@ -176,6 +240,7 @@ impl zkBoostClient {
         let response = self
             .http_client
             .post(url)
+            .headers(trace_context_headers())
             .header(CONTENT_TYPE, APPLICATION_OCTET_STREAM)
             .body(body.to_ssz())
             .send()

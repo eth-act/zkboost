@@ -54,6 +54,11 @@ port = 3000
 # Ethereum execution layer JSON-RPC endpoint (required)
 el_endpoint = "http://localhost:8545"
 
+# Optional HTTP headers applied to every EL JSON-RPC request (e.g. authentication).
+# Header names are case-insensitive; names differing only in case are rejected.
+# [el_headers]
+# Authorization = "Bearer <token>"
+
 # Optional local EL chain config JSON file.
 # chain_config_path = "path/to/chain_config.json"
 
@@ -128,6 +133,13 @@ The following endpoints are available:
 | `GET`  | `/v1/proof_types`                                              | List configured proof types and capabilities             |
 | `GET`  | `/health`                                                      | Health check                                             |
 | `GET`  | `/metrics`                                                     | Prometheus metrics                                       |
+
+Proof events on the SSE stream are delivered at-least-once with latest-wins semantics:
+terminal results (completions and failures) that happened before subscribing are replayed
+from bounded caches. Admitting a retry evicts its previous failure, although a concurrent
+subscription that already snapshotted that failure may still deliver it before the retry's
+terminal event. Clients should treat the most recent terminal event per
+`(new_payload_request_root, proof_type)` as authoritative.
 
 See [openapi.json](openapi.json) for the full API specification ([rendered](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/eth-act/zkboost/master/openapi.json)).
 

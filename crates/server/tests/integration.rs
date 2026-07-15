@@ -143,6 +143,7 @@ async fn start_zkboost_server(
     let config = Config {
         port: 0,
         el_endpoint,
+        el_headers: HashMap::new(),
         chain_config_path: None,
         witness_timeout_secs,
         proof_cache_size: 128,
@@ -341,6 +342,11 @@ async fn test_proof_failure() {
         .assert_proof_failure(FailureReason::ProvingError)
         .await;
     harness.assert_get_proof_not_found().await;
+
+    // Subscribing again after the failure receives it replayed from the failure cache.
+    harness
+        .assert_proof_failure(FailureReason::ProvingError)
+        .await;
 }
 
 #[tokio::test]
@@ -371,4 +377,9 @@ async fn test_proof_timeout() {
         .assert_proof_failure(FailureReason::ProvingTimeout)
         .await;
     harness.assert_get_proof_not_found().await;
+
+    // Subscribing again after the failure receives it replayed from the failure cache.
+    harness
+        .assert_proof_failure(FailureReason::ProvingTimeout)
+        .await;
 }

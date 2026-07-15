@@ -83,13 +83,15 @@ pub(crate) async fn run_worker(
             otel.name = otel_name,
             otel.status_code = tracing::field::Empty,
             error_reason = tracing::field::Empty,
+            // Recorded by the cluster backend once the cluster assigns a job id.
+            job_id = tracing::field::Empty,
         );
 
         let _ =
             dashboard_service_tx.try_send(DashboardMessage::prove_start(block_hash, proof_type));
 
         let start = Instant::now();
-        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.stateless_input))
+        let proof_result = match timeout(proof_timeout, zkvm.prove(&input.stateless_input, &span))
             .instrument(span.clone())
             .await
         {
