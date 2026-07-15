@@ -41,20 +41,7 @@
 //! # }
 //! ```
 
-#![warn(unused_crate_dependencies)]
-
-// Dev-dependencies are used by the integration tests, not the lib target; reference them here so
-// `unused_crate_dependencies` does not fire when compiling the lib's test harness.
-#[cfg(test)]
-mod dev_dependencies {
-    use axum as _;
-    use opentelemetry as _;
-    use opentelemetry_sdk as _;
-    use tokio as _;
-    use tracing as _;
-    use tracing_opentelemetry as _;
-    use tracing_subscriber as _;
-}
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 pub mod error;
 
