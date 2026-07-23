@@ -14,6 +14,7 @@ use zkboost_types::{Hash256, ProofType};
 
 use crate::{
     dashboard::DashboardMessage,
+    metrics,
     proof::{input::StatelessInput, zkvm::zkVMInstance},
 };
 
@@ -21,6 +22,9 @@ use crate::{
 pub(crate) struct WorkerInput {
     pub(crate) stateless_input: Arc<StatelessInput>,
     pub(crate) span: Span,
+    /// When the input was dispatched into the worker channel; measures queue
+    /// wait at dequeue.
+    pub(crate) queued_at: Instant,
 }
 
 /// Output returned by a worker after a proof attempt.
@@ -74,6 +78,8 @@ pub(crate) async fn run_worker(
         let new_payload_request_root = input.stateless_input.root();
         let block_hash = input.stateless_input.block_hash();
         let block_number = input.stateless_input.block_number();
+
+        metrics::record_queue_wait(proof_type, input.queued_at.elapsed());
 
         info!(%block_hash, %proof_type, "proving");
 

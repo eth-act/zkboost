@@ -8,7 +8,7 @@ pub mod zkvm;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bytes::Bytes;
@@ -412,6 +412,7 @@ impl ProofService {
         let worker_input = WorkerInput {
             stateless_input,
             span,
+            queued_at: Instant::now(),
         };
         match tx.try_send(worker_input) {
             Ok(()) => {
