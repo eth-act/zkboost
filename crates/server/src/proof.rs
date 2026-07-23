@@ -53,6 +53,16 @@ pub(crate) enum ProofServiceMessage {
     WitnessIncompatible { block_hash: Hash256, error: String },
 }
 
+/// Stage timings known at the point a request fails; `None` means the stage
+/// never ran for this request (or its timing is unknown), which locates how
+/// far the request got before dying.
+#[derive(Debug, Clone, Copy, Default)]
+struct StageTimings {
+    witness: Option<Duration>,
+    queue_wait: Option<Duration>,
+    prove: Option<Duration>,
+}
+
 struct PendingRequest {
     new_payload_request: Arc<NewPayloadRequest>,
     new_payload_request_root: Hash256,
@@ -180,6 +190,11 @@ impl ProofService {
                     FailureReason::ProvingError,
                     error,
                     duration,
+                    StageTimings {
+                        witness: Some(witness_wait),
+                        queue_wait: Some(queue_wait),
+                        prove: Some(duration),
+                    },
                 )
                 .await;
             }
@@ -194,6 +209,11 @@ impl ProofService {
                         duration.as_secs_f64()
                     ),
                     duration,
+                    StageTimings {
+                        witness: Some(witness_wait),
+                        queue_wait: Some(queue_wait),
+                        prove: Some(duration),
+                    },
                 )
                 .await;
             }
@@ -293,6 +313,7 @@ impl ProofService {
                             FailureReason::InternalError,
                             format!("witness service unavailable: {error}"),
                             Duration::ZERO,
+                            StageTimings::default(),
                         )
                         .await;
                     }
@@ -341,6 +362,10 @@ impl ProofService {
                                 FailureReason::ProvingError,
                                 format!("input construction failed: {e}"),
                                 Duration::ZERO,
+                                StageTimings {
+                                    witness: Some(witness_wait),
+                                    ..Default::default()
+                                },
                             )
                             .await;
                         }
@@ -365,6 +390,7 @@ impl ProofService {
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
+                let witness_wait = request.requested_at.elapsed();
                 for &proof_type in &request.proof_types {
                     warn!(%block_hash, %proof_type, "pending request witness timed out");
                     self.fail_request(
@@ -373,6 +399,10 @@ impl ProofService {
                         FailureReason::WitnessTimeout,
                         format!("witness timeout for block {block_hash}"),
                         Duration::ZERO,
+                        StageTimings {
+                            witness: Some(witness_wait),
+                            ..Default::default()
+                        },
                     )
                     .await;
                 }
@@ -383,6 +413,7 @@ impl ProofService {
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
+                let witness_wait = request.requested_at.elapsed();
                 for &proof_type in &request.proof_types {
                     warn!(%block_hash, %proof_type, %error, "pending request witness incompatible");
                     self.fail_request(
@@ -391,6 +422,10 @@ impl ProofService {
                         FailureReason::ProvingError,
                         format!("witness incompatible: {error}"),
                         Duration::ZERO,
+                        StageTimings {
+                            witness: Some(witness_wait),
+                            ..Default::default()
+                        },
                     )
                     .await;
                 }
@@ -417,6 +452,10 @@ impl ProofService {
                 FailureReason::InternalError,
                 format!("no zkVM worker for proof type '{proof_type}'"),
                 Duration::ZERO,
+                StageTimings {
+                    witness: Some(witness_wait),
+                    ..Default::default()
+                },
             )
             .await;
             return;
@@ -443,6 +482,10 @@ impl ProofService {
                     FailureReason::InternalError,
                     format!("worker input send failed: {reason}"),
                     Duration::ZERO,
+                    StageTimings {
+                        witness: Some(witness_wait),
+                        ..Default::default()
+                    },
                 )
                 .await;
             }
@@ -456,6 +499,7 @@ impl ProofService {
         reason: FailureReason,
         error: String,
         duration: Duration,
+        timings: StageTimings,
     ) {
         self.requested
             .remove(&(new_payload_request_root, proof_type));
@@ -464,6 +508,9 @@ impl ProofService {
             proof_type,
             reason,
             error,
+            witness_ms: timings.witness.map(|d| d.as_millis() as u64),
+            queue_wait_ms: timings.queue_wait.map(|d| d.as_millis() as u64),
+            prove_ms: timings.prove.map(|d| d.as_millis() as u64),
         };
         // Cache the terminal failure so subscribers that missed the live broadcast get it
         // replayed on subscribe, exactly like completed proofs.
@@ -538,6 +585,7 @@ mod tests {
                     FailureReason::ProvingError,
                     "boom".to_owned(),
                     Duration::ZERO,
+                    StageTimings::default(),
                 )
                 .await;
         }
@@ -564,6 +612,7 @@ mod tests {
                 FailureReason::WitnessTimeout,
                 "witness timeout".to_owned(),
                 Duration::ZERO,
+                StageTimings::default(),
             )
             .await;
 
@@ -602,6 +651,7 @@ mod tests {
                 FailureReason::WitnessTimeout,
                 "witness timeout".to_owned(),
                 Duration::ZERO,
+                StageTimings::default(),
             )
             .await;
 
@@ -647,6 +697,7 @@ mod tests {
                 FailureReason::ProvingError,
                 "boom".to_owned(),
                 Duration::ZERO,
+                StageTimings::default(),
             )
             .await;
 

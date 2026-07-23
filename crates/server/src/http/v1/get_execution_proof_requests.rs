@@ -134,6 +134,9 @@ mod tests {
             proof_type: ProofType::RethZisk,
             reason: FailureReason::ProvingError,
             error: "proving exploded".to_owned(),
+            witness_ms: None,
+            queue_wait_ms: None,
+            prove_ms: None,
         };
         state
             .failure_cache

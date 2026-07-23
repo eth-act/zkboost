@@ -260,6 +260,22 @@ pub struct ProofFailure {
     pub reason: FailureReason,
     /// Human-readable error message with details about the failure.
     pub error: String,
+    /// Time the request waited for its execution witness, in milliseconds.
+    /// On failures, `None` additionally means the stage never ran for this
+    /// request (e.g. a request rejected at admission), so absence is itself
+    /// diagnostic: it locates how far the request got before dying.
+    #[serde(default)]
+    pub witness_ms: Option<u64>,
+    /// Time the proof job waited in the worker queue, in milliseconds.
+    /// `None` semantics as for `witness_ms` — e.g. always `None` for
+    /// witness-timeout failures, which die before dispatch.
+    #[serde(default)]
+    pub queue_wait_ms: Option<u64>,
+    /// Time spent proving before the failure, in milliseconds (for proving
+    /// timeouts this is the exhausted budget). `None` semantics as for
+    /// `witness_ms`.
+    #[serde(default)]
+    pub prove_ms: Option<u64>,
 }
 
 /// Failure reason of a proof request.
@@ -279,7 +295,8 @@ pub enum FailureReason {
 #[cfg(test)]
 mod tests {
     use crate::{
-        BackendKind, Hash256, ProofComplete, ProofType, ProofTypeInfo, ProofTypesResponse,
+        BackendKind, FailureReason, Hash256, ProofComplete, ProofFailure, ProofType, ProofTypeInfo,
+        ProofTypesResponse,
     };
 
     /// A ProofComplete emitted by a producer that predates the stage-timing
@@ -308,6 +325,41 @@ mod tests {
         }"#;
         let event: ProofComplete = serde_json::from_str(future).unwrap();
         assert_eq!(event.proof_type, ProofType::RethZisk);
+    }
+
+    /// A ProofFailure emitted by a producer that predates the stage-timing
+    /// fields must still deserialize — absent keys read as None.
+    #[test]
+    fn test_proof_failure_deserializes_without_stage_timings() {
+        let legacy = r#"{
+            "new_payload_request_root": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "proof_type": "reth-zisk",
+            "reason": "proving_timeout",
+            "error": "proving timed out"
+        }"#;
+        let event: ProofFailure = serde_json::from_str(legacy).unwrap();
+        assert_eq!(event.witness_ms, None);
+        assert_eq!(event.queue_wait_ms, None);
+        assert_eq!(event.prove_ms, None);
+    }
+
+    /// Partially-populated failure timings survive a round trip — the mixed
+    /// Some/None shape is the normal case for failures (a witness-timeout
+    /// failure has witness_ms but no queue or prove component).
+    #[test]
+    fn test_proof_failure_stage_timings_round_trip() {
+        let event = ProofFailure {
+            new_payload_request_root: Hash256::from([2u8; 32]),
+            proof_type: ProofType::RethZisk,
+            reason: FailureReason::WitnessTimeout,
+            error: "witness timeout".to_owned(),
+            witness_ms: Some(12_000),
+            queue_wait_ms: None,
+            prove_ms: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: ProofFailure = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, event);
     }
 
     /// Populated stage timings survive a serialize/deserialize round trip.
