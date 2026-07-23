@@ -231,6 +231,22 @@ pub struct ProofComplete {
     pub new_payload_request_root: Hash256,
     /// Proof type.
     pub proof_type: ProofType,
+    /// Time the request waited for its execution witness, in milliseconds
+    /// (request admission until the witness became available, including fetch
+    /// retries and coalesced waits behind an earlier fetch for the same block).
+    ///
+    /// `None` when the producer predates this field or replays a cached proof
+    /// whose timings are no longer known — absence means "unknown", not zero.
+    #[serde(default)]
+    pub witness_ms: Option<u64>,
+    /// Time the proof job waited in the worker queue between dispatch and
+    /// dequeue, in milliseconds. `None` semantics as for `witness_ms`.
+    #[serde(default)]
+    pub queue_wait_ms: Option<u64>,
+    /// Proof generation time after dequeue, in milliseconds. `None` semantics
+    /// as for `witness_ms`.
+    #[serde(default)]
+    pub prove_ms: Option<u64>,
 }
 
 /// Payload for a failed proof event.
@@ -262,7 +278,52 @@ pub enum FailureReason {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BackendKind, ProofType, ProofTypeInfo, ProofTypesResponse};
+    use crate::{
+        BackendKind, Hash256, ProofComplete, ProofType, ProofTypeInfo, ProofTypesResponse,
+    };
+
+    /// A ProofComplete emitted by a producer that predates the stage-timing
+    /// fields must still deserialize — absent keys read as None, not an error.
+    #[test]
+    fn test_proof_complete_deserializes_without_stage_timings() {
+        let legacy = r#"{
+            "new_payload_request_root": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "proof_type": "reth-zisk"
+        }"#;
+        let event: ProofComplete = serde_json::from_str(legacy).unwrap();
+        assert_eq!(event.witness_ms, None);
+        assert_eq!(event.queue_wait_ms, None);
+        assert_eq!(event.prove_ms, None);
+    }
+
+    /// A consumer built before new fields exist must tolerate them: serde's
+    /// default behavior ignores unknown keys, and nothing here may opt out of
+    /// that (no deny_unknown_fields), or producers could never add fields.
+    #[test]
+    fn test_proof_complete_tolerates_unknown_fields() {
+        let future = r#"{
+            "new_payload_request_root": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "proof_type": "reth-zisk",
+            "some_future_field": 42
+        }"#;
+        let event: ProofComplete = serde_json::from_str(future).unwrap();
+        assert_eq!(event.proof_type, ProofType::RethZisk);
+    }
+
+    /// Populated stage timings survive a serialize/deserialize round trip.
+    #[test]
+    fn test_proof_complete_stage_timings_round_trip() {
+        let event = ProofComplete {
+            new_payload_request_root: Hash256::from([1u8; 32]),
+            proof_type: ProofType::RethZisk,
+            witness_ms: Some(1_500),
+            queue_wait_ms: Some(45_000),
+            prove_ms: Some(8_000),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let back: ProofComplete = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, event);
+    }
 
     #[test]
     fn test_backend_kind_serialization() {

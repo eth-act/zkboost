@@ -59,6 +59,10 @@ struct PendingRequest {
     chain_config: ChainConfig,
     proof_types: HashSet<ProofType>,
     span: Span,
+    /// When the first request for this block was admitted; measures witness
+    /// wait. Kept across `and_modify` so later proof types added to the same
+    /// pending block inherit the original admission time.
+    requested_at: Instant,
 }
 
 /// Bounded cache of terminal proof failures, replayed to SSE subscribers that subscribe after
@@ -131,6 +135,8 @@ impl ProofService {
             proof_type,
             proof_result,
             duration,
+            witness_wait,
+            queue_wait,
         } = output;
 
         trace!(%block_hash, block_number, "received WorkerOutput");
@@ -158,6 +164,9 @@ impl ProofService {
                     ProofComplete {
                         new_payload_request_root,
                         proof_type,
+                        witness_ms: Some(witness_wait.as_millis() as u64),
+                        queue_wait_ms: Some(queue_wait.as_millis() as u64),
+                        prove_ms: Some(duration.as_millis() as u64),
                     }
                     .into(),
                 );
@@ -301,6 +310,7 @@ impl ProofService {
                         chain_config,
                         proof_types,
                         span,
+                        requested_at: Instant::now(),
                     });
 
                 let _ = self.dashboard_service_tx.try_send(dashboard_msg);
@@ -314,6 +324,7 @@ impl ProofService {
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
+                let witness_wait = request.requested_at.elapsed();
 
                 let input = match StatelessInput::new(
                     &request.new_payload_request,
@@ -343,6 +354,7 @@ impl ProofService {
                         proof_type,
                         input.clone(),
                         request.span.clone(),
+                        witness_wait,
                     )
                     .await;
                 }
@@ -392,6 +404,7 @@ impl ProofService {
         proof_type: ProofType,
         stateless_input: Arc<StatelessInput>,
         span: Span,
+        witness_wait: Duration,
     ) {
         let new_payload_request_root = stateless_input.root();
         let block_hash = stateless_input.block_hash();
@@ -413,6 +426,7 @@ impl ProofService {
             stateless_input,
             span,
             queued_at: Instant::now(),
+            witness_wait,
         };
         match tx.try_send(worker_input) {
             Ok(()) => {
@@ -645,6 +659,8 @@ mod tests {
                 proof_type: ProofType::RethZisk,
                 proof_result: ProofResult::Ok(Bytes::from_static(b"proof bytes")),
                 duration: Duration::ZERO,
+                witness_wait: Duration::ZERO,
+                queue_wait: Duration::ZERO,
             })
             .await;
 

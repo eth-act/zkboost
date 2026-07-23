@@ -25,6 +25,9 @@ pub(crate) struct WorkerInput {
     /// When the input was dispatched into the worker channel; measures queue
     /// wait at dequeue.
     pub(crate) queued_at: Instant,
+    /// How long the request waited for its witness before dispatch; carried
+    /// through to the completion event.
+    pub(crate) witness_wait: Duration,
 }
 
 /// Output returned by a worker after a proof attempt.
@@ -36,6 +39,8 @@ pub(crate) struct WorkerOutput {
     pub(crate) proof_type: ProofType,
     pub(crate) proof_result: ProofResult,
     pub(crate) duration: Duration,
+    pub(crate) witness_wait: Duration,
+    pub(crate) queue_wait: Duration,
 }
 
 /// Result of a single proof generation attempt.
@@ -79,7 +84,8 @@ pub(crate) async fn run_worker(
         let block_hash = input.stateless_input.block_hash();
         let block_number = input.stateless_input.block_number();
 
-        metrics::record_queue_wait(proof_type, input.queued_at.elapsed());
+        let queue_wait = input.queued_at.elapsed();
+        metrics::record_queue_wait(proof_type, queue_wait);
 
         info!(%block_hash, %proof_type, "proving");
 
@@ -87,6 +93,7 @@ pub(crate) async fn run_worker(
             parent: &input.span,
             "prove",
             otel.name = otel_name,
+            new_payload_request_root = %new_payload_request_root,
             otel.status_code = tracing::field::Empty,
             error_reason = tracing::field::Empty,
             // Recorded by the cluster backend once the cluster assigns a job id.
@@ -125,6 +132,8 @@ pub(crate) async fn run_worker(
                 proof_type,
                 proof_result,
                 duration,
+                witness_wait: input.witness_wait,
+                queue_wait,
             })
             .await
         {

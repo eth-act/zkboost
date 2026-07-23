@@ -69,7 +69,13 @@ pub(crate) async fn post_execution_proof_requests(
     let timestamp = new_payload_request.timestamp();
     let gas_used = new_payload_request.gas_used();
 
-    let span = info_span!("request_proof", block_number, timestamp, gas_used);
+    let span = info_span!(
+        "request_proof",
+        new_payload_request_root = %new_payload_request_root,
+        block_number,
+        timestamp,
+        gas_used
+    );
 
     state
         .proof_service_tx
