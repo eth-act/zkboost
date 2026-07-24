@@ -44,6 +44,11 @@ pub(crate) async fn get_execution_proof_requests(
                             ProofComplete {
                                 new_payload_request_root: *new_payload_request_root,
                                 proof_type: *proof_type,
+                                // Replayed from the proof cache, which stores only the
+                                // proof bytes — the stage timings are no longer known.
+                                witness_ms: None,
+                                queue_wait_ms: None,
+                                prove_ms: None,
                             }
                             .into()
                         })
@@ -129,6 +134,9 @@ mod tests {
             proof_type: ProofType::RethZisk,
             reason: FailureReason::ProvingError,
             error: "proving exploded".to_owned(),
+            witness_ms: None,
+            queue_wait_ms: None,
+            prove_ms: None,
         };
         state
             .failure_cache

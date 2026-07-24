@@ -8,7 +8,7 @@ pub mod zkvm;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use bytes::Bytes;
@@ -53,12 +53,26 @@ pub(crate) enum ProofServiceMessage {
     WitnessIncompatible { block_hash: Hash256, error: String },
 }
 
+/// Stage timings known at the point a request fails; `None` means the stage
+/// never ran for this request (or its timing is unknown), which locates how
+/// far the request got before dying.
+#[derive(Debug, Clone, Copy, Default)]
+struct StageTimings {
+    witness: Option<Duration>,
+    queue_wait: Option<Duration>,
+    prove: Option<Duration>,
+}
+
 struct PendingRequest {
     new_payload_request: Arc<NewPayloadRequest>,
     new_payload_request_root: Hash256,
     chain_config: ChainConfig,
     proof_types: HashSet<ProofType>,
     span: Span,
+    /// When the first request for this block was admitted; measures witness
+    /// wait. Kept across `and_modify` so later proof types added to the same
+    /// pending block inherit the original admission time.
+    requested_at: Instant,
 }
 
 /// Bounded cache of terminal proof failures, replayed to SSE subscribers that subscribe after
@@ -131,6 +145,8 @@ impl ProofService {
             proof_type,
             proof_result,
             duration,
+            witness_wait,
+            queue_wait,
         } = output;
 
         trace!(%block_hash, block_number, "received WorkerOutput");
@@ -158,6 +174,9 @@ impl ProofService {
                     ProofComplete {
                         new_payload_request_root,
                         proof_type,
+                        witness_ms: Some(witness_wait.as_millis() as u64),
+                        queue_wait_ms: Some(queue_wait.as_millis() as u64),
+                        prove_ms: Some(duration.as_millis() as u64),
                     }
                     .into(),
                 );
@@ -171,6 +190,11 @@ impl ProofService {
                     FailureReason::ProvingError,
                     error,
                     duration,
+                    StageTimings {
+                        witness: Some(witness_wait),
+                        queue_wait: Some(queue_wait),
+                        prove: Some(duration),
+                    },
                 )
                 .await;
             }
@@ -185,6 +209,11 @@ impl ProofService {
                         duration.as_secs_f64()
                     ),
                     duration,
+                    StageTimings {
+                        witness: Some(witness_wait),
+                        queue_wait: Some(queue_wait),
+                        prove: Some(duration),
+                    },
                 )
                 .await;
             }
@@ -284,6 +313,7 @@ impl ProofService {
                             FailureReason::InternalError,
                             format!("witness service unavailable: {error}"),
                             Duration::ZERO,
+                            StageTimings::default(),
                         )
                         .await;
                     }
@@ -301,6 +331,7 @@ impl ProofService {
                         chain_config,
                         proof_types,
                         span,
+                        requested_at: Instant::now(),
                     });
 
                 let _ = self.dashboard_service_tx.try_send(dashboard_msg);
@@ -314,6 +345,7 @@ impl ProofService {
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
+                let witness_wait = request.requested_at.elapsed();
 
                 let input = match StatelessInput::new(
                     &request.new_payload_request,
@@ -330,6 +362,10 @@ impl ProofService {
                                 FailureReason::ProvingError,
                                 format!("input construction failed: {e}"),
                                 Duration::ZERO,
+                                StageTimings {
+                                    witness: Some(witness_wait),
+                                    ..Default::default()
+                                },
                             )
                             .await;
                         }
@@ -343,6 +379,7 @@ impl ProofService {
                         proof_type,
                         input.clone(),
                         request.span.clone(),
+                        witness_wait,
                     )
                     .await;
                 }
@@ -353,6 +390,7 @@ impl ProofService {
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
+                let witness_wait = request.requested_at.elapsed();
                 for &proof_type in &request.proof_types {
                     warn!(%block_hash, %proof_type, "pending request witness timed out");
                     self.fail_request(
@@ -361,6 +399,10 @@ impl ProofService {
                         FailureReason::WitnessTimeout,
                         format!("witness timeout for block {block_hash}"),
                         Duration::ZERO,
+                        StageTimings {
+                            witness: Some(witness_wait),
+                            ..Default::default()
+                        },
                     )
                     .await;
                 }
@@ -371,6 +413,7 @@ impl ProofService {
                 let Some(request) = self.pending.remove(&block_hash) else {
                     return;
                 };
+                let witness_wait = request.requested_at.elapsed();
                 for &proof_type in &request.proof_types {
                     warn!(%block_hash, %proof_type, %error, "pending request witness incompatible");
                     self.fail_request(
@@ -379,6 +422,10 @@ impl ProofService {
                         FailureReason::ProvingError,
                         format!("witness incompatible: {error}"),
                         Duration::ZERO,
+                        StageTimings {
+                            witness: Some(witness_wait),
+                            ..Default::default()
+                        },
                     )
                     .await;
                 }
@@ -392,6 +439,7 @@ impl ProofService {
         proof_type: ProofType,
         stateless_input: Arc<StatelessInput>,
         span: Span,
+        witness_wait: Duration,
     ) {
         let new_payload_request_root = stateless_input.root();
         let block_hash = stateless_input.block_hash();
@@ -404,6 +452,10 @@ impl ProofService {
                 FailureReason::InternalError,
                 format!("no zkVM worker for proof type '{proof_type}'"),
                 Duration::ZERO,
+                StageTimings {
+                    witness: Some(witness_wait),
+                    ..Default::default()
+                },
             )
             .await;
             return;
@@ -412,6 +464,8 @@ impl ProofService {
         let worker_input = WorkerInput {
             stateless_input,
             span,
+            queued_at: Instant::now(),
+            witness_wait,
         };
         match tx.try_send(worker_input) {
             Ok(()) => {
@@ -428,6 +482,10 @@ impl ProofService {
                     FailureReason::InternalError,
                     format!("worker input send failed: {reason}"),
                     Duration::ZERO,
+                    StageTimings {
+                        witness: Some(witness_wait),
+                        ..Default::default()
+                    },
                 )
                 .await;
             }
@@ -441,6 +499,7 @@ impl ProofService {
         reason: FailureReason,
         error: String,
         duration: Duration,
+        timings: StageTimings,
     ) {
         self.requested
             .remove(&(new_payload_request_root, proof_type));
@@ -449,6 +508,9 @@ impl ProofService {
             proof_type,
             reason,
             error,
+            witness_ms: timings.witness.map(|d| d.as_millis() as u64),
+            queue_wait_ms: timings.queue_wait.map(|d| d.as_millis() as u64),
+            prove_ms: timings.prove.map(|d| d.as_millis() as u64),
         };
         // Cache the terminal failure so subscribers that missed the live broadcast get it
         // replayed on subscribe, exactly like completed proofs.
@@ -523,6 +585,7 @@ mod tests {
                     FailureReason::ProvingError,
                     "boom".to_owned(),
                     Duration::ZERO,
+                    StageTimings::default(),
                 )
                 .await;
         }
@@ -549,6 +612,7 @@ mod tests {
                 FailureReason::WitnessTimeout,
                 "witness timeout".to_owned(),
                 Duration::ZERO,
+                StageTimings::default(),
             )
             .await;
 
@@ -587,6 +651,7 @@ mod tests {
                 FailureReason::WitnessTimeout,
                 "witness timeout".to_owned(),
                 Duration::ZERO,
+                StageTimings::default(),
             )
             .await;
 
@@ -632,6 +697,7 @@ mod tests {
                 FailureReason::ProvingError,
                 "boom".to_owned(),
                 Duration::ZERO,
+                StageTimings::default(),
             )
             .await;
 
@@ -644,6 +710,8 @@ mod tests {
                 proof_type: ProofType::RethZisk,
                 proof_result: ProofResult::Ok(Bytes::from_static(b"proof bytes")),
                 duration: Duration::ZERO,
+                witness_wait: Duration::ZERO,
+                queue_wait: Duration::ZERO,
             })
             .await;
 

@@ -225,6 +225,10 @@ async fn fetch_witness(
     let span = info_span!(
         parent: &span,
         "fetch_witness",
+        // The witness service is keyed by execution block hash and serves all
+        // requests for that block, so the hash — not a request root — is its
+        // identity.
+        block_hash = %block_hash,
         otel.status_code = tracing::field::Empty,
         error_reason = tracing::field::Empty,
     );

@@ -20,6 +20,7 @@ const HTTP_REQUESTS_IN_FLIGHT: &str = "zkboost_http_requests_in_flight";
 const WITNESS_FETCH_DURATION_SECONDS: &str = "zkboost_witness_fetch_duration_seconds";
 const WITNESS_BYTES: &str = "zkboost_witness_bytes";
 const WITNESS_FETCH_TOTAL: &str = "zkboost_witness_fetch_total";
+const QUEUE_WAIT_DURATION_SECONDS: &str = "zkboost_queue_wait_duration_seconds";
 const PROVE_TOTAL: &str = "zkboost_prove_total";
 const PROVE_DURATION_SECONDS: &str = "zkboost_prove_duration_seconds";
 const PROVE_PROOF_BYTES: &str = "zkboost_prove_proof_bytes";
@@ -32,6 +33,13 @@ const DEFAULT_BUCKETS: &[f64] = &[
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
 ];
 
+// Queue wait is unbounded (nothing caps how long an input sits in the worker
+// channel), so unlike the prove buckets these keep a long tail: backlogs of
+// minutes are exactly what this metric exists to expose.
+const QUEUE_WAIT_BUCKETS: &[f64] = &[
+    0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 900.0,
+];
+
 /// Initialize the Prometheus metrics exporter and register metric descriptions.
 ///
 /// Returns a handle that can be used to render metrics for the `/metrics` endpoint.
@@ -42,6 +50,20 @@ pub fn init_metrics() -> PrometheusHandle {
         .set_buckets_for_metric(
             Matcher::Full(PROVE_DURATION_SECONDS.to_owned()),
             &from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5),
+        )
+        .unwrap()
+        // Witness fetches run under the slot-aligned witness timeout, so give
+        // them the same 0.5s-step resolution up to 12.0 as the prove buckets —
+        // the default buckets end at 10.0 and hide successful 10-12s fetches
+        // in +Inf.
+        .set_buckets_for_metric(
+            Matcher::Full(WITNESS_FETCH_DURATION_SECONDS.to_owned()),
+            &from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5),
+        )
+        .unwrap()
+        .set_buckets_for_metric(
+            Matcher::Full(QUEUE_WAIT_DURATION_SECONDS.to_owned()),
+            QUEUE_WAIT_BUCKETS,
         )
         .unwrap()
         .install_recorder()
@@ -58,6 +80,10 @@ pub fn init_metrics() -> PrometheusHandle {
     describe_histogram!(WITNESS_BYTES, "witness size");
 
     // Prove operation metrics
+    describe_histogram!(
+        QUEUE_WAIT_DURATION_SECONDS,
+        "time a proof request waits in the worker channel between dispatch and dequeue"
+    );
     describe_counter!(PROVE_TOTAL, "total prove operations");
     describe_histogram!(PROVE_DURATION_SECONDS, "proof generation duration");
     describe_histogram!(PROVE_PROOF_BYTES, "proof size");
@@ -109,6 +135,18 @@ pub fn record_witness_fetch(status: &'static str, duration: Duration, witness_si
         histogram!(WITNESS_FETCH_DURATION_SECONDS).record(duration.as_secs_f64());
         histogram!(WITNESS_BYTES).record(witness_size as f64);
     }
+}
+
+/// Record how long a proof request waited in the worker channel before a
+/// worker dequeued it. This is the only place queue wait is observable: the
+/// prove duration histogram starts after dequeue, so without this metric a
+/// backlog is invisible.
+pub fn record_queue_wait(proof_type: ProofType, duration: Duration) {
+    histogram!(
+        QUEUE_WAIT_DURATION_SECONDS,
+        "proof_type" => proof_type.to_string(),
+    )
+    .record(duration.as_secs_f64());
 }
 
 /// Record a prove operation result.
