@@ -31,11 +31,11 @@
 //!
 //! ```ignore
 //! use zkboost_client::{zkBoostClient, NewPayloadRequest};
-//! use zkboost_types::{ChainConfig, ProofType};
+//! use zkboost_types::{ChainConfig, ProofType, ProtocolFork};
 //!
-//! # async fn example(request: NewPayloadRequest, chain_config: ChainConfig) -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example(fork: ProtocolFork, request: NewPayloadRequest, chain_config: ChainConfig) -> Result<(), Box<dyn std::error::Error>> {
 //! let client = zkBoostClient::new("http://localhost:3000".parse()?);
-//! let resp = client.request_proof(&request, &chain_config, &[ProofType::RethSP1]).await?;
+//! let resp = client.request_proof(fork, &request, &chain_config, &[ProofType::RethSP1]).await?;
 //! println!("root: {:?}", resp.new_payload_request_root);
 //! # Ok(())
 //! # }
@@ -60,7 +60,7 @@ pub use {
         ChainConfig, FailureReason, Hash256,
         NewPayloadRequest, ProofComplete, ProofEvent, ProofFailure, ProofRequestBody,
         ProofRequestResponse, ProofStatus, ProofType, ProofVerificationBody,
-        ProofVerificationResponse, ProofEventParseError, SszEncode,
+        ProofVerificationResponse, ProofEventParseError, ProtocolFork, SszEncode,
     },
 };
 
@@ -134,16 +134,18 @@ impl zkBoostClient {
     /// Submit a [`NewPayloadRequest`] for proof generation.
     ///
     /// Sends `POST /v1/execution_proof_requests` with an SSZ-encoded [`ProofRequestBody`] carrying
-    /// the proof types, payload, and chain config. Returns the computed
+    /// the fork, proof types, payload, and chain config. Returns the computed
     /// `new_payload_request_root` from the server.
     pub async fn request_proof(
         &self,
+        fork: ProtocolFork,
         new_payload_request: &NewPayloadRequest,
         chain_config: &ChainConfig,
         proof_types: &[ProofType],
     ) -> Result<ProofRequestResponse, Error> {
         let url = self.endpoint.join("/v1/execution_proof_requests")?;
         let body = ProofRequestBody {
+            fork,
             new_payload_request: new_payload_request.clone(),
             chain_config: chain_config.clone(),
             proof_types: proof_types.to_vec(),
@@ -221,9 +223,10 @@ impl zkBoostClient {
     /// Verify a proof against the server.
     ///
     /// Sends `POST /v1/execution_proof_verifications` with an SSZ-encoded [`ProofVerificationBody`]
-    /// carrying the root, chain config, proof type, and proof bytes.
+    /// carrying the fork, root, chain config, proof type, and proof bytes.
     pub async fn verify_proof(
         &self,
+        fork: ProtocolFork,
         new_payload_request_root: Hash256,
         chain_config: &ChainConfig,
         proof_type: ProofType,
@@ -231,6 +234,7 @@ impl zkBoostClient {
     ) -> Result<ProofVerificationResponse, Error> {
         let url = self.endpoint.join("/v1/execution_proof_verifications")?;
         let body = ProofVerificationBody {
+            fork,
             new_payload_request_root: new_payload_request_root.0,
             chain_config: chain_config.clone(),
             proof_type,

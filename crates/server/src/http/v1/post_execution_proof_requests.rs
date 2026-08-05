@@ -6,11 +6,11 @@ use axum::{Json, extract::State};
 use bytes::Bytes;
 use tracing::{debug, info_span, instrument};
 use zkboost_types::{
-    Hash256, HashTreeRoot, ProofRequestBody, ProofRequestResponse, Sha2Hasher, SszDecode,
+    Hash256, HashTreeRoot, NewPayloadRequest, ProofRequestBody, ProofRequestResponse, ProtocolFork,
+    Sha2Hasher, SszDecode,
 };
 
 use crate::{
-    chain_config::complete_chain_config,
     http::{AppState, v1::ErrorResponse},
     proof::{ProofServiceMessage, zkvm::zkVMInstance},
 };
@@ -22,6 +22,13 @@ pub(crate) async fn post_execution_proof_requests(
 ) -> Result<Json<ProofRequestResponse>, ErrorResponse> {
     let request = ProofRequestBody::from_ssz_bytes(&body)
         .map_err(|e| ErrorResponse::bad_request(format!("invalid SSZ body: {e:?}")))?;
+
+    if !is_valid_payload_variant(request.fork, &request.new_payload_request) {
+        return Err(ErrorResponse::bad_request(format!(
+            "submitted payload is not valid variant for fork {:?}",
+            request.fork
+        )));
+    }
 
     if request.proof_types.is_empty() {
         return Err(ErrorResponse::bad_request(
@@ -60,9 +67,6 @@ pub(crate) async fn post_execution_proof_requests(
         }
     }
 
-    let chain_config = complete_chain_config(&request.chain_config, &state.blob_params)
-        .map_err(|e| ErrorResponse::bad_request(e.to_string()))?;
-
     let new_payload_request = Arc::new(request.new_payload_request);
     let new_payload_request_root = Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
     let block_number = new_payload_request.block_number();
@@ -80,9 +84,10 @@ pub(crate) async fn post_execution_proof_requests(
     state
         .proof_service_tx
         .send(ProofServiceMessage::RequestProof {
+            fork: request.fork,
             new_payload_request_root,
             new_payload_request,
-            chain_config,
+            chain_config: request.chain_config,
             proof_types,
             span,
         })
@@ -94,6 +99,24 @@ pub(crate) async fn post_execution_proof_requests(
     Ok(Json(ProofRequestResponse {
         new_payload_request_root,
     }))
+}
+
+/// Returns whether the payload variant is valid for the fork, mirroring the
+/// partition the guest applies when it decodes a schema-prefixed stateless input.
+///
+/// A mismatch makes the guest reject the input and return a default result, which the prover
+/// still turns into a valid proof of that empty result, so the request is refused here instead.
+fn is_valid_payload_variant(fork: ProtocolFork, new_payload_request: &NewPayloadRequest) -> bool {
+    use NewPayloadRequest::*;
+    use ProtocolFork::*;
+    matches!(
+        (fork, new_payload_request),
+        (Paris, Bellatrix(_))
+            | (Shanghai, Capella(_))
+            | (Cancun, Deneb(_))
+            | (Prague | Osaka | BPO1 | BPO2, ElectraFulu(_))
+            | (Amsterdam, Gloas(_))
+    )
 }
 
 #[cfg(test)]
@@ -108,42 +131,27 @@ mod tests {
     };
     use tower::ServiceExt;
     use zkboost_types::{
-        BlobSchedule, ChainConfig, ForkActivation, ForkConfig, NewPayloadRequest, ProofRequestBody,
-        ProofType, ProtocolFork, SszDecode, SszEncode,
+        ChainConfig, ForkActivation, ForkConfig, NewPayloadRequest, ProofRequestBody, ProofType,
+        ProtocolFork, SszDecode, SszEncode,
     };
 
-    use crate::{
-        chain_config::BlobParams,
-        http::{
-            AppState,
-            tests::{mock_app_state, mock_app_state_with_blob_params},
-            v1::post_execution_proof_requests,
-        },
-    };
+    use crate::http::{AppState, tests::mock_app_state, v1::post_execution_proof_requests};
 
     const NEW_PAYLOAD_REQUEST: &[u8] =
         include_bytes!("../../../tests/fixture/new_payload_request.ssz");
 
-    const BPO2_SCHEDULE: BlobSchedule = {
-        let params = alloy_eips::eip7840::BlobParams::bpo2();
-        BlobSchedule {
-            target: params.target_blob_count,
-            max: params.max_blob_count,
-            base_fee_update_fraction: params.update_fraction as u64,
-        }
-    };
-
     fn proof_request_body(proof_types: Vec<ProofType>) -> Vec<u8> {
+        proof_request_body_with_fork(ProtocolFork::BPO2, proof_types)
+    }
+
+    fn proof_request_body_with_fork(fork: ProtocolFork, proof_types: Vec<ProofType>) -> Vec<u8> {
         let new_payload_request = NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST).unwrap();
         let chain_config = ChainConfig {
             chain_id: 1,
-            active_fork: ForkConfig::new(
-                ProtocolFork::BPO2,
-                ForkActivation::new(None, Some(0)),
-                None,
-            ),
+            active_fork: ForkConfig::new(ForkActivation::new(None, Some(0))),
         };
         ProofRequestBody {
+            fork,
             proof_types,
             new_payload_request,
             chain_config,
@@ -195,28 +203,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_blob_max_mismatch_returns_bad_request() {
-        let blob_params = BlobParams::from([(ProtocolFork::BPO2, BPO2_SCHEDULE)]);
-        let chain_config = ChainConfig {
-            chain_id: 1,
-            active_fork: ForkConfig::new(
-                ProtocolFork::BPO2,
-                ForkActivation::new(None, Some(0)),
-                Some(BlobSchedule {
-                    target: 0,
-                    max: BPO2_SCHEDULE.max + 1,
-                    base_fee_update_fraction: 0,
-                }),
-            ),
-        };
-        let new_payload_request = NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST).unwrap();
-        let body = ProofRequestBody {
-            proof_types: vec![ProofType::RethZisk],
-            new_payload_request,
-            chain_config,
-        }
-        .to_ssz();
-        let state = mock_app_state_with_blob_params(blob_params).await;
-        assert_eq!(send(state, body).await, 400);
+    async fn test_fork_invalid_payload_variant_returns_bad_request() {
+        let body = proof_request_body_with_fork(ProtocolFork::Cancun, vec![ProofType::RethZisk]);
+        assert_eq!(send(mock_app_state().await, body).await, 400);
+    }
+
+    #[tokio::test]
+    async fn test_unknown_fork_returns_bad_request() {
+        // `fork` is the leading fixed-size field, so overwriting the first byte with an
+        // unassigned discriminant makes the body undecodable.
+        let mut body = proof_request_body(vec![ProofType::RethZisk]);
+        body[0] = 0xff;
+        assert_eq!(send(mock_app_state().await, body).await, 400);
     }
 }

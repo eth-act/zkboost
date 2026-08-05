@@ -1,11 +1,11 @@
 services:
   ethrex-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.13.0-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.14.0-cuda
     command:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.13.0/stateless-validator-ethrex-zisk.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.14.0/stateless-validator-ethrex-zisk-v1.0.0-alpha.elf"
       - "gpu"
     shm_size: 32G
     ulimits:
@@ -35,7 +35,7 @@ services:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.13.0/stateless-validator-reth-zisk.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.14.0/stateless-validator-reth-zisk-v1.0.0-alpha.elf"
       - "gpu"
     deploy:
       resources:

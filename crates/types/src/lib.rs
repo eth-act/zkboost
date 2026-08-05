@@ -10,16 +10,16 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-pub use ere_guests_stateless_validator_common::{
-    HashTreeRoot, Sha2Hasher, SszDecode, SszEncode, SszList, SszVector,
-    guest::input::{
-        BlobSchedule, ChainConfig, ExecutionWitness, ForkActivation, ForkConfig, ProtocolFork,
-        new_payload_request::*,
-    },
-};
 use libssz_derive::{SszDecode, SszEncode};
 pub use proof_type::*;
 use serde::{Deserialize, Serialize};
+pub use stateless_validator_common::{
+    HashTreeRoot, Sha2Hasher, SszDecode, SszEncode, SszList, SszVector,
+    guest::input::{
+        ChainConfig, ExecutionWitness, ForkActivation, ForkConfig, ProtocolFork,
+        new_payload_request::*,
+    },
+};
 
 mod proof_type;
 
@@ -29,9 +29,12 @@ pub type Hash256 = alloy_primitives::B256;
 /// SSZ-encoded request body for `POST /v1/execution_proof_requests`.
 #[derive(Debug, Clone, Eq, PartialEq, SszEncode, SszDecode)]
 pub struct ProofRequestBody {
+    /// The active protocol fork, selecting the stateless input schema the payload is encoded
+    /// under.
+    pub fork: ProtocolFork,
     /// The payload to prove.
     pub new_payload_request: NewPayloadRequest,
-    /// Expected chain config to prove the payload against (resolved active fork).
+    /// Expected chain config to prove the payload against.
     pub chain_config: ChainConfig,
     /// Proof types to generate for this payload.
     pub proof_types: Vec<ProofType>,
@@ -54,9 +57,12 @@ pub struct ProofEventQuery {
 /// SSZ-encoded request body for `POST /v1/execution_proof_verifications`.
 #[derive(Debug, Clone, Eq, PartialEq, SszEncode, SszDecode)]
 pub struct ProofVerificationBody {
+    /// The active protocol fork, identifying the stateless input schema the proven payload was
+    /// encoded under.
+    pub fork: ProtocolFork,
     /// The root identifying the proven payload request.
     pub new_payload_request_root: [u8; 32],
-    /// Expected chain config to verify the proof against (resolved active fork).
+    /// Expected chain config to verify the proof against.
     pub chain_config: ChainConfig,
     /// The proof type being verified.
     pub proof_type: ProofType,

@@ -5,8 +5,8 @@
 use alloy_consensus::{EthereumTxEnvelope, TxEip4844};
 use alloy_eips::Decodable2718;
 use anyhow::Context;
-use ere_guests_stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
-use zkboost_types::{ChainConfig, ExecutionWitness, Hash256, NewPayloadRequest};
+use stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
+use zkboost_types::{ChainConfig, ExecutionWitness, Hash256, NewPayloadRequest, ProtocolFork};
 
 /// A wrapper for `stateless_input_bytes` with payload metadata.
 #[derive(Debug)]
@@ -21,6 +21,7 @@ pub(crate) struct StatelessInput {
 impl StatelessInput {
     /// Builds the `StatelessInput`.
     pub(crate) fn new(
+        fork: ProtocolFork,
         new_payload_request: &NewPayloadRequest,
         new_payload_request_root: Hash256,
         witness: &ExecutionWitness,
@@ -30,13 +31,13 @@ impl StatelessInput {
         let block_number = new_payload_request.block_number();
         let gas_used = new_payload_request.gas_used();
 
-        let stateless_input_bytes = ere_guests_stateless_validator_common::guest::StatelessInput {
+        let stateless_input_bytes = stateless_validator_common::guest::StatelessInput {
             new_payload_request: new_payload_request.clone(),
             witness: witness.clone(),
             chain_config: chain_config.clone(),
             public_keys: recover_public_keys(new_payload_request)?.try_into()?,
         }
-        .to_schema_prefixed_ssz();
+        .to_schema_prefixed_ssz(fork);
 
         Ok(Self {
             new_payload_request_root,

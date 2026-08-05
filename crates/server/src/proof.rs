@@ -12,16 +12,16 @@ use std::{
 };
 
 use bytes::Bytes;
-use ere_guests_stateless_validator_common::guest::input::ExecutionWitness;
 use input::StatelessInput;
 use lru::LruCache;
+use stateless_validator_common::guest::input::ExecutionWitness;
 use tokio::sync::{RwLock, broadcast, mpsc, mpsc::error::TrySendError};
 use tokio_util::sync::CancellationToken;
 use tracing::{Span, debug, error, info, trace, warn};
 use worker::WorkerInput;
 use zkboost_types::{
     ChainConfig, FailureReason, Hash256, NewPayloadRequest, ProofComplete, ProofEvent,
-    ProofFailure, ProofType,
+    ProofFailure, ProofType, ProtocolFork,
 };
 
 use crate::{
@@ -36,6 +36,7 @@ use crate::{
 pub(crate) enum ProofServiceMessage {
     /// A new proof has been requested for the given payload and proof types.
     RequestProof {
+        fork: ProtocolFork,
         new_payload_request_root: Hash256,
         new_payload_request: Arc<NewPayloadRequest>,
         chain_config: ChainConfig,
@@ -64,6 +65,7 @@ struct StageTimings {
 }
 
 struct PendingRequest {
+    fork: ProtocolFork,
     new_payload_request: Arc<NewPayloadRequest>,
     new_payload_request_root: Hash256,
     chain_config: ChainConfig,
@@ -229,6 +231,7 @@ impl ProofService {
     ) {
         match message {
             ProofServiceMessage::RequestProof {
+                fork,
                 new_payload_request_root,
                 new_payload_request,
                 chain_config,
@@ -326,6 +329,7 @@ impl ProofService {
                         r.proof_types.extend(proof_types.iter().copied());
                     })
                     .or_insert_with(|| PendingRequest {
+                        fork,
                         new_payload_request: new_payload_request.clone(),
                         new_payload_request_root,
                         chain_config,
@@ -348,6 +352,7 @@ impl ProofService {
                 let witness_wait = request.requested_at.elapsed();
 
                 let input = match StatelessInput::new(
+                    request.fork,
                     &request.new_payload_request,
                     request.new_payload_request_root,
                     &witness,
@@ -636,6 +641,7 @@ mod tests {
 
         // Arrange: a prior attempt failed and left a replayable terminal failure.
         let (mut service, _channels) = test_service(4);
+        let fork = ProtocolFork::BPO2;
         let new_payload_request = Arc::new(
             NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST)
                 .expect("valid new payload request fixture"),
@@ -659,6 +665,7 @@ mod tests {
         service
             .handle_message(
                 ProofServiceMessage::RequestProof {
+                    fork,
                     new_payload_request_root,
                     new_payload_request,
                     chain_config,

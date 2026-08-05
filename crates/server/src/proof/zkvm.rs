@@ -4,12 +4,12 @@
 use std::{ops::Deref, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use ere_guests_stateless_validator_common::guest::StatelessValidationResult;
-use ere_guests_stateless_validator_ethrex::guest::Platform;
 use ere_server_client::{EncodedProof, Input, PublicValues, zkVMClient};
 use ere_verifier::Verifier;
 use rand::{Rng, rng};
 use serde::{Deserialize, Serialize};
+use stateless_validator_common::guest::StatelessValidationResult;
+use stateless_validator_ethrex::guest::Platform;
 use tokio::time::{Instant, sleep, sleep_until};
 use url::Url;
 use zkboost_types::{ChainConfig, ElKind, Hash256, ProofType, SszEncode};
@@ -354,11 +354,9 @@ fn execute(el_kind: ElKind, input_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
     }
 
     let output_bytes = match el_kind {
-        ElKind::Reth => {
-            ere_guests_stateless_validator_reth::guest::run_stateless_guest::<Host>(input_bytes)
-        }
+        ElKind::Reth => stateless_validator_reth::guest::run_stateless_guest::<Host>(input_bytes),
         ElKind::Ethrex => {
-            ere_guests_stateless_validator_ethrex::guest::run_stateless_guest::<Host>(input_bytes)
+            stateless_validator_ethrex::guest::run_stateless_guest::<Host>(input_bytes)
         }
     };
     Ok(output_bytes)

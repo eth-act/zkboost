@@ -1,13 +1,11 @@
-//! Resolves the chain config for a block from CL configuration.
+//! Resolves the active fork and chain config for a block from CL configuration.
 //!
-//! The CL exposes every field of the chain config except the blob schedule `target`
-//! and `base_fee_update_fraction`, which are execution-layer genesis values. This resolver reads
-//! the fork schedule from `/eth/v1/config/spec` and `/eth/v1/beacon/genesis` and emits a config
-//! with those two fields zeroed. The zkboost server fills them from its own execution-layer genesis
-//! and validates the pinned `max`.
+//! The resolver reads the fork schedule from `/eth/v1/config/spec` and `/eth/v1/beacon/genesis`,
+//! then selects the fork active at a block timestamp. The fork is returned alongside the chain
+//! config rather than within it, because it identifies the stateless input schema.
 
 use anyhow::Context;
-use zkboost_types::{BlobSchedule, ChainConfig, ForkActivation, ForkConfig, ProtocolFork};
+use zkboost_types::{ChainConfig, ForkActivation, ForkConfig, ProtocolFork};
 
 use crate::cl_client::{Genesis, Spec};
 
@@ -21,12 +19,11 @@ pub(crate) struct ChainConfigResolver {
     forks: Vec<ScheduledFork>,
 }
 
-/// A resolved fork activation with its blob schedule maximum, when the fork carries blobs.
+/// A fork activation resolved to an execution timestamp.
 #[derive(Debug, Clone)]
 struct ScheduledFork {
     timestamp: u64,
     fork: ProtocolFork,
-    blob_max: Option<u64>,
 }
 
 impl ChainConfigResolver {
@@ -42,29 +39,17 @@ impl ChainConfigResolver {
         let mut forks = Vec::new();
 
         let base_forks = [
-            (spec.capella_fork_epoch, ProtocolFork::Shanghai, None),
-            (
-                spec.deneb_fork_epoch,
-                ProtocolFork::Cancun,
-                Some(spec.max_blobs_per_block),
-            ),
-            (
-                spec.electra_fork_epoch,
-                ProtocolFork::Prague,
-                Some(spec.max_blobs_per_block_electra),
-            ),
-            (
-                spec.fulu_fork_epoch,
-                ProtocolFork::Osaka,
-                Some(spec.max_blobs_per_block_electra),
-            ),
+            (spec.capella_fork_epoch, ProtocolFork::Shanghai),
+            (spec.deneb_fork_epoch, ProtocolFork::Cancun),
+            (spec.electra_fork_epoch, ProtocolFork::Prague),
+            (spec.fulu_fork_epoch, ProtocolFork::Osaka),
+            (spec.gloas_fork_epoch, ProtocolFork::Amsterdam),
         ];
-        for (epoch, fork, blob_max) in base_forks {
+        for (epoch, fork) in base_forks {
             if epoch != NOT_SCHEDULED {
                 forks.push(ScheduledFork {
                     timestamp: activation(epoch),
                     fork,
-                    blob_max,
                 });
             }
         }
@@ -74,7 +59,6 @@ impl ChainConfigResolver {
                 forks.push(ScheduledFork {
                     timestamp: activation(entry.epoch),
                     fork,
-                    blob_max: Some(entry.max_blobs_per_block),
                 });
             };
         }
@@ -90,10 +74,8 @@ impl ChainConfigResolver {
         })
     }
 
-    /// Resolves the chain config for a block at the given execution timestamp. The blob schedule
-    /// carries the consensus `max` with `target` and `base_fee_update_fraction` zeroed for the
-    /// zkboost server to fill from its execution-layer genesis.
-    pub(crate) fn resolve(&self, timestamp: u64) -> anyhow::Result<ChainConfig> {
+    /// Resolves the active fork and chain config for a block at the given execution timestamp.
+    pub(crate) fn resolve(&self, timestamp: u64) -> anyhow::Result<(ProtocolFork, ChainConfig)> {
         let active = self
             .forks
             .iter()
@@ -101,18 +83,13 @@ impl ChainConfigResolver {
             .max_by_key(|fork| (fork.timestamp, fork.fork))
             .context("no fork active at block timestamp")?;
 
-        Ok(ChainConfig {
-            chain_id: self.chain_id,
-            active_fork: ForkConfig::new(
-                active.fork,
-                ForkActivation::new(None, Some(active.timestamp)),
-                active.blob_max.map(|max| BlobSchedule {
-                    target: 0,
-                    max,
-                    base_fee_update_fraction: 0,
-                }),
-            ),
-        })
+        Ok((
+            active.fork,
+            ChainConfig {
+                chain_id: self.chain_id,
+                active_fork: ForkConfig::new(ForkActivation::new(None, Some(active.timestamp))),
+            },
+        ))
     }
 }
 
@@ -150,24 +127,17 @@ mod tests {
             "ELECTRA_FORK_EPOCH": "0",
             "FULU_FORK_EPOCH": "0",
             "GLOAS_FORK_EPOCH": "18446744073709551615",
-            "MAX_BLOBS_PER_BLOCK": "6",
-            "MAX_BLOBS_PER_BLOCK_ELECTRA": "9",
-            "BLOB_SCHEDULE": [{ "EPOCH": "0", "MAX_BLOBS_PER_BLOCK": "15" }],
+            "BLOB_SCHEDULE": [{ "EPOCH": "0" }],
         }));
         let genesis = Genesis {
             genesis_time: 1_000,
         };
         let resolver = ChainConfigResolver::new(spec, genesis).unwrap();
-        let config = resolver.resolve(50_000).unwrap();
+        let (fork, config) = resolver.resolve(50_000).unwrap();
 
+        assert_eq!(fork, ProtocolFork::BPO1);
         assert_eq!(config.chain_id, 3151908);
-        assert_eq!(config.active_fork.fork, ProtocolFork::BPO1);
         assert_eq!(config.active_fork.activation.timestamp(), Some(1_000));
-        let blob = config.active_fork.blob_schedule().unwrap();
-        assert_eq!(
-            (blob.target, blob.max, blob.base_fee_update_fraction),
-            (0, 15, 0)
-        );
     }
 
     #[test]
@@ -182,19 +152,38 @@ mod tests {
             "ELECTRA_FORK_EPOCH": "18446744073709551615",
             "FULU_FORK_EPOCH": "18446744073709551615",
             "GLOAS_FORK_EPOCH": "18446744073709551615",
-            "MAX_BLOBS_PER_BLOCK": "6",
-            "MAX_BLOBS_PER_BLOCK_ELECTRA": "9",
             "BLOB_SCHEDULE": [],
         }));
         let genesis = Genesis { genesis_time: 0 };
         let resolver = ChainConfigResolver::new(spec, genesis).unwrap();
 
-        assert_eq!(
-            resolver.resolve(383).unwrap().active_fork.fork,
-            ProtocolFork::Shanghai
-        );
-        let after = resolver.resolve(384).unwrap();
-        assert_eq!(after.active_fork.fork, ProtocolFork::Cancun);
-        assert_eq!(after.active_fork.blob_schedule().unwrap().max, 6);
+        let (fork, _) = resolver.resolve(383).unwrap();
+        assert_eq!(fork, ProtocolFork::Shanghai);
+        let (fork, _) = resolver.resolve(384).unwrap();
+        assert_eq!(fork, ProtocolFork::Cancun);
+    }
+
+    #[test]
+    fn resolves_amsterdam_at_gloas_activation() {
+        // Everything through Fulu at genesis, Gloas one epoch later.
+        let spec = spec_from(serde_json::json!({
+            "DEPOSIT_CHAIN_ID": "1",
+            "SECONDS_PER_SLOT": "12",
+            "SLOTS_PER_EPOCH": "32",
+            "CAPELLA_FORK_EPOCH": "0",
+            "DENEB_FORK_EPOCH": "0",
+            "ELECTRA_FORK_EPOCH": "0",
+            "FULU_FORK_EPOCH": "0",
+            "GLOAS_FORK_EPOCH": "1",
+            "BLOB_SCHEDULE": [],
+        }));
+        let genesis = Genesis { genesis_time: 0 };
+        let resolver = ChainConfigResolver::new(spec, genesis).unwrap();
+
+        let (fork, _) = resolver.resolve(383).unwrap();
+        assert_eq!(fork, ProtocolFork::Osaka);
+        let (fork, config) = resolver.resolve(384).unwrap();
+        assert_eq!(fork, ProtocolFork::Amsterdam);
+        assert_eq!(config.active_fork.activation.timestamp(), Some(384));
     }
 }

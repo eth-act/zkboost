@@ -30,7 +30,7 @@ See [docker/example/testnet](docker/example/testnet) for a Docker Compose setup 
 
 ### Prerequisites
 
-* **Rust** ≥ 1.93
+* **Rust** ≥ 1.94.1
 
 ```bash
 # 1. Clone
@@ -58,9 +58,6 @@ el_endpoint = "http://localhost:8545"
 # Header names are case-insensitive; names differing only in case are rejected.
 # [el_headers]
 # Authorization = "Bearer <token>"
-
-# Optional local EL chain config JSON file.
-# chain_config_path = "path/to/chain_config.json"
 
 # Timeout for witness fetching in seconds (default: 12)
 # witness_timeout_secs = 12
