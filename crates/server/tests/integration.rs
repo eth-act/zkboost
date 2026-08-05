@@ -20,10 +20,11 @@ use zkboost_server::{
 };
 use zkboost_types::{
     ChainConfig, FailureReason, Hash256, HashTreeRoot, NewPayloadRequest, ProofEvent,
-    ProofEventKind, ProofFailure, ProofStatus, ProofType, Sha2Hasher, SszDecode,
+    ProofEventKind, ProofFailure, ProofStatus, ProofType, ProtocolFork, Sha2Hasher, SszDecode,
 };
 
 struct Fixture {
+    fork: ProtocolFork,
     new_payload_request: NewPayloadRequest,
     new_payload_request_root: Hash256,
     chain_config: ChainConfig,
@@ -41,6 +42,8 @@ impl Fixture {
         let chain_config = ChainConfig::from_ssz_bytes(CHAIN_CONFIG).unwrap();
         let witness: serde_json::Value = serde_json::from_str(EXECUTION_WITNESS).unwrap();
         Fixture {
+            // The fixture pins the fork its payload and chain config were produced for.
+            fork: ProtocolFork::BPO2,
             new_payload_request,
             new_payload_request_root,
             chain_config,
@@ -52,7 +55,6 @@ impl Fixture {
 async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: bool) -> url::Url {
     struct MockElState {
         witnesses: HashMap<B256, serde_json::Value>,
-        chain_config: serde_json::Value,
         witness_timeout: bool,
         witness_delay: bool,
         first_query_time: OnceLock<Instant>,
@@ -66,7 +68,6 @@ async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: 
         let method = request["method"].as_str().unwrap_or("");
 
         let result = match method {
-            "debug_chainConfig" => state.chain_config.clone(),
             "debug_executionWitnessByBlockHash" => {
                 let hash_str = request["params"][0].as_str().unwrap();
                 let hash: B256 = hash_str.parse().unwrap();
@@ -105,21 +106,8 @@ async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: 
     let block_hash = fixture.new_payload_request.block_hash();
     let witnesses = HashMap::from([(B256::from(block_hash), fixture.witness.clone())]);
 
-    let blob_schedule = fixture.chain_config.active_fork.blob_schedule().unwrap();
-    let chain_config = serde_json::json!({
-        "chainId": fixture.chain_config.chain_id,
-        "blobSchedule": {
-            "bpo2": {
-                "target": blob_schedule.target,
-                "max": blob_schedule.max,
-                "baseFeeUpdateFraction": blob_schedule.base_fee_update_fraction,
-            }
-        }
-    });
-
     let state = Arc::new(MockElState {
         witnesses,
-        chain_config,
         witness_timeout,
         witness_delay,
         first_query_time: OnceLock::new(),
@@ -144,7 +132,6 @@ async fn start_zkboost_server(
         port: 0,
         el_endpoint,
         el_headers: HashMap::new(),
-        chain_config_path: None,
         witness_timeout_secs,
         proof_cache_size: 128,
         witness_cache_size: 128,
@@ -204,6 +191,7 @@ impl TestHarness {
         let new_payload_request_root = self
             .client
             .request_proof(
+                self.fixture.fork,
                 &self.fixture.new_payload_request,
                 &self.fixture.chain_config,
                 &[self.proof_type],
@@ -278,6 +266,7 @@ impl TestHarness {
         let verification = self
             .client
             .verify_proof(
+                self.fixture.fork,
                 self.fixture.new_payload_request_root,
                 &self.fixture.chain_config,
                 self.proof_type,

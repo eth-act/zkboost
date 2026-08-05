@@ -55,7 +55,6 @@ url.workspace = true
 # alloy
 alloy-consensus.workspace = true
 alloy-eips.workspace = true
-alloy-genesis.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types-debug.workspace = true
 alloy-rpc-types-engine.workspace = true
@@ -68,9 +67,9 @@ ere-cluster-client-zisk.workspace = true
 ere-verifier-zisk.workspace = true
 
 # ere-guests
-ere-guests-stateless-validator-common.workspace = true
-ere-guests-stateless-validator-ethrex.workspace = true
-ere-guests-stateless-validator-reth.workspace = true
+stateless-validator-common.workspace = true
+stateless-validator-ethrex.workspace = true
+stateless-validator-reth.workspace = true
 
 # local
 zkboost-types.workspace = true

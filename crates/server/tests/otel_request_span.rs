@@ -39,18 +39,11 @@ async fn test_request_span_joins_remote_trace_context() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("no other subscriber should be installed in this test binary");
 
-    // A local chain config file lets the server start without contacting the EL endpoint.
+    // The server starts without contacting the EL endpoint.
     let config = Config {
         port: 0,
         el_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
         el_headers: HashMap::new(),
-        chain_config_path: Some(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/tests/fixture/chain_config.json"
-            )
-            .into(),
-        ),
         witness_timeout_secs: 12,
         proof_cache_size: 128,
         witness_cache_size: 128,

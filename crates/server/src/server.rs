@@ -1,15 +1,12 @@
 //! Reusable server initialization and startup.
 //!
-//! [`zkBoostServer::new`] performs async initialization (EL chain config fetch, zkVM
-//! instance creation) and [`zkBoostServer::run`] binds the HTTP listener and spawns
-//! all background services.
+//! [`zkBoostServer::new`] performs async initialization (zkVM instance creation) and
+//! [`zkBoostServer::run`] binds the HTTP listener and spawns all background services.
 
 use std::{
     collections::HashMap,
-    fs,
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
-    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -20,14 +17,12 @@ use tokio::{
     net::TcpListener,
     sync::{RwLock, broadcast, mpsc},
     task::JoinHandle,
-    time::sleep,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use zkboost_types::ProofType;
 
 use crate::{
-    chain_config::{BlobParams, blob_params_from_el_chain_config},
     config::Config,
     dashboard::{DashboardService, DashboardState},
     el_client::ElClient,
@@ -43,7 +38,6 @@ const CHANNEL_CAPACITY: usize = 128;
 #[allow(non_camel_case_types, missing_debug_implementations)]
 pub struct zkBoostServer {
     el_client: Arc<ElClient>,
-    blob_params: BlobParams,
     zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     config: Config,
     metrics: PrometheusHandle,
@@ -58,12 +52,6 @@ impl zkBoostServer {
             config.el_endpoint.clone(),
             config.el_header_map()?,
         )?);
-
-        let blob_params = load_blob_params(&config.chain_config_path, &el_client).await?;
-        info!(
-            forks = blob_params.len(),
-            "execution-layer blob schedule loaded"
-        );
 
         let mut zkvms = HashMap::new();
         for zkvm_config in &config.zkvm {
@@ -92,7 +80,6 @@ impl zkBoostServer {
 
         Ok(Self {
             el_client,
-            blob_params,
             zkvms: Arc::new(zkvms),
             config,
             metrics,
@@ -193,7 +180,6 @@ impl zkBoostServer {
         };
 
         let app_state = Arc::new(AppState::new(
-            self.blob_params,
             self.zkvms.clone(),
             proof_cache,
             failure_cache,
@@ -218,32 +204,4 @@ impl zkBoostServer {
 
         Ok((addr, handles))
     }
-}
-
-/// Loads the execution-layer blob fee parameters from a local chain config JSON file when one is
-/// configured, or from the execution layer via `debug_chainConfig` otherwise.
-async fn load_blob_params(
-    chain_config_path: &Option<PathBuf>,
-    el_client: &ElClient,
-) -> anyhow::Result<BlobParams> {
-    let chain_config = if let Some(path) = chain_config_path {
-        let content = fs::read_to_string(path)?;
-        let chain_config = serde_json::from_str(&content)?;
-        info!("chain config loaded from file");
-        chain_config
-    } else {
-        loop {
-            match el_client.get_chain_config().await {
-                Ok(Some(chain_config)) => break chain_config,
-                Ok(None) => warn!(url = %el_client.url(), "chain config not available"),
-                Err(e) => {
-                    warn!(url = %el_client.url(), error = %e, "chain config fetch failed")
-                }
-            }
-            info!("retrying chain config fetch");
-            sleep(Duration::from_secs(2)).await;
-        }
-    };
-    info!("chain config loaded");
-    Ok(blob_params_from_el_chain_config(&chain_config))
 }

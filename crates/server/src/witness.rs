@@ -11,9 +11,9 @@ use std::{
 
 use alloy_primitives::Bytes;
 use alloy_rpc_types_debug::ExecutionWitness as AlloyExecutionWitness;
-use ere_guests_stateless_validator_common::guest::input::ExecutionWitness;
 use futures::FutureExt;
 use lru::LruCache;
+use stateless_validator_common::guest::input::ExecutionWitness;
 use tokio::{
     sync::mpsc,
     task::{JoinHandle, JoinSet},

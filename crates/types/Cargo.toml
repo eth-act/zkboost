@@ -24,4 +24,4 @@ libssz-derive.workspace = true
 ere-catalog.workspace = true
 
 # ere-guests
-ere-guests-stateless-validator-common.workspace = true
+stateless-validator-common.workspace = true

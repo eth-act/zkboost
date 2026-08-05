@@ -1,7 +1,5 @@
-//! EL JSON-RPC client wrapping the `debug_chainConfig` and
-//! `debug_executionWitnessByBlockHash` RPC methods.
+//! EL JSON-RPC client wrapping the `debug_executionWitnessByBlockHash` RPC method.
 
-use alloy_genesis::ChainConfig as AlloyChainConfig;
 use alloy_rpc_types_debug::ExecutionWitness;
 use anyhow::Context;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -23,11 +21,6 @@ impl ElClient {
             .build()
             .context("build EL HTTP client")?;
         Ok(Self { url, http_client })
-    }
-
-    /// Return url of the EL client.
-    pub fn url(&self) -> &Url {
-        &self.url
     }
 
     /// Send a JSON-RPC request to the execution layer node.
@@ -75,12 +68,6 @@ impl ElClient {
             Some(value) => Ok(Some((value, response_size))),
             None => Ok(None),
         }
-    }
-
-    /// Fetch chain config.
-    pub async fn get_chain_config(&self) -> Result<Option<AlloyChainConfig>, Error> {
-        let result = self.request("debug_chainConfig", ()).await?;
-        Ok(result.map(|(chain_config, _)| chain_config))
     }
 
     /// Fetch execution witness for a block, returning the witness and the raw response size.

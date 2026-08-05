@@ -16,10 +16,10 @@
             "post": {
                 "operationId": "postExecutionProofRequests",
                 "summary": "Submit an execution proof request",
-                "description": "Accepts an SSZ-encoded ProofRequestBody (payload, chain config, and proof types) and enqueues proof generation. Returns the tree-hash root computed from the submitted payload.",
+                "description": "Accepts an SSZ-encoded ProofRequestBody (fork, payload, chain config, and proof types) and enqueues proof generation. Returns the tree-hash root computed from the submitted payload.",
                 "requestBody": {
                     "required": true,
-                    "description": "SSZ-encoded ProofRequestBody containing the NewPayloadRequest (transparent union across fork variants), the chain config, and the proof types to generate.",
+                    "description": "SSZ-encoded ProofRequestBody containing the active fork, the NewPayloadRequest (transparent union across fork variants), the chain config, and the proof types to generate.",
                     "content": {
                         "application/octet-stream": {
                             "schema": {
@@ -40,7 +40,7 @@
                         }
                     },
                     "400": {
-                        "description": "Invalid SSZ body, empty or missing proof_types, or unconfigured proof type.",
+                        "description": "Invalid SSZ body, a fork that does not select the submitted payload's schema, empty or missing proof_types, or unconfigured proof type.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -59,6 +59,13 @@
                                         "value": {
                                             "code": 400,
                                             "message": "no zkVM configured for proof type 'reth-sp1'"
+                                        }
+                                    },
+                                    "fork_payload_mismatch": {
+                                        "summary": "Fork does not select the payload schema",
+                                        "value": {
+                                            "code": 400,
+                                            "message": "submitted payload is not valid variant for fork Cancun"
                                         }
                                     },
                                     "empty_proof_types": {
@@ -179,7 +186,7 @@
                 "description": "Verifies an SSZ-encoded ProofVerificationBody against the server's configured zkVM backend. A 200 response with `INVALID` status means verification ran successfully but the proof did not pass. HTTP error codes (4xx, 5xx) mean the request itself was malformed or the server could not process it.",
                 "requestBody": {
                     "required": true,
-                    "description": "SSZ-encoded ProofVerificationBody containing the payload root, the chain config, the proof type, and the proof bytes.",
+                    "description": "SSZ-encoded ProofVerificationBody containing the active fork, the payload root, the chain config, the proof type, and the proof bytes.",
                     "content": {
                         "application/octet-stream": {
                             "schema": {
@@ -285,11 +292,15 @@
             "ProofRequestBody": {
                 "type": "object",
                 "required": [
+                    "fork",
                     "new_payload_request",
                     "chain_config",
                     "proof_types"
                 ],
                 "properties": {
+                    "fork": {
+                        "$ref": "#/components/schemas/ProtocolFork"
+                    },
                     "new_payload_request": {
                         "$ref": "#/components/schemas/NewPayloadRequest"
                     },
@@ -332,37 +343,26 @@
                         "$ref": "#/components/schemas/ForkConfig"
                     }
                 },
-                "description": "The chain configuration the proof is verified against. It carries chain_id and the resolved active fork."
+                "description": "The chain configuration the proof is verified against. It carries chain_id and the activation point of the active fork. The fork itself is a sibling field of the request body."
             },
             "ForkConfig": {
                 "type": "object",
                 "required": [
-                    "fork",
-                    "activation",
-                    "blob_schedule"
+                    "activation"
                 ],
                 "properties": {
-                    "fork": {
-                        "$ref": "#/components/schemas/ProtocolFork"
-                    },
                     "activation": {
                         "$ref": "#/components/schemas/ForkActivation"
-                    },
-                    "blob_schedule": {
-                        "type": "array",
-                        "maxItems": 1,
-                        "items": {
-                            "$ref": "#/components/schemas/BlobSchedule"
-                        },
-                        "description": "Zero or one blob schedule. Present for blob-bearing forks (Cancun onward), empty otherwise."
                     }
                 },
-                "description": "The protocol fork active for the block, with its activation point and blob schedule."
+                "description": "Configuration of the fork active for the block."
             },
             "ProtocolFork": {
                 "type": "integer",
-                "format": "uint64",
-                "description": "SSZ enum discriminant selecting the active execution-layer fork, in fork order"
+                "format": "uint8",
+                "minimum": 1,
+                "maximum": 21,
+                "description": "SSZ enum discriminant selecting the active execution-layer fork, in fork order, encoded as a single byte. It selects the stateless input schema the payload is encoded under. Values outside the assigned range are rejected when the body is decoded."
             },
             "ForkActivation": {
                 "type": "object",
@@ -387,32 +387,6 @@
                         "description": "Activation timestamp, for post-merge forks."
                     }
                 }
-            },
-            "BlobSchedule": {
-                "type": "object",
-                "required": [
-                    "target",
-                    "max",
-                    "base_fee_update_fraction"
-                ],
-                "properties": {
-                    "target": {
-                        "type": "integer",
-                        "format": "uint64",
-                        "description": "Target blobs per block."
-                    },
-                    "max": {
-                        "type": "integer",
-                        "format": "uint64",
-                        "description": "Maximum blobs per block."
-                    },
-                    "base_fee_update_fraction": {
-                        "type": "integer",
-                        "format": "uint64",
-                        "description": "Blob base fee update fraction."
-                    }
-                },
-                "description": "EIP-7840 blob parameters for the active fork. The consensus layer provides max, which the server validates against its execution-layer genesis. target and base_fee_update_fraction may be 0 while the consensus config does not expose them, in which case the server fills them from the execution-layer genesis."
             },
             "ProofType": {
                 "type": "string",
@@ -520,12 +494,16 @@
             "ProofVerificationBody": {
                 "type": "object",
                 "required": [
+                    "fork",
                     "new_payload_request_root",
                     "chain_config",
                     "proof_type",
                     "proof"
                 ],
                 "properties": {
+                    "fork": {
+                        "$ref": "#/components/schemas/ProtocolFork"
+                    },
                     "new_payload_request_root": {
                         "$ref": "#/components/schemas/Hash256"
                     },

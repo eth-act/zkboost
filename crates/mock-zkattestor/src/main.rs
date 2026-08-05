@@ -9,12 +9,12 @@ use chain_config::ChainConfigResolver;
 use cl_client::{ClClient, new_payload_request_from_beacon_block};
 use clap::Parser;
 use futures::StreamExt;
-use lighthouse_types::Hash256;
+use lighthouse_types::{ForkName, Hash256};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_client::zkBoostClient;
-use zkboost_types::{ChainConfig, ProofEvent, ProofType};
+use zkboost_types::{ChainConfig, ProofEvent, ProofType, ProtocolFork};
 
 mod chain_config;
 mod cl_client;
@@ -73,14 +73,24 @@ struct MockAttestor {
 impl MockAttestor {
     async fn process_block(&self, block_root: Hash256) -> anyhow::Result<()> {
         let beacon_block = self.cl_client.get_beacon_block(block_root).await?;
-        let new_payload_request = new_payload_request_from_beacon_block(&beacon_block)?;
+        let envelope = if beacon_block.fork_name_unchecked() >= ForkName::Gloas {
+            Some(
+                self.cl_client
+                    .get_execution_payload_envelope(block_root)
+                    .await?,
+            )
+        } else {
+            None
+        };
+        let new_payload_request =
+            new_payload_request_from_beacon_block(&beacon_block, envelope.as_ref())?;
 
         let block_hash = Hash256::from(new_payload_request.block_hash());
         let timestamp = new_payload_request.timestamp();
-        let chain_config = self.resolver.resolve(timestamp)?;
+        let (fork, chain_config) = self.resolver.resolve(timestamp)?;
         let resp = self
             .zkboost_client
-            .request_proof(&new_payload_request, &chain_config, &self.proof_types)
+            .request_proof(fork, &new_payload_request, &chain_config, &self.proof_types)
             .await?;
         let new_payload_request_root = resp.new_payload_request_root;
         info!(%new_payload_request_root, %block_hash, "proof requested");
@@ -103,6 +113,7 @@ impl MockAttestor {
                     info!(%new_payload_request_root, proof_type = %proof_complete.proof_type, "proof complete");
                     match self
                         .download_and_verify(
+                            fork,
                             new_payload_request_root,
                             proof_complete.proof_type,
                             &chain_config,
@@ -136,6 +147,7 @@ impl MockAttestor {
 
     async fn download_and_verify(
         &self,
+        fork: ProtocolFork,
         new_payload_request_root: Hash256,
         proof_type: ProofType,
         chain_config: &ChainConfig,
@@ -146,7 +158,13 @@ impl MockAttestor {
             .await?;
         let response = self
             .zkboost_client
-            .verify_proof(new_payload_request_root, chain_config, proof_type, &proof)
+            .verify_proof(
+                fork,
+                new_payload_request_root,
+                chain_config,
+                proof_type,
+                &proof,
+            )
             .await?;
         if !response.status.is_valid() {
             anyhow::bail!("invalid proof");

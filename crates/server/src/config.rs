@@ -73,9 +73,6 @@ pub struct Config {
     /// Optional HTTP headers applied to every EL JSON-RPC request (e.g. authentication).
     #[serde(default)]
     pub el_headers: HashMap<String, String>,
-    /// Optional path to a local execution-layer chain config JSON file.
-    #[serde(default)]
-    pub chain_config_path: Option<PathBuf>,
     /// Timeout in seconds for witness data (both pending-proof and fetch staleness).
     #[serde(default = "default_witness_timeout_secs")]
     pub witness_timeout_secs: u64,
@@ -109,7 +106,6 @@ impl fmt::Debug for Config {
             .field("port", &self.port)
             .field("el_endpoint", &self.el_endpoint)
             .field("el_headers", &RedactedHeaders(&self.el_headers))
-            .field("chain_config_path", &self.chain_config_path)
             .field("witness_timeout_secs", &self.witness_timeout_secs)
             .field("proof_cache_size", &self.proof_cache_size)
             .field("witness_cache_size", &self.witness_cache_size)
@@ -429,22 +425,6 @@ mod tests {
 
         assert!(matches!(&config.zkvm[0], zkVMConfig::Ere { .. }));
         assert!(matches!(&config.zkvm[1], zkVMConfig::Mock { .. }));
-    }
-
-    #[test]
-    fn test_chain_config_path_parsed() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            chain_config_path = "/tmp/chain_config.json"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert_eq!(
-            config.chain_config_path.as_deref(),
-            Some(std::path::Path::new("/tmp/chain_config.json"))
-        );
     }
 
     #[test]

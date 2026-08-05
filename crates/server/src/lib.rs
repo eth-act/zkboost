@@ -3,7 +3,6 @@
 //! Re-exports internal modules so that integration tests and the binary
 //! can share the same code.
 
-pub(crate) mod chain_config;
 pub mod config;
 pub(crate) mod dashboard;
 pub mod el_client;
