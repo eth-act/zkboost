@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use url::Url;
 use zkboost_types::Hash256;
 
+use crate::fork_schedule::ElChainConfig;
+
 /// Execution layer JSON-RPC client.
 #[derive(Debug)]
 pub struct ElClient {
@@ -77,6 +79,14 @@ impl ElClient {
     ) -> Result<Option<(ExecutionWitness, usize)>, Error> {
         self.request("debug_executionWitnessByBlockHash", (block_hash,))
             .await
+    }
+
+    /// Fetch the chain configuration (fork activation times) via `debug_chainConfig`.
+    pub(crate) async fn get_chain_config(&self) -> Result<Option<ElChainConfig>, Error> {
+        Ok(self
+            .request::<_, ElChainConfig>("debug_chainConfig", [(); 0])
+            .await?
+            .map(|(config, _)| config))
     }
 }
 

@@ -6,6 +6,7 @@
 pub mod config;
 pub(crate) mod dashboard;
 pub mod el_client;
+pub(crate) mod fork_schedule;
 pub mod http;
 pub mod metrics;
 #[cfg(feature = "otel")]

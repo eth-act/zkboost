@@ -4,7 +4,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use axum::{Json, extract::State};
 use bytes::Bytes;
-use tracing::{debug, info_span, instrument};
+use tracing::{debug, info, info_span, instrument};
 use zkboost_types::{
     Hash256, HashTreeRoot, NewPayloadRequest, ProofRequestBody, ProofRequestResponse, ProtocolFork,
     Sha2Hasher, SszDecode,
@@ -67,6 +67,52 @@ pub(crate) async fn post_execution_proof_requests(
         }
     }
 
+    // A clientless requester labels the fork from the Beacon API, which cannot
+    // distinguish BPO forks that activate at the same epoch (their schedule
+    // entries collapse into the effective one). Since the guest maps the label
+    // to that fork's blob parameters, resolve the fork actually active on the
+    // EL at the payload timestamp and correct compatible mislabels; a label
+    // whose input schema disagrees with the EL's active fork is rejected. The
+    // same chain-config response carries the EL's chain id, checked against
+    // the request's first: a mismatch is rejected before proving resources
+    // are spent.
+    //
+    // Only the label is rewritten. The submitted chain config is passed through
+    // untouched because the guest echoes it into the proof's public values, and
+    // the requester later reconstructs those values from its own copy when
+    // verifying — the label itself is not part of the public values.
+    let mut fork = request.fork;
+    if let Some(cache) = &state.fork_schedule
+        && let Some(schedule) = cache.get().await
+    {
+        if let Some(el_chain_id) = schedule.chain_id()
+            && el_chain_id != request.chain_config.chain_id
+        {
+            return Err(ErrorResponse::bad_request(format!(
+                "chain_config.chain_id {} does not match the execution layer's chain id {el_chain_id}",
+                request.chain_config.chain_id
+            )));
+        }
+        if let Some((el_fork, _)) = schedule.resolve(request.new_payload_request.timestamp())
+            && el_fork != fork
+        {
+            if !is_valid_payload_variant(el_fork, &request.new_payload_request) {
+                return Err(ErrorResponse::bad_request(format!(
+                    "submitted fork {fork:?} does not match fork {el_fork:?} active on the execution layer at the payload timestamp"
+                )));
+            }
+            // Info, not warn: on networks whose Beacon API collapses the
+            // schedule the requester can never derive the right label, so
+            // this fires on every request in steady state.
+            info!(
+                submitted = ?fork,
+                resolved = ?el_fork,
+                "normalized fork label to the execution layer's active fork"
+            );
+            fork = el_fork;
+        }
+    }
+
     let new_payload_request = Arc::new(request.new_payload_request);
     let new_payload_request_root = Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
     let block_number = new_payload_request.block_number();
@@ -84,7 +130,7 @@ pub(crate) async fn post_execution_proof_requests(
     state
         .proof_service_tx
         .send(ProofServiceMessage::RequestProof {
-            fork: request.fork,
+            fork,
             new_payload_request_root,
             new_payload_request,
             chain_config: request.chain_config,
@@ -106,17 +152,24 @@ pub(crate) async fn post_execution_proof_requests(
 ///
 /// A mismatch makes the guest reject the input and return a default result, which the prover
 /// still turns into a valid proof of that empty result, so the request is refused here instead.
+///
+/// Deliberately wildcard-free on the fork side: when the upstream [`ProtocolFork`] enum gains
+/// a variant, this match stops compiling, forcing the schema assignment to be made explicitly.
 fn is_valid_payload_variant(fork: ProtocolFork, new_payload_request: &NewPayloadRequest) -> bool {
     use NewPayloadRequest::*;
     use ProtocolFork::*;
-    matches!(
-        (fork, new_payload_request),
-        (Paris, Bellatrix(_))
-            | (Shanghai, Capella(_))
-            | (Cancun, Deneb(_))
-            | (Prague | Osaka | BPO1 | BPO2, ElectraFulu(_))
-            | (Amsterdam, Gloas(_))
-    )
+    match fork {
+        // Pre-merge forks have no execution payload schema.
+        Frontier | Homestead | DAOFork | TangerineWhistle | SpuriousDragon | Byzantium
+        | StPetersburg | Istanbul | MuirGlacier | Berlin | London | ArrowGlacier | GrayGlacier => {
+            false
+        }
+        Paris => matches!(new_payload_request, Bellatrix(_)),
+        Shanghai => matches!(new_payload_request, Capella(_)),
+        Cancun => matches!(new_payload_request, Deneb(_)),
+        Prague | Osaka | BPO1 | BPO2 => matches!(new_payload_request, ElectraFulu(_)),
+        Amsterdam => matches!(new_payload_request, Gloas(_)),
+    }
 }
 
 #[cfg(test)]
@@ -135,7 +188,15 @@ mod tests {
         ProtocolFork, SszDecode, SszEncode,
     };
 
-    use crate::http::{AppState, tests::mock_app_state, v1::post_execution_proof_requests};
+    use crate::{
+        fork_schedule::{ElChainConfig, ForkSchedule, ForkScheduleCache},
+        http::{
+            AppState,
+            tests::{mock_app_state, mock_app_state_with},
+            v1::post_execution_proof_requests,
+        },
+        proof::ProofServiceMessage,
+    };
 
     const NEW_PAYLOAD_REQUEST: &[u8] =
         include_bytes!("../../../tests/fixture/new_payload_request.ssz");
@@ -145,10 +206,18 @@ mod tests {
     }
 
     fn proof_request_body_with_fork(fork: ProtocolFork, proof_types: Vec<ProofType>) -> Vec<u8> {
+        proof_request_body_with_activation(fork, 0, proof_types)
+    }
+
+    fn proof_request_body_with_activation(
+        fork: ProtocolFork,
+        activation_timestamp: u64,
+        proof_types: Vec<ProofType>,
+    ) -> Vec<u8> {
         let new_payload_request = NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST).unwrap();
         let chain_config = ChainConfig {
             chain_id: 1,
-            active_fork: ForkConfig::new(ForkActivation::new(None, Some(0))),
+            active_fork: ForkConfig::new(ForkActivation::new(None, Some(activation_timestamp))),
         };
         ProofRequestBody {
             fork,
@@ -206,6 +275,135 @@ mod tests {
     async fn test_fork_invalid_payload_variant_returns_bad_request() {
         let body = proof_request_body_with_fork(ProtocolFork::Cancun, vec![ProofType::RethZisk]);
         assert_eq!(send(mock_app_state().await, body).await, 400);
+    }
+
+    fn schedule_from(value: serde_json::Value) -> Arc<ForkScheduleCache> {
+        let config: ElChainConfig = serde_json::from_value(value).unwrap();
+        Arc::new(ForkScheduleCache::preset(ForkSchedule::new(&config)))
+    }
+
+    /// Devnet shape: BPO1 and BPO2 both activate at genesis, so a requester
+    /// working from the Beacon API's collapsed blob schedule labels the
+    /// active fork BPO1 while the EL's effective fork is BPO2. The chain id
+    /// matches the test fixture's.
+    fn devnet_schedule() -> Arc<ForkScheduleCache> {
+        schedule_from(serde_json::json!({
+            "chainId": 1,
+            "shanghaiTime": 0,
+            "cancunTime": 0,
+            "pragueTime": 0,
+            "osakaTime": 0,
+            "bpo1Time": 0,
+            "bpo2Time": 0,
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_mislabeled_bpo_fork_is_normalized_against_el_schedule() {
+        let (state, mut proof_service_rx) = mock_app_state_with(Some(devnet_schedule())).await;
+        // The requester's own activation timestamp (7) deliberately differs
+        // from the EL's (0): only the label may be rewritten, never the
+        // chain config, which the guest echoes into the proof's public values
+        // that the requester later verifies against.
+        let body =
+            proof_request_body_with_activation(ProtocolFork::BPO1, 7, vec![ProofType::RethZisk]);
+
+        assert_eq!(send(state, body).await, 200);
+
+        let message = proof_service_rx.recv().await.unwrap();
+        let ProofServiceMessage::RequestProof {
+            fork, chain_config, ..
+        } = message
+        else {
+            panic!("expected a RequestProof message");
+        };
+        assert_eq!(fork, ProtocolFork::BPO2);
+        assert_eq!(chain_config.chain_id, 1);
+        assert_eq!(chain_config.active_fork.activation.timestamp(), Some(7));
+    }
+
+    #[tokio::test]
+    async fn test_unknown_el_fork_time_disables_normalization() {
+        // The EL schedules a fork this build does not model: resolution is
+        // disabled, so the submitted label passes through unrewritten and the
+        // request still succeeds.
+        let schedule = schedule_from(serde_json::json!({
+            "chainId": 1,
+            "bpo1Time": 0,
+            "bpo2Time": 0,
+            "bpo3Time": 0,
+        }));
+        let (state, mut proof_service_rx) = mock_app_state_with(Some(schedule)).await;
+        let body = proof_request_body_with_fork(ProtocolFork::BPO1, vec![ProofType::RethZisk]);
+
+        assert_eq!(send(state, body).await, 200);
+
+        let message = proof_service_rx.recv().await.unwrap();
+        let ProofServiceMessage::RequestProof { fork, .. } = message else {
+            panic!("expected a RequestProof message");
+        };
+        assert_eq!(fork, ProtocolFork::BPO1);
+    }
+
+    #[tokio::test]
+    async fn test_unreachable_el_degrades_to_passthrough() {
+        // A schedule cache whose EL fetch fails leaves normalization off; the
+        // request succeeds with the submitted label.
+        let cache = Arc::new(ForkScheduleCache::new(Arc::new(
+            crate::el_client::ElClient::new(
+                url::Url::parse("http://127.0.0.1:1/").unwrap(),
+                reqwest::header::HeaderMap::new(),
+            )
+            .unwrap(),
+        )));
+        let (state, mut proof_service_rx) = mock_app_state_with(Some(cache)).await;
+        let body = proof_request_body_with_fork(ProtocolFork::BPO1, vec![ProofType::RethZisk]);
+
+        assert_eq!(send(state, body).await, 200);
+
+        let message = proof_service_rx.recv().await.unwrap();
+        let ProofServiceMessage::RequestProof { fork, .. } = message else {
+            panic!("expected a RequestProof message");
+        };
+        assert_eq!(fork, ProtocolFork::BPO1);
+    }
+
+    #[tokio::test]
+    async fn test_mismatched_chain_id_returns_bad_request() {
+        let schedule = schedule_from(serde_json::json!({
+            "chainId": 999,
+            "bpo1Time": 0,
+            "bpo2Time": 0,
+        }));
+        let (state, _proof_service_rx) = mock_app_state_with(Some(schedule)).await;
+        let body = proof_request_body_with_fork(ProtocolFork::BPO2, vec![ProofType::RethZisk]);
+
+        assert_eq!(send(state, body).await, 400);
+    }
+
+    #[tokio::test]
+    async fn test_matching_fork_label_is_not_rewritten() {
+        let (state, mut proof_service_rx) = mock_app_state_with(Some(devnet_schedule())).await;
+        let body = proof_request_body_with_fork(ProtocolFork::BPO2, vec![ProofType::RethZisk]);
+
+        assert_eq!(send(state, body).await, 200);
+
+        let message = proof_service_rx.recv().await.unwrap();
+        let ProofServiceMessage::RequestProof { fork, .. } = message else {
+            panic!("expected a RequestProof message");
+        };
+        assert_eq!(fork, ProtocolFork::BPO2);
+    }
+
+    #[tokio::test]
+    async fn test_fork_conflicting_with_el_schedule_returns_bad_request() {
+        // The EL only schedules Cancun, whose payload schema differs from the
+        // ElectraFulu payload submitted under a BPO2 label.
+        let schedule = schedule_from(serde_json::json!({ "cancunTime": 0 }));
+        let (state, _proof_service_rx) = mock_app_state_with(Some(schedule)).await;
+        let body = proof_request_body_with_fork(ProtocolFork::BPO2, vec![ProofType::RethZisk]);
+
+        assert_eq!(send(state, body).await, 400);
     }
 
     #[tokio::test]
