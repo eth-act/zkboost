@@ -26,6 +26,7 @@ use crate::{
     config::Config,
     dashboard::{DashboardService, DashboardState},
     el_client::ElClient,
+    fork_schedule::ForkScheduleCache,
     http::{AppState, router},
     metrics::{set_build_info, set_programs_loaded},
     proof::{ProofService, worker, zkvm::zkVMInstance},
@@ -114,6 +115,7 @@ impl zkBoostServer {
 
         let mut handles = Vec::new();
 
+        let fork_schedule = Arc::new(ForkScheduleCache::new(self.el_client.clone()));
         let witness_service = WitnessService::new(
             self.el_client,
             proof_service_tx.clone(),
@@ -185,6 +187,7 @@ impl zkBoostServer {
             failure_cache,
             self.metrics,
             dashboard,
+            Some(fork_schedule),
             proof_service_tx,
             proof_event_rx,
             dashboard_event_rx,

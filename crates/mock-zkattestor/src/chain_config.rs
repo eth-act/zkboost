@@ -54,6 +54,12 @@ impl ChainConfigResolver {
             }
         }
 
+        if spec.blob_schedule.len() > 2 {
+            tracing::warn!(
+                entries = spec.blob_schedule.len(),
+                "blob schedule has more entries than wire BPO forks; ignoring the extras"
+            );
+        }
         for (index, entry) in spec.blob_schedule.iter().enumerate() {
             if let Some(fork) = bpo_fork(index) {
                 forks.push(ScheduledFork {

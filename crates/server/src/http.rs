@@ -20,6 +20,7 @@ use zkboost_types::{Hash256, ProofEvent, ProofType};
 
 use crate::{
     dashboard::{DashboardEvent, DashboardState},
+    fork_schedule::ForkScheduleCache,
     metrics::http_metrics_middleware,
     proof::{FailureCache, ProofServiceMessage, zkvm::zkVMInstance},
 };
@@ -34,6 +35,7 @@ pub(crate) struct AppState {
     pub(crate) failure_cache: FailureCache,
     pub(crate) metrics: PrometheusHandle,
     pub(crate) dashboard: Option<Arc<RwLock<DashboardState>>>,
+    pub(crate) fork_schedule: Option<Arc<ForkScheduleCache>>,
     pub(crate) proof_service_tx: mpsc::Sender<ProofServiceMessage>,
     pub(crate) proof_event_rx: broadcast::Receiver<ProofEvent>,
     pub(crate) dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
@@ -48,6 +50,7 @@ impl AppState {
         failure_cache: FailureCache,
         metrics: PrometheusHandle,
         dashboard: Option<Arc<RwLock<DashboardState>>>,
+        fork_schedule: Option<Arc<ForkScheduleCache>>,
         proof_service_tx: mpsc::Sender<ProofServiceMessage>,
         proof_event_rx: broadcast::Receiver<ProofEvent>,
         dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
@@ -58,6 +61,7 @@ impl AppState {
             failure_cache,
             metrics,
             dashboard,
+            fork_schedule,
             proof_service_tx,
             proof_event_rx,
             dashboard_event_rx,
@@ -163,11 +167,21 @@ pub(crate) mod tests {
     use crate::{
         config::{MockProvingTime, zkVMConfig},
         dashboard::DashboardState,
+        fork_schedule::ForkScheduleCache,
         http::{AppState, router},
-        proof::zkvm::zkVMInstance,
+        proof::{ProofServiceMessage, zkvm::zkVMInstance},
     };
 
     pub(crate) async fn mock_app_state() -> Arc<AppState> {
+        let (state, _) = mock_app_state_with(None).await;
+        state
+    }
+
+    /// Builds mock state with an optional fork schedule, returning the proof
+    /// service receiver so tests can observe enqueued messages.
+    pub(crate) async fn mock_app_state_with(
+        fork_schedule: Option<Arc<ForkScheduleCache>>,
+    ) -> (Arc<AppState>, mpsc::Receiver<ProofServiceMessage>) {
         let proof_type = ProofType::RethZisk;
         let mock_config = zkVMConfig::Mock {
             proof_type,
@@ -185,20 +199,22 @@ pub(crate) mod tests {
         let metrics = PrometheusBuilder::new().build_recorder().handle();
         let dashboard = Arc::new(RwLock::new(DashboardState::new(vec![proof_type], 256))).into();
 
-        let (proof_service_tx, _) = mpsc::channel(16);
+        let (proof_service_tx, proof_service_rx) = mpsc::channel(16);
         let (_, proof_event_rx) = broadcast::channel(16);
         let (_, dashboard_event_rx) = broadcast::channel(16);
 
-        Arc::new(AppState::new(
+        let state = Arc::new(AppState::new(
             zkvms,
             proof_cache,
             failure_cache,
             metrics,
             dashboard,
+            fork_schedule,
             proof_service_tx,
             proof_event_rx,
             dashboard_event_rx,
-        ))
+        ));
+        (state, proof_service_rx)
     }
 
     #[tokio::test]
