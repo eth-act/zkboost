@@ -3,7 +3,6 @@ members = [
     "crates/server",
     "crates/types",
     "crates/mock-zkattestor",
-    "crates/guest-loader",
 ]
 resolver = "2"
 
