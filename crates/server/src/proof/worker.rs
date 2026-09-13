@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::Bytes;
 use tokio::{sync::mpsc, time::timeout};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span, error, info, info_span, record_all};
@@ -20,41 +19,47 @@ use crate::{
 
 /// Input sent to a per-zkVM worker for proof generation.
 pub(crate) struct WorkerInput {
+    /// The zkVM input of the payload.
     pub(crate) stateless_input: Arc<StatelessInput>,
+    /// The request span that the prove span joins.
     pub(crate) span: Span,
-    /// When the input was dispatched into the worker channel; measures queue
-    /// wait at dequeue.
+    /// When the input was dispatched into the worker channel. The queue wait is measured at
+    /// dequeue.
     pub(crate) queued_at: Instant,
-    /// How long the request waited for its witness before dispatch; carried
-    /// through to the completion event.
-    pub(crate) witness_wait: Duration,
 }
 
 /// Output returned by a worker after a proof attempt.
 #[derive(Debug)]
 pub(crate) struct WorkerOutput {
+    /// The hash tree root of the `NewPayloadRequest`.
     pub(crate) new_payload_request_root: Hash256,
+    /// Block hash of the payload.
     pub(crate) block_hash: Hash256,
+    /// Parent beacon block root of the payload.
+    pub(crate) parent_beacon_block_root: Hash256,
+    /// Block number of the payload.
     pub(crate) block_number: u64,
+    /// Proof type of the attempt.
     pub(crate) proof_type: ProofType,
+    /// Result of the attempt.
     pub(crate) proof_result: ProofResult,
+    /// Time the attempt took.
     pub(crate) duration: Duration,
-    pub(crate) witness_wait: Duration,
-    pub(crate) queue_wait: Duration,
 }
 
 /// Result of a single proof generation attempt.
 #[derive(Debug)]
 pub(crate) enum ProofResult {
     /// Proof generated successfully.
-    Ok(Bytes),
+    Ok(Vec<u8>),
     /// Proof generation failed with an error message.
     Err(String),
     /// Proof generation exceeded the configured timeout.
     Timeout,
 }
 
-/// Runs a per-zkVM worker loop that processes proof requests sequentially.
+/// Runs a per-zkVM worker loop that processes proof requests sequentially and sends every
+/// attempt to the worker output channel.
 pub(crate) async fn run_worker(
     zkvm: zkVMInstance,
     shutdown: CancellationToken,
@@ -82,6 +87,7 @@ pub(crate) async fn run_worker(
 
         let new_payload_request_root = input.stateless_input.root();
         let block_hash = input.stateless_input.block_hash();
+        let parent_beacon_block_root = input.stateless_input.parent_beacon_block_root();
         let block_number = input.stateless_input.block_number();
 
         let queue_wait = input.queued_at.elapsed();
@@ -108,7 +114,7 @@ pub(crate) async fn run_worker(
             .instrument(span.clone())
             .await
         {
-            Ok(Ok(proof)) => ProofResult::Ok(Bytes::from(proof)),
+            Ok(Ok(proof)) => ProofResult::Ok(proof),
             Ok(Err(error)) => ProofResult::Err(error.to_string()),
             Err(_) => ProofResult::Timeout,
         };
@@ -128,12 +134,11 @@ pub(crate) async fn run_worker(
             .send(WorkerOutput {
                 new_payload_request_root,
                 block_hash,
+                parent_beacon_block_root,
                 block_number,
                 proof_type,
                 proof_result,
                 duration,
-                witness_wait: input.witness_wait,
-                queue_wait,
             })
             .await
         {

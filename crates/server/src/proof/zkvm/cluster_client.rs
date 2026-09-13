@@ -18,8 +18,6 @@ pub(crate) enum ClusterClient {
 
 impl ClusterClient {
     /// Connects to the cluster at `endpoint` and registers the guest `elf`.
-    ///
-    /// Returns an error if `proof_type` has no cluster backend.
     pub(crate) async fn new(
         proof_type: ProofType,
         endpoint: &str,
@@ -36,22 +34,15 @@ impl ClusterClient {
                     .with_context(|| format!("create zisk cluster client of {endpoint}"))?;
                 Ok(Self::Zisk(Arc::new(client)))
             }
-            _ => anyhow::bail!("cluster backend does not support {proof_type}"),
-        }
-    }
-
-    /// Returns the encoded program verifying key.
-    pub(crate) fn program_vk(&self) -> anyhow::Result<Vec<u8>> {
-        match self {
-            Self::Zisk(client) => Ok(client.program_vk().encode_to_vec()?),
+            _ => unreachable!("config validation allows zisk proof types only"),
         }
     }
 
     /// Submits a prove job for `input`, returning a [`ClusterProveJob`] that
     /// drives it to completion.
     ///
-    /// `prove_span` is the worker's prove span, which declares an empty `job_id` field;
-    /// the id the cluster assigns is recorded there.
+    /// `prove_span` is the worker's prove span, which declares an empty `job_id` field. The
+    /// id the cluster assigns is recorded there.
     pub(crate) async fn create_prove_job(
         &self,
         input: &Input,
@@ -69,7 +60,7 @@ impl ClusterClient {
                             .await
                             .context("resubmit zisk prove job")?
                     }
-                    Err(err) => return Err(err).context("submit zisk prove job"),
+                    Err(error) => return Err(error).context("submit zisk prove job"),
                 };
                 // Recorded on the explicitly passed span rather than `Span::current()`, so the
                 // id cannot silently land elsewhere if an intermediate span is ever introduced.
@@ -112,11 +103,11 @@ impl ClusterProveJob {
                         *job_id = None;
                         Ok(proof.encode_to_vec()?)
                     }
-                    Err(err @ (ZiskError::JobFailed { .. } | ZiskError::JobCancelled(_))) => {
+                    Err(error @ (ZiskError::JobFailed { .. } | ZiskError::JobCancelled(_))) => {
                         *job_id = None;
-                        Err(err)?
+                        Err(error)?
                     }
-                    Err(err) => Err(err)?,
+                    Err(error) => Err(error)?,
                 }
             }
         }

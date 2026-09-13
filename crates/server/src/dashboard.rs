@@ -2,7 +2,7 @@
 //! dashboard UI.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     num::NonZeroUsize,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use zkboost_types::{Hash256, NewPayloadRequest, ProofType};
+use zkboost_types::{Hash256, ProofType};
 
 use crate::proof::worker::ProofResult as WorkerProofResult;
 
@@ -26,6 +26,7 @@ pub(crate) struct DashboardState {
 }
 
 impl DashboardState {
+    /// Creates an empty state that retains the given number of blocks.
     pub(crate) fn new(proof_types: impl IntoIterator<Item = ProofType>, retention: usize) -> Self {
         let mut proof_types = proof_types.into_iter().collect::<Vec<_>>();
         proof_types.sort();
@@ -38,6 +39,7 @@ impl DashboardState {
         }
     }
 
+    /// Returns a snapshot of the state for the dashboard state endpoint.
     pub(crate) fn to_response(&self) -> DashboardStateResponse {
         DashboardStateResponse {
             build_version: self.build_version.clone(),
@@ -58,10 +60,6 @@ impl DashboardState {
         }
         self.historical_blocks.push(hash, record);
     }
-
-    fn get_block_mut(&mut self, hash: &Hash256) -> Option<&mut HistoricalBlock> {
-        self.historical_blocks.peek_mut(hash)
-    }
 }
 
 /// JSON response for the dashboard state endpoint.
@@ -78,11 +76,15 @@ pub(crate) struct DashboardStateResponse {
     pub(crate) retention: usize,
 }
 
+/// Outcome of a proof attempt as shown on the dashboard.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum ProofResult {
+pub(crate) enum ProofOutcome {
+    /// The proof was generated.
     Success,
+    /// The proof attempt failed with an error.
     Error,
+    /// The proof attempt exceeded the configured timeout.
     Timeout,
 }
 
@@ -121,8 +123,9 @@ pub(crate) struct HistoricalProof {
     /// Seconds since block timestamp when proving started. None before proving begins.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) started_s: Option<f64>,
+    /// Outcome of the proof attempt. None while proving.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) result: Option<ProofResult>,
+    pub(crate) result: Option<ProofOutcome>,
     /// Error message on failure. None while proving, on success, or on timeout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
@@ -139,59 +142,85 @@ pub(crate) struct HistoricalProof {
 pub(crate) enum DashboardMessage {
     /// A new proof request was submitted for a block.
     RequestProof {
+        /// Block number.
         block_number: u64,
+        /// Block hash.
         block_hash: Hash256,
+        /// Block timestamp in unix seconds.
         block_timestamp: u64,
+        /// Gas used by the block.
         gas_used: u64,
+        /// Proof types requested, sorted.
         proof_types: Vec<ProofType>,
+        /// Unix time of the request in seconds.
         timestamp_secs: f64,
     },
     /// Witness fetch started for a block.
     FetchWitnessStart {
+        /// Block hash.
         block_hash: Hash256,
+        /// Unix time of the fetch start in seconds.
         timestamp_secs: f64,
     },
     /// Witness fetch completed for a block (success or timeout).
     FetchWitnessEnd {
+        /// Block hash.
         block_hash: Hash256,
+        /// Witness size in bytes, zero without a witness.
         witness_size: usize,
+        /// Whether the witness was fetched successfully.
         success: bool,
+        /// Unix time of the fetch end in seconds.
         timestamp_secs: f64,
     },
     /// Proving started for a block and proof type.
     ProveStart {
+        /// Block hash.
         block_hash: Hash256,
+        /// Proof type of the attempt.
         proof_type: ProofType,
+        /// Unix time of the prove start in seconds.
         timestamp_secs: f64,
     },
     /// Proving finished for a block and proof type.
     ProveEnd {
+        /// Block hash.
         block_hash: Hash256,
+        /// Proof type of the attempt.
         proof_type: ProofType,
-        result: ProofResult,
+        /// Outcome of the attempt.
+        result: ProofOutcome,
+        /// Error message on failure.
         error: Option<String>,
+        /// Proof size in bytes on success.
         proof_size: Option<u64>,
+        /// Unix time of the prove end in seconds.
         timestamp_secs: f64,
     },
 }
 
 impl DashboardMessage {
+    /// Builds the request message of a block, with the proof types sorted.
     pub(crate) fn request_proof(
-        request: &NewPayloadRequest,
-        proof_types: &HashSet<ProofType>,
+        block_number: u64,
+        block_hash: Hash256,
+        block_timestamp: u64,
+        gas_used: u64,
+        proof_types: impl Iterator<Item = ProofType>,
     ) -> Self {
-        let mut proof_types: Vec<_> = proof_types.iter().copied().collect();
+        let mut proof_types: Vec<_> = proof_types.collect();
         proof_types.sort();
         Self::RequestProof {
-            block_number: request.block_number(),
-            block_hash: Hash256::from(request.block_hash()),
-            block_timestamp: request.timestamp(),
-            gas_used: request.gas_used(),
+            block_number,
+            block_hash,
+            block_timestamp,
+            gas_used,
             proof_types,
             timestamp_secs: now_secs(),
         }
     }
 
+    /// Builds the witness fetch start message of a block, timed now.
     pub(crate) fn fetch_witness_start(block_hash: Hash256) -> Self {
         Self::FetchWitnessStart {
             block_hash,
@@ -199,6 +228,7 @@ impl DashboardMessage {
         }
     }
 
+    /// Builds the witness fetch end message of a block, timed now.
     pub(crate) fn fetch_witness_end(
         block_hash: Hash256,
         witness_size: usize,
@@ -212,6 +242,7 @@ impl DashboardMessage {
         }
     }
 
+    /// Builds the prove start message of a block and proof type, timed now.
     pub(crate) fn prove_start(block_hash: Hash256, proof_type: ProofType) -> Self {
         Self::ProveStart {
             block_hash,
@@ -220,15 +251,16 @@ impl DashboardMessage {
         }
     }
 
+    /// Builds the prove end message of a worker result, timed now.
     pub(crate) fn prove_end(
         block_hash: Hash256,
         proof_type: ProofType,
         proof_result: &WorkerProofResult,
     ) -> Self {
         let (result, error, proof_size) = match proof_result {
-            WorkerProofResult::Ok(bytes) => (ProofResult::Success, None, Some(bytes.len() as u64)),
-            WorkerProofResult::Err(msg) => (ProofResult::Error, Some(msg.clone()), None),
-            WorkerProofResult::Timeout => (ProofResult::Timeout, None, None),
+            WorkerProofResult::Ok(proof) => (ProofOutcome::Success, None, Some(proof.len() as u64)),
+            WorkerProofResult::Err(message) => (ProofOutcome::Error, Some(message.clone()), None),
+            WorkerProofResult::Timeout => (ProofOutcome::Timeout, None, None),
         };
         Self::ProveEnd {
             block_hash,
@@ -248,40 +280,64 @@ pub(crate) enum DashboardEvent {
     /// A new proof request was submitted.
     #[serde(rename_all = "camelCase")]
     RequestProof {
+        /// Block number.
         block_number: u64,
+        /// Block hash.
         block_hash: Hash256,
+        /// Block timestamp in unix seconds.
         block_timestamp: u64,
+        /// Gas used by the block.
         gas_used: u64,
+        /// Seconds since block timestamp when the proofs were requested.
         started_s: f64,
+        /// Proof types requested, sorted.
         proof_types: Vec<ProofType>,
     },
     /// Witness fetch started.
     #[serde(rename_all = "camelCase")]
-    FetchWitnessStart { block_hash: Hash256, started_s: f64 },
+    FetchWitnessStart {
+        /// Block hash.
+        block_hash: Hash256,
+        /// Seconds since block timestamp when the fetch started.
+        started_s: f64,
+    },
     /// Witness fetch completed (success or timeout).
     #[serde(rename_all = "camelCase")]
     FetchWitnessEnd {
+        /// Block hash.
         block_hash: Hash256,
+        /// Seconds since block timestamp when the fetch ended.
         ended_s: f64,
+        /// Witness size in bytes, zero without a witness.
         witness_size: u64,
+        /// Whether the witness was fetched successfully.
         success: bool,
     },
     /// Proving started for a specific proof type.
     #[serde(rename_all = "camelCase")]
     ProveStart {
+        /// Block hash.
         block_hash: Hash256,
+        /// Proof type of the attempt.
         proof_type: ProofType,
+        /// Seconds since block timestamp when proving started.
         started_s: f64,
     },
     /// Proving finished for a specific proof type.
     #[serde(rename_all = "camelCase")]
     ProveEnd {
+        /// Block hash.
         block_hash: Hash256,
+        /// Proof type of the attempt.
         proof_type: ProofType,
+        /// Seconds since block timestamp when proving ended.
         ended_s: f64,
-        result: ProofResult,
+        /// Outcome of the attempt.
+        result: ProofOutcome,
+        /// Error message on failure.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        /// Proof size in bytes on success.
         #[serde(skip_serializing_if = "Option::is_none")]
         proof_size: Option<u64>,
     },
@@ -321,7 +377,7 @@ impl DashboardService {
     pub(crate) async fn run(
         mut self,
         shutdown: CancellationToken,
-        mut rx: mpsc::Receiver<DashboardMessage>,
+        mut dashboard_service_rx: mpsc::Receiver<DashboardMessage>,
     ) {
         loop {
             tokio::select! {
@@ -332,15 +388,15 @@ impl DashboardService {
                     break;
                 }
 
-                Some(msg) = rx.recv() => self.handle_message(msg).await,
+                Some(message) = dashboard_service_rx.recv() => self.handle_message(message).await,
 
                 else => break,
             }
         }
     }
 
-    async fn handle_message(&mut self, msg: DashboardMessage) {
-        match msg {
+    async fn handle_message(&mut self, message: DashboardMessage) {
+        match message {
             DashboardMessage::RequestProof {
                 block_number,
                 block_hash,
@@ -361,7 +417,7 @@ impl DashboardService {
                         ..Default::default()
                     },
                 );
-                if let Some(block) = state.get_block_mut(&block_hash) {
+                if let Some(block) = state.historical_blocks.peek_mut(&block_hash) {
                     for &proof_type in &proof_types {
                         block.proofs.entry(proof_type).or_insert(HistoricalProof {
                             requested_s: Some(started_s),
@@ -385,7 +441,7 @@ impl DashboardService {
                 timestamp_secs,
             } => {
                 let mut state = self.state.write().await;
-                let Some(block) = state.get_block_mut(&block_hash) else {
+                let Some(block) = state.historical_blocks.peek_mut(&block_hash) else {
                     return;
                 };
                 let started_s = timestamp_secs - block.block_timestamp as f64;
@@ -404,7 +460,7 @@ impl DashboardService {
                 timestamp_secs,
             } => {
                 let mut state = self.state.write().await;
-                let Some(block) = state.get_block_mut(&block_hash) else {
+                let Some(block) = state.historical_blocks.peek_mut(&block_hash) else {
                     return;
                 };
                 let ended_s = timestamp_secs - block.block_timestamp as f64;
@@ -426,13 +482,13 @@ impl DashboardService {
                 timestamp_secs,
             } => {
                 let mut state = self.state.write().await;
-                let Some(block) = state.get_block_mut(&block_hash) else {
+                let Some(block) = state.historical_blocks.peek_mut(&block_hash) else {
                     return;
                 };
                 let started_s = timestamp_secs - block.block_timestamp as f64;
                 if let Some(record) = block.proofs.get_mut(&proof_type) {
                     record.started_s = Some(started_s);
-                };
+                }
                 drop(state);
 
                 let _ = self.event_tx.send(DashboardEvent::ProveStart {
@@ -450,7 +506,7 @@ impl DashboardService {
                 timestamp_secs,
             } => {
                 let mut state = self.state.write().await;
-                let Some(block) = state.get_block_mut(&block_hash) else {
+                let Some(block) = state.historical_blocks.peek_mut(&block_hash) else {
                     return;
                 };
                 let ended_s = timestamp_secs - block.block_timestamp as f64;

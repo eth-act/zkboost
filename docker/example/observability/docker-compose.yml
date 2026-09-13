@@ -9,6 +9,7 @@ services:
       - "3000:3000"
     volumes:
       - ./zkboost/config.toml:/app/config.toml:ro
+      - ../testnet/validator-keys:/validator-keys:ro
     networks:
       - zkboost
     extra_hosts:
@@ -32,7 +33,9 @@ services:
       - "--zkboost-endpoint"
       - "http://zkboost:3000"
       - "--proof-types"
-      - "ethrex-zisk,reth-zisk,reth-sp1,reth-openvm"
+      - "reth-zisk,reth-sp1,reth-openvm"
+      - "--port"
+      - "3001"
     networks:
       - zkboost
     extra_hosts:

@@ -17,15 +17,13 @@ use zkboost_types::ProofType;
 const HTTP_REQUESTS_TOTAL: &str = "zkboost_http_requests_total";
 const HTTP_REQUEST_DURATION_SECONDS: &str = "zkboost_http_request_duration_seconds";
 const HTTP_REQUESTS_IN_FLIGHT: &str = "zkboost_http_requests_in_flight";
+const WITNESS_FETCH_TOTAL: &str = "zkboost_witness_fetch_total";
 const WITNESS_FETCH_DURATION_SECONDS: &str = "zkboost_witness_fetch_duration_seconds";
 const WITNESS_BYTES: &str = "zkboost_witness_bytes";
-const WITNESS_FETCH_TOTAL: &str = "zkboost_witness_fetch_total";
 const QUEUE_WAIT_DURATION_SECONDS: &str = "zkboost_queue_wait_duration_seconds";
 const PROVE_TOTAL: &str = "zkboost_prove_total";
 const PROVE_DURATION_SECONDS: &str = "zkboost_prove_duration_seconds";
 const PROVE_PROOF_BYTES: &str = "zkboost_prove_proof_bytes";
-const VERIFY_TOTAL: &str = "zkboost_verify_total";
-const VERIFY_DURATION_SECONDS: &str = "zkboost_verify_duration_seconds";
 const PROGRAMS_LOADED: &str = "zkboost_programs_loaded";
 const BUILD_INFO: &str = "zkboost_build_info";
 
@@ -40,25 +38,25 @@ const QUEUE_WAIT_BUCKETS: &[f64] = &[
     0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 900.0,
 ];
 
-/// Initialize the Prometheus metrics exporter and register metric descriptions.
+/// Initializes the Prometheus metrics exporter and registers metric descriptions.
 ///
 /// Returns a handle that can be used to render metrics for the `/metrics` endpoint.
 pub fn init_metrics() -> PrometheusHandle {
+    let slot_buckets = from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5);
     let handle = PrometheusBuilder::new()
         .set_buckets(DEFAULT_BUCKETS)
         .unwrap()
         .set_buckets_for_metric(
             Matcher::Full(PROVE_DURATION_SECONDS.to_owned()),
-            &from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5),
+            &slot_buckets,
         )
         .unwrap()
-        // Witness fetches run under the slot-aligned witness timeout, so give
-        // them the same 0.5s-step resolution up to 12.0 as the prove buckets —
-        // the default buckets end at 10.0 and hide successful 10-12s fetches
-        // in +Inf.
+        // The witness fetch is the engine_newPayloadWithWitness round trip to the EL, which the
+        // CL bounds by the slot, so give it the same 0.5s-step resolution up to 12.0 as the
+        // prove buckets. The default buckets end at 10.0 and hide 10-12s fetches in +Inf.
         .set_buckets_for_metric(
             Matcher::Full(WITNESS_FETCH_DURATION_SECONDS.to_owned()),
-            &from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5),
+            &slot_buckets,
         )
         .unwrap()
         .set_buckets_for_metric(
@@ -69,17 +67,14 @@ pub fn init_metrics() -> PrometheusHandle {
         .install_recorder()
         .expect("failed to install Prometheus recorder");
 
-    // HTTP layer metrics
     describe_counter!(HTTP_REQUESTS_TOTAL, "total http requests");
     describe_histogram!(HTTP_REQUEST_DURATION_SECONDS, "http request duration");
     describe_gauge!(HTTP_REQUESTS_IN_FLIGHT, "http requests in flight");
 
-    // Witness operation metrics
     describe_counter!(WITNESS_FETCH_TOTAL, "total witness fetch operations");
     describe_histogram!(WITNESS_FETCH_DURATION_SECONDS, "witness fetch duration");
     describe_histogram!(WITNESS_BYTES, "witness size");
 
-    // Prove operation metrics
     describe_histogram!(
         QUEUE_WAIT_DURATION_SECONDS,
         "time a proof request waits in the worker channel between dispatch and dequeue"
@@ -88,18 +83,13 @@ pub fn init_metrics() -> PrometheusHandle {
     describe_histogram!(PROVE_DURATION_SECONDS, "proof generation duration");
     describe_histogram!(PROVE_PROOF_BYTES, "proof size");
 
-    // Verify operation metrics
-    describe_counter!(VERIFY_TOTAL, "total verify operations");
-    describe_histogram!(VERIFY_DURATION_SECONDS, "proof verification duration");
-
-    // Application metrics
     describe_gauge!(PROGRAMS_LOADED, "zkvm programs loaded");
     describe_gauge!(BUILD_INFO, "build info");
 
     handle
 }
 
-/// Spawn a background task that calls `run_upkeep()` every 5 seconds.
+/// Spawns a background task that calls `run_upkeep()` every 5 seconds.
 pub fn spawn_upkeep(handle: PrometheusHandle) {
     tokio::spawn(async move {
         loop {
@@ -109,7 +99,7 @@ pub fn spawn_upkeep(handle: PrometheusHandle) {
     });
 }
 
-/// Record an HTTP request completion with status and duration.
+/// Records an HTTP request completion with status and duration.
 fn record_http_request(endpoint: &str, method: &str, status: u16, duration: Duration) {
     let endpoint = endpoint.to_owned();
     let method = method.to_owned();
@@ -128,7 +118,8 @@ fn record_http_request(endpoint: &str, method: &str, status: u16, duration: Dura
     .record(duration.as_secs_f64());
 }
 
-/// Record a witness fetch result.
+/// Records a witness fetch result, where the fetch is the `engine_newPayloadWithWitness` round
+/// trip to the EL. The duration and the size are recorded for a returned witness only.
 pub fn record_witness_fetch(status: &'static str, duration: Duration, witness_size: usize) {
     counter!(WITNESS_FETCH_TOTAL, "status" => status).increment(1);
     if status == "success" {
@@ -137,8 +128,8 @@ pub fn record_witness_fetch(status: &'static str, duration: Duration, witness_si
     }
 }
 
-/// Record how long a proof request waited in the worker channel before a
-/// worker dequeued it. This is the only place queue wait is observable: the
+/// Records how long a proof request waited in the worker channel before a
+/// worker dequeued it. This is the only place queue wait is observable. The
 /// prove duration histogram starts after dequeue, so without this metric a
 /// backlog is invisible.
 pub fn record_queue_wait(proof_type: ProofType, duration: Duration) {
@@ -149,7 +140,7 @@ pub fn record_queue_wait(proof_type: ProofType, duration: Duration) {
     .record(duration.as_secs_f64());
 }
 
-/// Record a prove operation result.
+/// Records a prove operation result.
 pub fn record_prove(
     proof_type: ProofType,
     status: &'static str,
@@ -176,27 +167,12 @@ pub fn record_prove(
     }
 }
 
-/// Record a verify operation result.
-pub fn record_verify(proof_type: ProofType, verified: bool, duration: Duration) {
-    counter!(
-        VERIFY_TOTAL,
-        "proof_type" => proof_type.to_string(),
-        "verified" => verified.to_string()
-    )
-    .increment(1);
-    histogram!(
-        VERIFY_DURATION_SECONDS,
-        "proof_type" => proof_type.to_string(),
-    )
-    .record(duration.as_secs_f64());
-}
-
-/// Set the number of loaded programs gauge.
+/// Sets the number of loaded programs gauge.
 pub fn set_programs_loaded(count: usize) {
     gauge!(PROGRAMS_LOADED).set(count as f64);
 }
 
-/// Set the build info gauge with version label.
+/// Sets the build info gauge with version label.
 pub fn set_build_info(version: &str) {
     gauge!(BUILD_INFO, "version" => version.to_string()).set(1.0);
 }
@@ -228,7 +204,7 @@ pub(crate) async fn http_metrics_middleware(request: Request, next: Next) -> Res
     let path = request
         .extensions()
         .get::<MatchedPath>()
-        .map(|mp| mp.as_str().to_owned())
+        .map(|matched_path| matched_path.as_str().to_owned())
         .unwrap_or_else(|| "unmatched".to_owned());
     let _guard = InFlightGuard::new(path.clone());
 

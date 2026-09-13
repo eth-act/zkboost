@@ -1,7 +1,8 @@
-//! HTTP service: `AppState`, Axum router with v1 API handlers, Prometheus metrics middleware, and
-//! request tracing.
+//! HTTP service with the shared `AppState` and the Axum router. The router serves the Engine API
+//! proxy, health, Prometheus metrics, and the optional dashboard, with request metrics middleware
+//! and tracing.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Router,
@@ -10,59 +11,26 @@ use axum::{
     middleware,
     routing::{get, post},
 };
-use bytes::Bytes;
-use lru::LruCache;
 use metrics_exporter_prometheus::PrometheusHandle;
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{RwLock, broadcast};
 use tower::ServiceBuilder;
 use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
-use zkboost_types::{Hash256, ProofEvent, ProofType};
 
 use crate::{
     dashboard::{DashboardEvent, DashboardState},
+    engine::EngineProxyState,
     metrics::http_metrics_middleware,
-    proof::{FailureCache, ProofServiceMessage, zkvm::zkVMInstance},
 };
 
 mod dashboard;
-mod v1;
+mod engine;
 
 /// Shared application state for all HTTP handlers.
 pub(crate) struct AppState {
-    pub(crate) zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
-    pub(crate) proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
-    pub(crate) failure_cache: FailureCache,
+    pub(crate) engine: Arc<EngineProxyState>,
     pub(crate) metrics: PrometheusHandle,
     pub(crate) dashboard: Option<Arc<RwLock<DashboardState>>>,
-    pub(crate) proof_service_tx: mpsc::Sender<ProofServiceMessage>,
-    pub(crate) proof_event_rx: broadcast::Receiver<ProofEvent>,
     pub(crate) dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
-}
-
-impl AppState {
-    /// Creates shared application state for the HTTP handlers.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
-        zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
-        proof_cache: Arc<RwLock<LruCache<(Hash256, ProofType), Bytes>>>,
-        failure_cache: FailureCache,
-        metrics: PrometheusHandle,
-        dashboard: Option<Arc<RwLock<DashboardState>>>,
-        proof_service_tx: mpsc::Sender<ProofServiceMessage>,
-        proof_event_rx: broadcast::Receiver<ProofEvent>,
-        dashboard_event_rx: broadcast::Receiver<DashboardEvent>,
-    ) -> Self {
-        Self {
-            zkvms,
-            proof_cache,
-            failure_cache,
-            metrics,
-            dashboard,
-            proof_service_tx,
-            proof_event_rx,
-            dashboard_event_rx,
-        }
-    }
 }
 
 /// Creates the tracing span for an incoming HTTP request.
@@ -111,20 +79,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .layer(DefaultBodyLimit::max(1 << 30));
 
     let api = Router::new()
-        .route(
-            "/v1/execution_proof_requests",
-            post(v1::post_execution_proof_requests).get(v1::get_execution_proof_requests),
-        )
-        .route(
-            "/v1/execution_proofs/{new_payload_request_root}/{proof_type}",
-            get(v1::get_execution_proofs),
-        )
-        .route(
-            "/v1/execution_proof_verifications",
-            post(v1::post_execution_proof_verifications),
-        )
-        .route("/v1/proof_types", get(v1::get_proof_types))
-        .fallback(fallback_handler)
+        .route("/", post(engine::post_engine))
         .layer(api_middleware);
 
     let mut infra = Router::new()
@@ -141,64 +96,71 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
     api.merge(infra).with_state(state)
 }
 
-async fn fallback_handler() -> v1::ErrorResponse {
-    v1::ErrorResponse::not_found("route not found")
-}
-
 async fn get_metrics(State(state): State<Arc<AppState>>) -> String {
     state.metrics.render()
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+    use std::{collections::HashMap, sync::Arc};
 
     use axum::{body::Body, http::Request};
-    use lru::LruCache;
     use metrics_exporter_prometheus::PrometheusBuilder;
     use tokio::sync::{RwLock, broadcast, mpsc};
     use tower::ServiceExt;
     use zkboost_types::ProofType;
 
     use crate::{
-        config::{MockProvingTime, zkVMConfig},
+        config::{Config, DashboardConfig, MockProvingTime, zkVMConfig},
         dashboard::DashboardState,
+        engine::EngineProxyState,
         http::{AppState, router},
-        proof::zkvm::zkVMInstance,
     };
 
     pub(crate) async fn mock_app_state() -> Arc<AppState> {
         let proof_type = ProofType::RethZisk;
-        let mock_config = zkVMConfig::Mock {
-            proof_type,
-            proof_timeout_secs: 12,
-            mock_proving_time: MockProvingTime::Constant { ms: 10 },
-            mock_proof_size: 64,
-            mock_failure: false,
+        // Nothing listens on port 1, so every EL call fails fast.
+        let config = Config {
+            port: 0,
+            el_engine_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
+            cl_beacon_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
+            validator_keystore_path: concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixture/voting-keystore.json"
+            )
+            .into(),
+            validator_keystore_password_path: concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixture/voting-keystore-password"
+            )
+            .into(),
+            dashboard: DashboardConfig::default(),
+            zkvm: vec![zkVMConfig::Mock {
+                proof_type,
+                proof_timeout_secs: 12,
+                mock_proving_time: MockProvingTime::Constant { ms: 10 },
+                mock_failure: false,
+            }],
         };
-        let zkvm = zkVMInstance::new(&mock_config).await.unwrap();
-        let zkvms = Arc::new(HashMap::from_iter([(proof_type, zkvm)]));
-
-        let proof_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
-        let failure_cache = Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
+        let (worker_input_tx, _) = mpsc::channel(16);
+        let (dashboard_service_tx, _) = mpsc::channel(16);
+        let engine = EngineProxyState::new(
+            &config,
+            HashMap::from_iter([(proof_type, worker_input_tx)]),
+            dashboard_service_tx,
+        )
+        .unwrap();
 
         let metrics = PrometheusBuilder::new().build_recorder().handle();
         let dashboard = Arc::new(RwLock::new(DashboardState::new(vec![proof_type], 256))).into();
-
-        let (proof_service_tx, _) = mpsc::channel(16);
-        let (_, proof_event_rx) = broadcast::channel(16);
         let (_, dashboard_event_rx) = broadcast::channel(16);
 
-        Arc::new(AppState::new(
-            zkvms,
-            proof_cache,
-            failure_cache,
+        Arc::new(AppState {
+            engine: Arc::new(engine),
             metrics,
             dashboard,
-            proof_service_tx,
-            proof_event_rx,
             dashboard_event_rx,
-        ))
+        })
     }
 
     #[tokio::test]
@@ -220,26 +182,4 @@ pub(crate) mod tests {
     // (`tests/otel_request_span.rs`): it needs a tracing subscriber that observes spans created
     // on other tasks, and sharing a process with parallel tests poisons the global callsite
     // interest cache.
-
-    #[tokio::test]
-    async fn test_unknown_route_returns_json_404() {
-        let state = mock_app_state().await;
-        let response = router(state)
-            .oneshot(
-                Request::builder()
-                    .uri("/nonexistent")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 404);
-
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["code"], 404);
-        assert_eq!(json["message"], "route not found");
-    }
 }

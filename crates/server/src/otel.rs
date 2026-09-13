@@ -12,7 +12,7 @@ use opentelemetry_sdk::{
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::Registry;
 
-/// Type alias for the OpenTelemetry tracing layer.
+/// The tracing layer that exports spans over OTLP.
 pub type OtelLayer = OpenTelemetryLayer<Registry, SdkTracer>;
 
 /// [`Extractor`] over HTTP headers, used to extract W3C trace context
@@ -53,7 +53,7 @@ pub fn init() -> (Option<SdkTracerProvider>, Option<OtelLayer>) {
 
     let otel_layer = provider
         .as_ref()
-        .map(|p| OpenTelemetryLayer::new(p.tracer(service_name)));
+        .map(|provider| OpenTelemetryLayer::new(provider.tracer(service_name)));
 
     (provider, otel_layer)
 }

@@ -2,10 +2,18 @@ FROM rust:1.94.1-bookworm AS builder
 
 WORKDIR /app
 
+# nasm and the native libraries build `proofman-starks-lib-c`, pulled by `proofman-fields` on x86_64
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libclang-dev \
     protobuf-compiler \
     libprotobuf-dev \
+    nasm \
+    nlohmann-json3-dev \
+    libgmp-dev \
+    libsodium-dev \
+    libomp-dev \
+    libopenmpi-dev \
+    libssl-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY . .
