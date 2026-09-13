@@ -23,8 +23,9 @@ done
 rm -rf $LOGS_SUBDIR && mkdir -p $LOGS_PATH
 kurtosis enclave dump $ENCLAVE_NAME $LOGS_SUBDIR
 echo "Local testnet logs stored to $LOGS_SUBDIR."
-echo "The lighthouse beacon nodes' logs (including dependency logs) can be found in $LOGS_SUBDIR/files/cl-*-lighthouse-geth-logs."
+echo "The lighthouse beacon nodes' logs (including dependency logs) can be found in $LOGS_SUBDIR/files/cl-*-lighthouse-geth-logs and $LOGS_SUBDIR/files/cl-2-lighthouse-logs."
 
 kurtosis enclave rm -f $ENCLAVE_NAME
+# Stops every enclave on the host, not only this one.
 kurtosis engine stop
 echo "Local testnet stopped."

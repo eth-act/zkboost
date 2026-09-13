@@ -1,7 +1,7 @@
 //! zkboost proof node.
 //!
-//! Orchestrates witness fetching, proof generation, and an HTTP API for
-//! submitting proof requests and retrieving completed proofs.
+//! Serves the Engine API in front of the EL, generates proofs for every valid payload, and
+//! posts them to the beacon node as signed EIP-8025 envelopes.
 
 use std::path::PathBuf;
 
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load(&cli.config)?;
     info!(
         port = config.port,
-        el_endpoint = %config.el_endpoint,
+        el_engine_endpoint = %config.el_engine_endpoint,
         zkvm_count = config.zkvm.len(),
         "configuration loaded"
     );

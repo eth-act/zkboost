@@ -1,7 +1,19 @@
 participants:
-  - el_type: reth
+  - el_type: geth
+    el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
     cl_type: lighthouse
-    count: 3
+    cl_image: ethpandaops/lighthouse:unstable-afadb9a
+    count: 2
+  # The EL of zkboost, fed by zkboost alone once its lighthouse is stopped. Geth returns no witness
+  # for a known payload. We can switch to `POST /engine/v1/payloads/witness` once
+  # https://github.com/ethereum/execution-apis/pull/885 is implemented.
+  - el_type: geth
+    el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
+    cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:unstable-afadb9a
+    validator_count: 0
+network_params:
+  gloas_fork_epoch: 0
 port_publisher:
   el:
     enabled: true
@@ -9,3 +21,13 @@ port_publisher:
   cl:
     enabled: true
     public_port_start: 33000
+additional_services:
+  - spamoor
+spamoor_params:
+  spammers:
+  - scenario: eoatx
+    config:
+      throughput: 1
+  - scenario: erctx
+    config:
+      throughput: 1
