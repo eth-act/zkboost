@@ -1,17 +1,14 @@
 //! Reusable server initialization and startup.
 //!
 //! [`zkBoostServer::new`] performs async initialization (zkVM instance creation) and
-//! [`zkBoostServer::run`] binds the HTTP listener and spawns all background services.
+//! [`zkBoostServer::run`] binds the Engine API listener and spawns all background services.
 
 use std::{
     collections::HashMap,
     net::{Ipv4Addr, SocketAddr},
-    num::NonZeroUsize,
     sync::Arc,
-    time::Duration,
 };
 
-use lru::LruCache;
 use metrics_exporter_prometheus::PrometheusHandle;
 use tokio::{
     net::TcpListener,
@@ -23,13 +20,12 @@ use tracing::{error, info};
 use zkboost_types::ProofType;
 
 use crate::{
-    config::Config,
+    config::{Config, zkVMConfig},
     dashboard::{DashboardService, DashboardState},
-    el_client::ElClient,
+    engine::EngineProxyState,
     http::{AppState, router},
     metrics::{set_build_info, set_programs_loaded},
-    proof::{ProofService, worker, zkvm::zkVMInstance},
-    witness::WitnessService,
+    proof::{worker, zkvm::zkVMInstance},
 };
 
 const CHANNEL_CAPACITY: usize = 128;
@@ -37,101 +33,56 @@ const CHANNEL_CAPACITY: usize = 128;
 /// Configured server ready to run.
 #[allow(non_camel_case_types, missing_debug_implementations)]
 pub struct zkBoostServer {
-    el_client: Arc<ElClient>,
     zkvms: Arc<HashMap<ProofType, zkVMInstance>>,
     config: Config,
     metrics: PrometheusHandle,
 }
 
 impl zkBoostServer {
-    /// Creates a new server by initialising the EL client and creating zkVM instances
-    /// from the given configuration.
+    /// Creates the zkVM instances of the configuration.
     pub async fn new(config: Config, metrics: PrometheusHandle) -> anyhow::Result<Self> {
-        info!(url = %config.el_endpoint, "el endpoint configured");
-        let el_client = Arc::new(ElClient::new(
-            config.el_endpoint.clone(),
-            config.el_header_map()?,
-        )?);
+        info!(url = %config.el_engine_endpoint, "el engine endpoint configured");
+        info!(url = %config.cl_beacon_endpoint, "cl beacon endpoint configured");
 
         let mut zkvms = HashMap::new();
         for zkvm_config in &config.zkvm {
             let instance = zkVMInstance::new(zkvm_config).await?;
             let mode = match zkvm_config {
-                crate::config::zkVMConfig::Ere { .. } => "prover",
-                crate::config::zkVMConfig::Mock { .. } => "mock",
-                crate::config::zkVMConfig::Verifier { .. } => "verifier-only",
-                crate::config::zkVMConfig::Cluster { .. } => "cluster",
+                zkVMConfig::Ere { .. } => "ere",
+                zkVMConfig::Mock { .. } => "mock",
+                zkVMConfig::Cluster { .. } => "cluster",
             };
             info!(
                 proof_type = %zkvm_config.proof_type(),
                 mode,
                 "zkvm instance created"
             );
-            if matches!(zkvm_config, crate::config::zkVMConfig::Verifier { .. }) {
-                info!(
-                    proof_type = %zkvm_config.proof_type(),
-                    "verifier-only mode: proof generation requests will be rejected"
-                );
-            }
             zkvms.insert(zkvm_config.proof_type(), instance);
         }
         set_programs_loaded(zkvms.len());
         set_build_info(env!("CARGO_PKG_VERSION"));
 
         Ok(Self {
-            el_client,
             zkvms: Arc::new(zkvms),
             config,
             metrics,
         })
     }
 
-    /// Binds the HTTP listener, spawns background services, and returns the bound
+    /// Binds the Engine API listener, spawns background services, and returns the bound
     /// address with join handles.
     pub async fn run(
         self,
         shutdown_token: CancellationToken,
     ) -> anyhow::Result<(SocketAddr, Vec<JoinHandle<()>>)> {
-        let witness_timeout = Duration::from_secs(self.config.witness_timeout_secs);
-
-        let proof_cache = Arc::new(RwLock::new(LruCache::new(
-            NonZeroUsize::new(self.config.proof_cache_size * self.zkvms.len())
-                .expect("proof_cache_size must be non-zero"),
-        )));
-        // Terminal failures are cached with the same bound as completed proofs, so late SSE
-        // subscribers can have missed failure events replayed.
-        let failure_cache = Arc::new(RwLock::new(LruCache::new(
-            NonZeroUsize::new(self.config.proof_cache_size * self.zkvms.len())
-                .expect("proof_cache_size must be non-zero"),
-        )));
-
-        let (proof_service_tx, proof_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
-        let (witness_service_tx, witness_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (dashboard_service_tx, dashboard_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (worker_output_tx, worker_output_rx) = mpsc::channel(CHANNEL_CAPACITY);
-        let (proof_event_tx, proof_event_rx) = broadcast::channel(CHANNEL_CAPACITY);
         let (dashboard_event_tx, dashboard_event_rx) = broadcast::channel(CHANNEL_CAPACITY);
 
         let mut handles = Vec::new();
 
-        let witness_service = WitnessService::new(
-            self.el_client,
-            proof_service_tx.clone(),
-            dashboard_service_tx.clone(),
-            witness_timeout,
-            self.config.witness_cache_size,
-        );
-        handles.push(witness_service.spawn(shutdown_token.clone(), witness_service_rx));
-
-        info!("witness service started");
-
         let mut worker_input_txs = HashMap::new();
         for zkvm in self.zkvms.values() {
-            // Verifier-only backends don't prove, so they get no worker. Prove
-            // requests for those proof_types are dropped at the dispatch layer.
-            if matches!(zkvm, zkVMInstance::Verifier { .. }) {
-                continue;
-            }
             let (worker_input_tx, worker_input_rx) = mpsc::channel(CHANNEL_CAPACITY);
             worker_input_txs.insert(zkvm.proof_type(), worker_input_tx);
             handles.push(tokio::spawn(worker::run_worker(
@@ -143,21 +94,16 @@ impl zkBoostServer {
             )));
         }
 
-        let proof_service = ProofService::new(
-            proof_cache.clone(),
-            failure_cache.clone(),
-            proof_event_tx,
-            witness_service_tx,
-            dashboard_service_tx.clone(),
-        );
-        handles.push(tokio::spawn(proof_service.run(
-            shutdown_token.clone(),
-            proof_service_rx,
-            worker_output_rx,
+        let engine = Arc::new(EngineProxyState::new(
+            &self.config,
             worker_input_txs,
-        )));
-
-        info!("proof service started");
+            dashboard_service_tx,
+        )?);
+        handles.push(tokio::spawn(
+            engine
+                .clone()
+                .complete_proofs(shutdown_token.clone(), worker_output_rx),
+        ));
 
         let dashboard = if self.config.dashboard.enabled {
             let dashboard = Arc::new(RwLock::new(DashboardState::new(
@@ -179,16 +125,12 @@ impl zkBoostServer {
             None
         };
 
-        let app_state = Arc::new(AppState::new(
-            self.zkvms.clone(),
-            proof_cache,
-            failure_cache,
-            self.metrics,
+        let app_state = Arc::new(AppState {
+            engine,
+            metrics: self.metrics,
             dashboard,
-            proof_service_tx,
-            proof_event_rx,
             dashboard_event_rx,
-        ));
+        });
         let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, self.config.port)).await?;
         let addr = listener.local_addr()?;
         handles.push(tokio::spawn(async move {
@@ -200,7 +142,7 @@ impl zkBoostServer {
             }
         }));
 
-        info!(port = self.config.port, "http server listening");
+        info!(port = self.config.port, "engine api listening");
 
         Ok((addr, handles))
     }

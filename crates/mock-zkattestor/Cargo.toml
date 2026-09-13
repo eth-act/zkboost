@@ -10,9 +10,11 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
-async-stream = "0.3"
+async-stream.workspace = true
+axum.workspace = true
 clap = { workspace = true, features = ["derive"] }
 futures.workspace = true
+jsonwebtoken.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 reqwest-eventsource.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -23,10 +25,16 @@ tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url.workspace = true
 
+# alloy
+alloy-rpc-types-engine = { workspace = true, features = ["jwt"] }
+
+# ere
+ere-verifier.workspace = true
+
 # lighthouse
+lighthouse_bls.workspace = true
 ethereum_serde_utils.workspace = true
 lighthouse_types.workspace = true
 
 # local
-zkboost-client.workspace = true
 zkboost-types.workspace = true

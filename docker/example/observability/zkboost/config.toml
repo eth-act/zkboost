@@ -1,17 +1,13 @@
 port = 3000
-el_endpoint = "http://host.docker.internal:32003"
-
-# Optional HTTP headers applied to every EL JSON-RPC request.
-# [el_headers]
-# Authorization = "Bearer <token>"
+el_engine_endpoint = "http://host.docker.internal:32015"
+cl_beacon_endpoint = "http://mock-zkattestor:3001"
+# Validator 128 of the Kurtosis testnet, the first validator of the second participant, with the
+# keystore of docker/example/testnet/validator-keys.
+validator_keystore_path = "/validator-keys/keys/0xb05cafec5912f22dbd6f15677f25f13d93ecd5ec6f957fddd7cf27d73521b34aaaf6a219f77b21128d18321c2c8d679b/voting-keystore.json"
+validator_keystore_password_path = "/validator-keys/secrets/0xb05cafec5912f22dbd6f15677f25f13d93ecd5ec6f957fddd7cf27d73521b34aaaf6a219f77b21128d18321c2c8d679b"
 
 [dashboard]
 enabled = true
-
-[[zkvm]]
-kind = "mock"
-proof_type = "ethrex-zisk"
-mock_proving_time = { kind = "random", min_ms = 2000, max_ms = 8000 }
 
 [[zkvm]]
 kind = "mock"

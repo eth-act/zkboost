@@ -1,25 +1,20 @@
-//! Configuration types.
+//! TOML configuration of the proof node, with validation of the zkVM entries.
 
 use std::{
-    collections::{HashMap, HashSet},
-    fmt, fs,
+    collections::HashSet,
+    fs,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use anyhow::{Context, ensure};
 use ere_verifier::zkVMKind;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use zkboost_types::ProofType;
 
 const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_WITNESS_TIMEOUT_SECS: u64 = 12;
 const DEFAULT_PROOF_TIMEOUT_SECS: u64 = 12;
-const DEFAULT_PROOF_CACHE_SIZE: usize = 128;
-const DEFAULT_WITNESS_CACHE_SIZE: usize = 128;
-const DEFAULT_MOCK_PROOF_SIZE: u64 = 128 << 10;
 const DEFAULT_DASHBOARD_ENABLED: bool = false;
 const DEFAULT_DASHBOARD_RETENTION: usize = 256;
 
@@ -27,28 +22,12 @@ fn default_port() -> u16 {
     DEFAULT_PORT
 }
 
-fn default_witness_timeout_secs() -> u64 {
-    DEFAULT_WITNESS_TIMEOUT_SECS
-}
-
 fn default_proof_timeout_secs() -> u64 {
     DEFAULT_PROOF_TIMEOUT_SECS
 }
 
-fn default_proof_cache_size() -> usize {
-    DEFAULT_PROOF_CACHE_SIZE
-}
-
-fn default_witness_cache_size() -> usize {
-    DEFAULT_WITNESS_CACHE_SIZE
-}
-
 fn default_mock_proving_time() -> MockProvingTime {
     MockProvingTime::Constant { ms: 6000 }
-}
-
-fn default_mock_proof_size() -> u64 {
-    DEFAULT_MOCK_PROOF_SIZE
 }
 
 fn default_dashboard_enabled() -> bool {
@@ -60,28 +39,19 @@ fn default_dashboard_retention() -> usize {
 }
 
 /// Unified configuration for the zkboost proof node.
-///
-/// `Debug` is implemented manually so `el_headers` values (which typically carry
-/// credentials) are redacted.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// HTTP server port.
+    /// Engine API server port.
     #[serde(default = "default_port")]
     pub port: u16,
-    /// EL endpoint for witness fetching.
-    pub el_endpoint: Url,
-    /// Optional HTTP headers applied to every EL JSON-RPC request (e.g. authentication).
-    #[serde(default)]
-    pub el_headers: HashMap<String, String>,
-    /// Timeout in seconds for witness data (both pending-proof and fetch staleness).
-    #[serde(default = "default_witness_timeout_secs")]
-    pub witness_timeout_secs: u64,
-    /// Number of blocks to keep in the completed proofs LRU cache.
-    #[serde(default = "default_proof_cache_size")]
-    pub proof_cache_size: usize,
-    /// Number of blocks to keep in the execution witness LRU cache.
-    #[serde(default = "default_witness_cache_size")]
-    pub witness_cache_size: usize,
+    /// EL Engine API endpoint that every Engine API request is forwarded to.
+    pub el_engine_endpoint: Url,
+    /// Beacon API endpoint that receives every proof at `POST /eth/v1/beacon/execution_proofs`.
+    pub cl_beacon_endpoint: Url,
+    /// EIP-2335 keystore of the validator that signs the proofs.
+    pub validator_keystore_path: PathBuf,
+    /// Plain text password of the keystore.
+    pub validator_keystore_password_path: PathBuf,
     /// Dashboard feature configuration.
     #[serde(default)]
     pub dashboard: DashboardConfig,
@@ -89,34 +59,8 @@ pub struct Config {
     pub zkvm: Vec<zkVMConfig>,
 }
 
-impl fmt::Debug for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Formats the `el_headers` map with every value replaced by `<redacted>`.
-        struct RedactedHeaders<'a>(&'a HashMap<String, String>);
-
-        impl fmt::Debug for RedactedHeaders<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_map()
-                    .entries(self.0.keys().map(|name| (name, "<redacted>")))
-                    .finish()
-            }
-        }
-
-        f.debug_struct("Config")
-            .field("port", &self.port)
-            .field("el_endpoint", &self.el_endpoint)
-            .field("el_headers", &RedactedHeaders(&self.el_headers))
-            .field("witness_timeout_secs", &self.witness_timeout_secs)
-            .field("proof_cache_size", &self.proof_cache_size)
-            .field("witness_cache_size", &self.witness_cache_size)
-            .field("dashboard", &self.dashboard)
-            .field("zkvm", &self.zkvm)
-            .finish()
-    }
-}
-
 impl Config {
-    /// Load configuration from a TOML file at the given path.
+    /// Loads configuration from a TOML file at the given path.
     pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let content = fs::read_to_string(path.as_ref())?;
         let config: Self = toml_edit::de::from_str(&content)?;
@@ -124,40 +68,10 @@ impl Config {
         Ok(config)
     }
 
-    /// Builds the header map applied to every EL JSON-RPC request from `el_headers`.
-    pub fn el_header_map(&self) -> anyhow::Result<HeaderMap> {
-        let mut headers = HeaderMap::with_capacity(self.el_headers.len());
-        for (name, value) in &self.el_headers {
-            let name: HeaderName = name
-                .parse()
-                .with_context(|| format!("invalid el_headers header name: {name}"))?;
-            let mut value: HeaderValue = value
-                .parse()
-                .with_context(|| format!("invalid el_headers value for header: {name}"))?;
-            // Header values typically carry credentials; mark them sensitive so `Debug`
-            // formatting of the header map redacts them.
-            value.set_sensitive(true);
-            // `el_headers` is a case-sensitive TOML map while header names are
-            // case-insensitive, so keys differing only in case would otherwise collapse
-            // here nondeterministically (HashMap iteration order decides which one wins).
-            ensure!(
-                headers.insert(&name, value).is_none(),
-                "duplicate el_headers header (names are case-insensitive): {name}"
-            );
-        }
-        Ok(headers)
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
         ensure!(
             !self.zkvm.is_empty(),
             "at least one [[zkvm]] entry is required"
-        );
-        self.el_header_map()?;
-        ensure!(self.proof_cache_size > 0, "proof_cache_size must be > 0");
-        ensure!(
-            self.witness_cache_size > 0,
-            "witness_cache_size must be > 0"
         );
         ensure!(
             self.dashboard.retention > 0,
@@ -185,34 +99,16 @@ impl Config {
                         "proof_timeout_secs must be > 0 for {proof_type}"
                     );
                 }
-                zkVMConfig::Verifier {
-                    program_vk_path,
-                    program_vk_url,
-                    ..
-                } => {
-                    ensure!(
-                        program_vk_path.is_some() || program_vk_url.is_some(),
-                        "verifier zkvm {proof_type}: one of program_vk_path or program_vk_url must be set"
-                    );
-                    ensure!(
-                        !(program_vk_path.is_some() && program_vk_url.is_some()),
-                        "verifier zkvm {proof_type}: program_vk_path and program_vk_url are mutually exclusive"
-                    );
-                }
             }
             if let zkVMConfig::Mock {
-                mock_proving_time,
-                mock_proof_size,
+                mock_proving_time: MockProvingTime::Random { min_ms, max_ms },
                 ..
             } = zkvm
             {
-                ensure!(*mock_proof_size >= 256, "mock_proof_size must be >= 256");
-                if let MockProvingTime::Random { min_ms, max_ms, .. } = mock_proving_time {
-                    ensure!(
-                        min_ms <= max_ms,
-                        "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
-                    );
-                }
+                ensure!(
+                    min_ms <= max_ms,
+                    "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
+                );
             }
             if let zkVMConfig::Cluster {
                 proof_type,
@@ -262,8 +158,7 @@ pub enum MockProvingTime {
     },
 }
 
-/// zkVM backend configuration. One of a remote ere-server, a mock, an
-/// in-process verifier-only backend (no proving), or an external proving
+/// zkVM backend configuration. One of a remote ere-server, a mock, or an external proving
 /// cluster.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -277,7 +172,7 @@ pub enum zkVMConfig {
         #[serde(default = "default_proof_timeout_secs")]
         proof_timeout_secs: u64,
         /// HTTP endpoint URL of the ere-server.
-        endpoint: String,
+        endpoint: Url,
     },
     /// In-process mock backend for testing.
     Mock {
@@ -289,29 +184,9 @@ pub enum zkVMConfig {
         /// Simulated proving time configuration.
         #[serde(default = "default_mock_proving_time")]
         mock_proving_time: MockProvingTime,
-        /// Size of the mock proof in bytes.
-        #[serde(default = "default_mock_proof_size")]
-        mock_proof_size: u64,
         /// Whether the mock should always fail proof generation.
         #[serde(default)]
         mock_failure: bool,
-    },
-    /// In-process verifier-only backend. Verifies proofs received via HTTP
-    /// without running an `ere-server` or pre-loading prover circuits.
-    /// Returns an error on prove requests.
-    Verifier {
-        /// Proof type.
-        proof_type: ProofType,
-        /// Optional local file path to the program verifying key file (.vk) for
-        /// the guest program of this proof type. Mutually exclusive with
-        /// `program_vk_url`.
-        #[serde(default)]
-        program_vk_path: Option<PathBuf>,
-        /// Optional URL to fetch the program verifying key file (.vk) from.
-        /// Pre-computed and shipped in `eth-act/ere-guests` releases alongside
-        /// the .elf. Mutually exclusive with `program_vk_path`.
-        #[serde(default)]
-        program_vk_url: Option<String>,
     },
     /// Remote cluster backend.
     Cluster {
@@ -337,7 +212,6 @@ impl zkVMConfig {
         match self {
             Self::Ere { proof_type, .. }
             | Self::Mock { proof_type, .. }
-            | Self::Verifier { proof_type, .. }
             | Self::Cluster { proof_type, .. } => *proof_type,
         }
     }
@@ -370,7 +244,7 @@ pub(crate) async fn load(path: &Option<PathBuf>, url: &Option<String>) -> anyhow
                 .to_vec();
             Ok(bytes)
         }
-        (None, None) => anyhow::bail!("either a local path or a URL must be set"),
+        (None, None) => unreachable!("config validation requires a path or a URL"),
     }
 }
 
@@ -400,11 +274,23 @@ mod tests {
 
     use crate::config::{Config, MockProvingTime, zkVMConfig};
 
+    /// Parses a config with the shared top-level keys and the given zkVM entries.
+    fn parse(zkvm: &str) -> Config {
+        let toml = format!(
+            r#"
+            el_engine_endpoint = "http://localhost:8551"
+            cl_beacon_endpoint = "http://localhost:4000"
+            validator_keystore_path = "/validator-keys/keys/0xaa/voting-keystore.json"
+            validator_keystore_password_path = "/validator-keys/secrets/0xaa"
+            {zkvm}
+        "#
+        );
+        toml_edit::de::from_str(&toml).unwrap()
+    }
+
     #[test]
     fn test_parse_multiple_zkvms() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
-
             [[zkvm]]
             kind = "ere"
             endpoint = "http://ere-server:3000"
@@ -414,10 +300,9 @@ mod tests {
             kind = "mock"
             proof_type = "reth-zisk"
             mock_proving_time = { kind = "constant", ms = 100 }
-            mock_proof_size = 512
         "#;
 
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
 
         assert_eq!(config.zkvm.len(), 2);
         assert_eq!(config.zkvm[0].proof_type(), ProofType::EthrexZisk);
@@ -430,174 +315,33 @@ mod tests {
     #[test]
     fn test_defaults() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert_eq!(config.proof_cache_size, 128);
-        assert_eq!(config.witness_cache_size, 128);
+        let config = parse(toml);
         assert!(matches!(
             config.zkvm[0],
             zkVMConfig::Mock {
                 proof_timeout_secs: 12,
                 mock_proving_time: MockProvingTime::Constant { ms: 6000 },
-                mock_proof_size: 131072,
                 ..
             }
         ));
     }
 
     #[test]
-    fn test_el_headers_default_empty() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.el_headers.is_empty());
-        assert!(config.el_header_map().unwrap().is_empty());
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn test_el_headers_parsed() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [el_headers]
-            Authorization = "Bearer secret"
-            "X-Custom" = "1"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        config.validate().unwrap();
-        let headers = config.el_header_map().unwrap();
-        assert_eq!(headers.len(), 2);
-        assert_eq!(headers.get("authorization").unwrap(), "Bearer secret");
-        assert_eq!(headers.get("x-custom").unwrap(), "1");
-    }
-
-    #[test]
-    fn test_el_headers_values_marked_sensitive() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [el_headers]
-            Authorization = "Bearer secret"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        let headers = config.el_header_map().unwrap();
-        assert!(headers.get("authorization").unwrap().is_sensitive());
-    }
-
-    #[test]
-    fn test_config_debug_redacts_el_header_values() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [el_headers]
-            Authorization = "Bearer secret"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        let debug = format!("{config:?}");
-        assert!(debug.contains("Authorization"), "{debug}");
-        assert!(debug.contains("<redacted>"), "{debug}");
-        assert!(!debug.contains("Bearer secret"), "{debug}");
-    }
-
-    #[test]
-    fn test_el_headers_case_duplicate_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [el_headers]
-            Authorization = "Bearer secret"
-            authorization = "Bearer other"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        let error = config.validate().unwrap_err().to_string();
-        assert!(error.contains("duplicate el_headers header"), "{error}");
-    }
-
-    #[test]
-    fn test_el_headers_invalid_name_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [el_headers]
-            "bad header" = "value"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_el_headers_invalid_value_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [el_headers]
-            Authorization = "bad\nvalue"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
     fn test_empty_zkvm_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             zkvm = []
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_zero_proof_cache_size_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            proof_cache_size = 0
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_zero_witness_cache_size_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            witness_cache_size = 0
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_zero_dashboard_retention_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [dashboard]
             enabled = true
             retention = 0
@@ -605,40 +349,37 @@ mod tests {
             kind = "mock"
             proof_type = "reth-sp1"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_random_proving_time_min_gt_max_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"
             mock_proving_time = { kind = "random", min_ms = 1000, max_ms = 50 }
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_zero_proof_timeout_secs_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"
             proof_timeout_secs = 0
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_duplicate_proof_type_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "mock"
             proof_type = "reth-sp1"
@@ -646,20 +387,19 @@ mod tests {
             kind = "mock"
             proof_type = "reth-sp1"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_parse_cluster() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-zisk"
             endpoint = "http://zisk-cluster:50051"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert_eq!(config.zkvm.len(), 1);
         assert!(matches!(
             &config.zkvm[0],
@@ -677,63 +417,47 @@ mod tests {
     }
 
     #[test]
-    fn test_cluster_no_elf_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:50051"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
     fn test_cluster_non_zisk_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-sp1"
             endpoint = "http://zisk-cluster:50051"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_cluster_zero_proof_timeout_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-zisk"
             endpoint = "http://zisk-cluster:50051"
             proof_timeout_secs = 0
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_cluster_with_elf_path() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "cluster"
             proof_type = "ethrex-zisk"
             endpoint = "http://zisk-cluster:50051"
             elf_path = "/tmp/stateless-validator-ethrex-zisk.elf"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(matches!(
             &config.zkvm[0],
             zkVMConfig::Cluster {
-                elf_path: Some(p),
+                elf_path: Some(path),
                 elf_url: None,
                 ..
-            } if p.to_str() == Some("/tmp/stateless-validator-ethrex-zisk.elf")
+            } if path.to_str() == Some("/tmp/stateless-validator-ethrex-zisk.elf")
         ));
         config.validate().unwrap();
     }
@@ -741,21 +465,20 @@ mod tests {
     #[test]
     fn test_cluster_with_elf_url() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "cluster"
             proof_type = "ethrex-zisk"
             endpoint = "http://zisk-cluster:50051"
             elf_url = "https://example.com/stateless-validator-ethrex-zisk.elf"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(matches!(
             &config.zkvm[0],
             zkVMConfig::Cluster {
                 elf_path: None,
-                elf_url: Some(u),
+                elf_url: Some(url),
                 ..
-            } if u == "https://example.com/stateless-validator-ethrex-zisk.elf"
+            } if url == "https://example.com/stateless-validator-ethrex-zisk.elf"
         ));
         config.validate().unwrap();
     }
@@ -763,83 +486,14 @@ mod tests {
     #[test]
     fn test_cluster_path_and_url_rejected() {
         let toml = r#"
-            el_endpoint = "http://localhost:8545"
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-zisk"
             endpoint = "http://zisk-cluster:50051"
-            elf_path = "/tmp/x.vk"
-            elf_url = "https://example.com/x.vk"
+            elf_path = "/tmp/x.elf"
+            elf_url = "https://example.com/x.elf"
         "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_verifier_with_program_vk_path() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "verifier"
-            proof_type = "reth-zisk"
-            program_vk_path = "/tmp/stateless-validator-reth-zisk.vk"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(matches!(
-            &config.zkvm[0],
-            zkVMConfig::Verifier {
-                program_vk_path: Some(p),
-                program_vk_url: None,
-                ..
-            } if p.to_str() == Some("/tmp/stateless-validator-reth-zisk.vk")
-        ));
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn test_verifier_with_program_vk_url() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "verifier"
-            proof_type = "reth-zisk"
-            program_vk_url = "https://example.com/stateless-validator-reth-zisk.vk"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(matches!(
-            &config.zkvm[0],
-            zkVMConfig::Verifier {
-                program_vk_path: None,
-                program_vk_url: Some(u),
-                ..
-            } if u == "https://example.com/stateless-validator-reth-zisk.vk"
-        ));
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn test_verifier_no_program_vk_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "verifier"
-            proof_type = "reth-zisk"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_verifier_path_and_url_rejected() {
-        let toml = r#"
-            el_endpoint = "http://localhost:8545"
-            [[zkvm]]
-            kind = "verifier"
-            proof_type = "reth-zisk"
-            program_vk_path = "/tmp/x.vk"
-            program_vk_url = "https://example.com/x.vk"
-        "#;
-        let config: Config = toml_edit::de::from_str(toml).unwrap();
+        let config = parse(toml);
         assert!(config.validate().is_err());
     }
 }

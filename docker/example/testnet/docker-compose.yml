@@ -1,11 +1,12 @@
+# The guest ELFs come from the ere-guests release of the ere version of the images.
 services:
   ethrex-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.14.0-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.17.0-cuda
     command:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.14.0/stateless-validator-ethrex-zisk-v1.0.0-alpha.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-ethrex-zisk-v1.1.0-alpha.elf"
       - "gpu"
     shm_size: 32G
     ulimits:
@@ -35,7 +36,7 @@ services:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.14.0/stateless-validator-reth-zisk-v1.0.0-alpha.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-reth-zisk-v1.1.0-alpha.elf"
       - "gpu"
     deploy:
       resources:
@@ -60,10 +61,9 @@ services:
         condition: service_healthy
     volumes:
       - ./zkboost/config.toml:/app/config.toml:ro
+      - ./validator-keys:/validator-keys:ro
     networks:
       - zkboost
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -72,6 +72,9 @@ services:
       start_period: 1s
       start_interval: 1s
 
+# The enclave network of the Kurtosis testnet, so lighthouse reaches zkboost as `zkboost` and
+# zkboost reaches the EL and the CL by their Kurtosis service names.
 networks:
   zkboost:
-    name: zkboost-local-testnet
+    name: kt-local-testnet
+    external: true

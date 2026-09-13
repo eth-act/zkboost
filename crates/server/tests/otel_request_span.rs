@@ -1,12 +1,12 @@
 //! Verifies that the server's `request` span joins a caller-supplied W3C trace context
 //! (`traceparent`) and carries the expected OpenTelemetry span kind and HTTP attributes.
 //!
-//! This lives in its own integration-test binary on purpose: it installs a process-global
+//! This lives in its own integration-test binary on purpose. It installs a process-global
 //! tracing subscriber so spans created on the server's tasks are observed. Sharing a process
 //! with other tests would both race on the global subscriber and poison the global callsite
 //! interest cache, which previously required warm-up/retry workarounds.
 
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
 use metrics_exporter_prometheus::PrometheusBuilder;
 use opentelemetry::trace::{SpanKind, TracerProvider};
@@ -22,7 +22,8 @@ use zkboost_server::{
 use zkboost_types::ProofType;
 
 /// Sends a request carrying a W3C `traceparent` header and asserts the exported `request`
-/// span joins the caller's trace: same trace id, parented under the caller's span id.
+/// span joins the caller's trace. The span has the same trace id and the caller's span id as
+/// parent.
 #[tokio::test]
 async fn test_request_span_joins_remote_trace_context() {
     const TRACE_ID: &str = "0af7651916cd43dd8448eb211c80319c";
@@ -39,20 +40,27 @@ async fn test_request_span_joins_remote_trace_context() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("no other subscriber should be installed in this test binary");
 
-    // The server starts without contacting the EL endpoint.
+    // The server starts without contacting the EL endpoints. Nothing listens on port 1, so the
+    // forwarded request below fails fast with 502 after the request span was created.
     let config = Config {
         port: 0,
-        el_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
-        el_headers: HashMap::new(),
-        witness_timeout_secs: 12,
-        proof_cache_size: 128,
-        witness_cache_size: 128,
+        el_engine_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
+        cl_beacon_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
+        validator_keystore_path: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixture/voting-keystore.json"
+        )
+        .into(),
+        validator_keystore_password_path: concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixture/voting-keystore-password"
+        )
+        .into(),
         dashboard: DashboardConfig::default(),
         zkvm: vec![zkVMConfig::Mock {
             proof_type: ProofType::RethZisk,
             proof_timeout_secs: 12,
             mock_proving_time: MockProvingTime::Constant { ms: 10 },
-            mock_proof_size: 64,
             mock_failure: false,
         }],
     };
@@ -62,12 +70,14 @@ async fn test_request_span_joins_remote_trace_context() {
     let (addr, _handles) = server.run(shutdown.clone()).await.unwrap();
 
     let response = reqwest::Client::new()
-        .get(format!("http://127.0.0.1:{}/v1/proof_types", addr.port()))
+        .post(format!("http://127.0.0.1:{}/", addr.port()))
         .header("traceparent", format!("00-{TRACE_ID}-{PARENT_SPAN_ID}-01"))
+        .header("content-type", "application/json")
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"engine_exchangeCapabilities","params":[[]]}"#)
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), 200);
+    assert_eq!(response.status(), 502);
     // The request span stays open until the response body is fully sent.
     response.text().await.unwrap();
 
@@ -97,8 +107,8 @@ async fn test_request_span_joins_remote_trace_context() {
             .find(|kv| kv.key.as_str() == key)
             .map(|kv| kv.value.as_str().into_owned())
     };
-    assert_eq!(attribute("http.request.method").as_deref(), Some("GET"));
-    assert_eq!(attribute("url.path").as_deref(), Some("/v1/proof_types"));
+    assert_eq!(attribute("http.request.method").as_deref(), Some("POST"));
+    assert_eq!(attribute("url.path").as_deref(), Some("/"));
 
     shutdown.cancel();
 }
