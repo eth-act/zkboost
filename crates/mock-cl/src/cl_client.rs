@@ -211,18 +211,19 @@ impl ClClient {
             .map_err(|error| anyhow!("validator {validator_index} pubkey: {error:?}"))
     }
 
-    /// Forwards a request to the CL and returns the response status, content type, and body.
+    /// Forwards a request to the CL and returns the response status, content type, and the
+    /// response itself, whose body streams to the caller.
     pub(crate) async fn forward(
         &self,
         method: Method,
         path_and_query: &str,
         body: Bytes,
-    ) -> anyhow::Result<(StatusCode, Option<HeaderValue>, Bytes)> {
+    ) -> anyhow::Result<(StatusCode, Option<HeaderValue>, reqwest::Response)> {
         let url = self.base_url.join(path_and_query)?;
         let response = self.http.request(method, url).body(body).send().await?;
         let status = response.status();
         let content_type = response.headers().get(CONTENT_TYPE).cloned();
-        Ok((status, content_type, response.bytes().await?))
+        Ok((status, content_type, response))
     }
 
     /// Fetches a beacon-API endpoint and returns its `data` payload.

@@ -1,7 +1,7 @@
-//! Mock zkattestor. The attestor follows the beacon chain head. It sends every Gloas payload to
-//! the proof node as `engine_newPayloadV5`. It receives the signed EIP-8025 envelopes at
-//! `POST /eth/v1/beacon/execution_proofs` and verifies the signature and the proof. Every other
-//! beacon API request goes to the CL.
+//! Mock CL. It mocks a consensus client implementation with the EIP-8025 behavior. It follows the
+//! beacon chain head of a CL, sends every Gloas payload to the proof node as `engine_newPayloadV5`,
+//! receives the signed EIP-8025 envelopes at `POST /eth/v1/beacon/execution_proofs`, and verifies
+//! the signature and the proof. Every other beacon API request goes to the CL.
 
 #![warn(unused_crate_dependencies)]
 
@@ -16,7 +16,7 @@ use alloy_rpc_types_engine::{Claims, JwtSecret};
 use anyhow::{Context, bail, ensure};
 use axum::{
     Json, Router,
-    body::{Bytes, to_bytes},
+    body::{Body, Bytes, to_bytes},
     extract::{Request, State},
     http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
@@ -44,7 +44,7 @@ use zkboost_types::{
 mod cl_client;
 
 /// The static JWT secret of the ethereum-package, which every EL of a Kurtosis testnet accepts.
-/// The attestor only runs against such testnets.
+/// The mock CL only runs against such testnets.
 const JWT_SECRET: &str = "0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b";
 
 /// Budget for all proofs of one payload to arrive.
@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
         info!(%proof_type, "verifier loaded");
     }
 
-    let mock_attestor = Arc::new(MockAttestor {
+    let mock_cl = Arc::new(MockCl {
         cl_client,
         zkboost_endpoint: cli.zkboost_endpoint,
         jwt_secret: JwtSecret::from_hex(JWT_SECRET)?,
@@ -118,16 +118,16 @@ async fn main() -> anyhow::Result<()> {
             post(post_execution_proofs),
         )
         .fallback(forward_to_cl)
-        .with_state(mock_attestor.clone());
+        .with_state(mock_cl.clone());
     tokio::spawn(async move { axum::serve(listener, router).await });
     info!(port = cli.port, "beacon api listening");
 
-    let mut stream = Box::pin(mock_attestor.cl_client.subscribe_block_events());
+    let mut stream = Box::pin(mock_cl.cl_client.subscribe_block_events());
     while let Some(Ok(block)) = stream.next().await {
         info!(slot = block.slot, block = %block.block, "new block");
-        let mock_attestor = mock_attestor.clone();
+        let mock_cl = mock_cl.clone();
         tokio::spawn(async move {
-            if let Err(error) = mock_attestor.process_block(block.block).await {
+            if let Err(error) = mock_cl.process_block(block.block).await {
                 warn!(slot = block.slot, block = %block.block, error = %error, "block failed");
             }
         });
@@ -150,7 +150,7 @@ async fn load(source: &str) -> anyhow::Result<Vec<u8>> {
     }
 }
 
-struct MockAttestor {
+struct MockCl {
     cl_client: ClClient,
     zkboost_endpoint: Url,
     jwt_secret: JwtSecret,
@@ -175,30 +175,19 @@ struct PendingPayload {
 
 /// Handler for `POST /eth/v1/beacon/execution_proofs` with an SSZ body. A rejected envelope fails
 /// the request with 400 and its index, as the beacon node answers.
-async fn post_execution_proofs(
-    State(mock_attestor): State<Arc<MockAttestor>>,
-    body: Bytes,
-) -> Response {
+async fn post_execution_proofs(State(mock_cl): State<Arc<MockCl>>, body: Bytes) -> Response {
     let Ok(envelopes) = SignedExecutionProofEnvelopes::from_ssz_bytes(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     let mut failures = Vec::new();
     for (index, envelope) in envelopes.iter().enumerate() {
         let block_root = Hash256::from(envelope.message.beacon_block_root);
-        let pending = mock_attestor
-            .pending
-            .lock()
-            .unwrap()
-            .get(&block_root)
-            .cloned();
+        let pending = mock_cl.pending.lock().unwrap().get(&block_root).cloned();
         let verified = match pending {
-            Some(pending) => mock_attestor
-                .verify(&pending, envelope)
-                .await
-                .map(|proof_type| {
-                    info!(%block_root, %proof_type, "proof verified");
-                    let _ = pending.verified_tx.send(proof_type);
-                }),
+            Some(pending) => mock_cl.verify(&pending, envelope).await.map(|proof_type| {
+                info!(%block_root, %proof_type, "proof verified");
+                let _ = pending.verified_tx.send(proof_type);
+            }),
             None => Err(anyhow::anyhow!("unknown block")),
         };
         if let Err(error) = verified {
@@ -215,10 +204,7 @@ async fn post_execution_proofs(
 }
 
 /// Handler for every other beacon API request, forwarded to the CL.
-async fn forward_to_cl(
-    State(mock_attestor): State<Arc<MockAttestor>>,
-    request: Request,
-) -> Response {
+async fn forward_to_cl(State(mock_cl): State<Arc<MockCl>>, request: Request) -> Response {
     let method = request.method().clone();
     let path_and_query = request
         .uri()
@@ -228,15 +214,20 @@ async fn forward_to_cl(
     let Ok(body) = to_bytes(request.into_body(), usize::MAX).await else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    match mock_attestor
+    match mock_cl
         .cl_client
         .forward(method, &path_and_query, body)
         .await
     {
-        Ok((status, Some(content_type), body)) => {
-            (status, [(CONTENT_TYPE, content_type)], body).into_response()
+        Ok((status, Some(content_type), response)) => (
+            status,
+            [(CONTENT_TYPE, content_type)],
+            Body::from_stream(response.bytes_stream()),
+        )
+            .into_response(),
+        Ok((status, None, response)) => {
+            (status, Body::from_stream(response.bytes_stream())).into_response()
         }
-        Ok((status, None, body)) => (status, body).into_response(),
         Err(error) => {
             warn!(%path_and_query, %error, "forward to cl failed");
             StatusCode::BAD_GATEWAY.into_response()
@@ -244,7 +235,7 @@ async fn forward_to_cl(
     }
 }
 
-impl MockAttestor {
+impl MockCl {
     async fn process_block(&self, block_root: Hash256) -> anyhow::Result<()> {
         let beacon_block = self.cl_client.get_beacon_block(block_root).await?;
         let request = match beacon_block.fork_name_unchecked() {

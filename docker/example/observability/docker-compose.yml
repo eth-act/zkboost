@@ -24,9 +24,9 @@ services:
       start_interval: 1s
     restart: unless-stopped
 
-  mock-zkattestor:
+  mock-cl:
     image: zkboost:local
-    entrypoint: ["/usr/local/bin/mock-zkattestor"]
+    entrypoint: ["/usr/local/bin/mock-cl"]
     command:
       - "--cl-endpoint"
       - "http://host.docker.internal:33001"

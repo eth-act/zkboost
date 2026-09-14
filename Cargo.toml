@@ -2,7 +2,7 @@
 members = [
     "crates/server",
     "crates/types",
-    "crates/mock-zkattestor",
+    "crates/mock-cl",
 ]
 resolver = "2"
 

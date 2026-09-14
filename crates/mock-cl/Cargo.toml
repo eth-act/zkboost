@@ -1,5 +1,5 @@
 [package]
-name = "mock-zkattestor"
+name = "mock-cl"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,7 +15,7 @@ axum.workspace = true
 clap = { workspace = true, features = ["derive"] }
 futures.workspace = true
 jsonwebtoken.workspace = true
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
 reqwest-eventsource.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
