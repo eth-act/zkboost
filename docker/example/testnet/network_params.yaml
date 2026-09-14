@@ -18,9 +18,8 @@ participants:
       - --proof-engine=/config/proof-engine.json
     cl_extra_mounts:
       /config: proof-engine.json
-  # The EL of zkboost, fed by zkboost alone once the start script stops its lighthouse. Geth returns no witness
-  # for a known payload. We can switch to `POST /engine/v1/payloads/witness` once
-  # https://github.com/ethereum/execution-apis/pull/885 is implemented.
+  # The EL of zkboost, fed by zkboost alone once its lighthouse is stopped.
+  # Geth returns no witness for a known payload.
   - el_type: geth
     el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
     cl_type: lighthouse

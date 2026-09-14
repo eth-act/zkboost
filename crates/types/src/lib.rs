@@ -1,8 +1,5 @@
-//! Shared types for the zkboost proof node and the mock attestor.
-//!
-//! This crate contains the proof type identifiers, the conversion between the Engine API
-//! `engine_newPayloadV5` parameters and the stateless validator `NewPayloadRequest`, and the
-//! EIP-8025 execution proof envelopes.
+//! Shared types for the zkboost proof node and the mock attestor. The crate holds the proof type
+//! identifiers, the `engine_newPayloadV5` conversion, and the EIP-8025 execution proof envelopes.
 
 #![warn(unused_crate_dependencies)]
 

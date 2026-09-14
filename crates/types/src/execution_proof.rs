@@ -1,6 +1,5 @@
-//! EIP-8025 execution proof envelopes of `POST /eth/v1/beacon/execution_proofs` and the signing
-//! helpers of the consensus specs. `proof_data` is a `List[byte, MAX_PROOF_SIZE]`, as lighthouse
-//! defines it, not the `ProgressiveList[byte]` of the specs.
+//! EIP-8025 execution proof envelopes and the signing helpers of the consensus specs.
+//! `proof_data` is the bounded list of lighthouse, not the `ProgressiveList[byte]` of the specs.
 
 use alloy_primitives::B256;
 use libssz_derive::{HashTreeRoot, SszDecode, SszEncode};
@@ -17,9 +16,8 @@ pub const MAX_PROOF_SIZE: usize = 4_194_304;
 /// `MAX_EXECUTION_PROOFS_PER_PAYLOAD` of the consensus specs, the bound of one submission.
 pub const MAX_EXECUTION_PROOFS_PER_PAYLOAD: usize = 4;
 
-/// `ExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs-gloas`. It diverges
-/// from the `ExecutionProof` of the consensus specs with a `beacon_block_root` in place of the
-/// `public_input` and with a bounded `proof_data` list.
+/// `ExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs-gloas`.
+/// It diverges from the specs with `beacon_block_root` in place of `public_input`.
 #[derive(Debug, Clone, PartialEq, Eq, HashTreeRoot, SszEncode, SszDecode)]
 pub struct ExecutionProofEnvelope {
     /// The opaque proof bytes.
@@ -83,13 +81,11 @@ mod tests {
 
     use crate::{compute_signing_root, execution_proof_domain};
 
-    /// The `DOMAIN_EXECUTION_PROOF` domain type as the integer that lighthouse encodes to four
-    /// little-endian bytes.
+    /// `DOMAIN_EXECUTION_PROOF` as the integer lighthouse encodes to four little-endian bytes.
     const EXECUTION_PROOF_DOMAIN_TYPE: u32 = 15;
 
     /// The domain and the signing root agree with the lighthouse `ForkData` and `SigningData`
-    /// containers. These containers use the generic SSZ merkleization in place of a plain SHA-256
-    /// chain.
+    /// containers. These containers use the generic SSZ merkleization, not a plain SHA-256 chain.
     #[test]
     fn test_signing_root_matches_lighthouse() {
         let fork_version = [0x60, 0x00, 0x00, 0x93];

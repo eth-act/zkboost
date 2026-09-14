@@ -136,11 +136,11 @@ zkboost serves the Engine API as JSON-RPC at `POST /`. The CL uses zkboost as it
 - Every request is forwarded byte-for-byte to `el_engine_endpoint`. The EL response is returned to the CL.
 - The `Authorization` JWT header of the CL is passed through unchanged. The EL validates the JWT. zkboost does not validate it.
 - zkboost reads the chain id once with `eth_chainId` on `el_engine_endpoint`, authenticated with the JWT of the CL.
-- `engine_newPayloadV5` is intercepted. zkboost sends it to the EL as `engine_newPayloadWithWitnessV5`, an EL extension that returns the execution witness in the payload status. geth, nethermind, nimbus, and ethrex implement the method. reth serves the witness only on the SSZ Engine API route `POST /engine/v1/payloads/witness` of execution-apis PR 885, which zkboost does not use.
+- `engine_newPayloadV5` is intercepted. zkboost sends it to the EL as `engine_newPayloadWithWitnessV5`, which returns the execution witness in the payload status.
 - zkboost removes the `witness` field from the payload status before it answers the CL.
 - When the payload status is `VALID`, zkboost builds the stateless input from the payload, the witness, and the chain id. It then dispatches proving to every configured zkVM backend in the background.
 - Every payload is proven under the Amsterdam rules. `engine_newPayloadV1` to `engine_newPayloadV4` are forwarded without proving.
-- A repeated `engine_newPayload` for a payload that is already proven is submitted again with the cached proof, so a payload imported again after a reorg is not proven twice. zkboost keeps the proofs of the last 64 payloads per proof type, two epochs.
+- A payload imported again after a reorg is submitted with the cached proof, not proven twice. zkboost keeps the proofs of the last 64 payloads per proof type, two epochs.
 
 The following endpoints are also available:
 
@@ -154,9 +154,33 @@ The following endpoints are also available:
 
 ## Proof Submission
 
-zkboost delivers every generated proof to the beacon node at `cl_beacon_endpoint` as an EIP-8025 `SignedExecutionProofEnvelope`, with `POST /eth/v1/beacon/execution_proofs`. The body is the SSZ encoding of a list of at most 4 `SignedExecutionProofEnvelope`, sent with `Content-Type: application/octet-stream`.
+zkboost delivers every generated proof to the beacon node at `cl_beacon_endpoint` as an EIP-8025 `SignedExecutionProofEnvelope`.
 
-zkboost reads the chain spec, the genesis validators root, and the index of its validator once, with `GET /eth/v1/config/spec`, `GET /eth/v1/beacon/genesis`, and `GET /eth/v1/beacon/states/head/validators/{pubkey}`. For every proof it lists the children of the parent beacon block root with `GET /eth/v1/beacon/headers?parent_root=` and submits one envelope under the child whose payload bid carries the block hash. A Gloas payload bid commits to the slot and the parent, so one child only is valid and zkboost submits no proof when two match. It signs the envelope under `DOMAIN_EXECUTION_PROOF` with the fork version at the slot of the block, computed from the chain spec as a validator client does. The execution proof types are provisional. lighthouse assigns 1 to 3 to the reth guests, and zkboost continues the sequence for the ethrex guests.
+zkboost reads these routes of the beacon API.
+
+| Route                                                | Reads                                        | How often        |
+| ---------------------------------------------------- | -------------------------------------------- | ---------------- |
+| `GET /eth/v1/config/spec`                            | The chain spec                               | Once             |
+| `GET /eth/v1/beacon/genesis`                         | The genesis validators root                  | Once             |
+| `GET /eth/v1/beacon/states/head/validators/{pubkey}` | The index of the signing validator           | Once             |
+| `GET /eth/v1/beacon/headers?parent_root=`            | The children of the parent beacon block root | Per proof        |
+| `GET /eth/v2/beacon/blocks/{root}`                   | The payload bid of a listed child            | Per listed child |
+
+Every proof follows these steps.
+
+1. zkboost lists the children of the parent beacon block root.
+2. zkboost reads the payload bid of every listed child.
+3. The envelope goes under the child whose payload bid carries the block hash of the payload.
+4. zkboost compares the slot of the header of that child with the slot of the payload.
+5. zkboost signs the envelope under `DOMAIN_EXECUTION_PROOF` with the fork version at the slot of the block. It takes that fork version from the chain spec, as a validator client does.
+6. zkboost sends the envelope with `POST /eth/v1/beacon/execution_proofs`. The body is the SSZ encoding of a list of at most 4 envelopes and has the header `Content-Type: application/octet-stream`.
+
+zkboost submits no proof in these cases.
+
+- Two children carry the payload in their bid, which shows a proposer equivocation. A Gloas payload bid commits to the slot and the parent, therefore one child only is valid.
+- The slot of the child header differs from the slot of the payload. The execution header does not commit to the slot, therefore zkboost compares the two sources.
+
+The table gives the EIP-8025 proof type of every zkboost proof type.
 
 | `proof_type` | zkboost proof type |
 | ------------ | ------------------ |
@@ -167,13 +191,15 @@ zkboost reads the chain spec, the genesis validators root, and the index of its 
 | `5`          | `ethrex-sp1`       |
 | `6`          | `ethrex-zisk`      |
 
-A beacon node accepts proofs of Gloas blocks only, since EIP-8025 is built on Gloas. A failed submission is logged. zkboost does not retry it.
-
 ## Mock Attestor
 
-`mock-zkattestor` stands in for a CL that attests to execution proofs. It follows the block events of a CL and sends every Gloas payload to zkboost as `engine_newPayloadV5`. It receives the proofs at `POST /eth/v1/beacon/execution_proofs`, verifies the validator signature as the beacon node does, and verifies each proof with `ere-verifier` against the request root, a successful validation, the `DEPOSIT_CHAIN_ID` of the CL, and the Amsterdam schema id. The mock proof bytes `MOCK` pass as valid. Every other beacon API request is forwarded to the CL, so zkboost uses the attestor as its `cl_beacon_endpoint`.
+`mock-zkattestor` stands in for a CL that attests to execution proofs.
 
-The EL behind zkboost must not know a payload before the attestor sends it. geth answers a known payload with `VALID` and no witness. In a Kurtosis testnet, the attestor therefore follows the CL of one participant while zkboost forwards to the EL of another participant whose CL is stopped, so that EL receives every payload through zkboost.
+- It follows the block events of a CL. It sends every Gloas payload to zkboost as `engine_newPayloadV5`.
+- It receives the proofs at `POST /eth/v1/beacon/execution_proofs`. It verifies the validator signature as the beacon node does.
+- It verifies each proof with `ere-verifier`. The check covers the request root, a successful validation, the `DEPOSIT_CHAIN_ID` of the CL, and the Amsterdam schema id.
+- The mock proof bytes `MOCK` pass as valid.
+- It forwards every other beacon API request to the CL. zkboost therefore uses the attestor as its `cl_beacon_endpoint`.
 
 | Flag                                       | Description                                                                                                                  |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |

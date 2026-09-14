@@ -1,6 +1,6 @@
 # Mock Attestor with zkboost
 
-This example runs zkboost with two mock zkVM backends against a local Kurtosis testnet, with `mock-zkattestor` in place of the beacon node.
+This example runs zkboost with two mock zkVM backends against a local Kurtosis testnet. `mock-zkattestor` takes the place of the beacon node.
 
 The testnet has three participants.
 

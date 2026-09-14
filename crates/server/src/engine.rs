@@ -1,12 +1,7 @@
-//! Engine API proxy state. Every JSON-RPC request is forwarded to the EL engine endpoint with the
-//! caller's `Authorization` header unchanged, so the EL keeps validating the JWT of the CL.
-//! `engine_newPayloadV5` is sent upstream as `engine_newPayloadWithWitnessV5`. The witness is
-//! removed from the payload status returned to the CL, a `VALID` payload is proven by every zkVM
-//! worker, and each proof is submitted to the beacon node as a signed EIP-8025 envelope.
-//!
-//! The EL returns the witness as the RLP list `[headers, codes, state]`, where `headers` holds
-//! RLP-encoded block headers and the other two hold byte strings. Some clients append a trailing
-//! `keys` list, which is ignored.
+//! Engine API proxy state. Every request is forwarded to the EL with the caller's `Authorization`
+//! header unchanged. `engine_newPayloadV5` goes upstream as `engine_newPayloadWithWitnessV5`, and
+//! the witness is removed from the status. A `VALID` payload is proven and submitted.
+//! The witness is the RLP list `[headers, codes, state]` and an optional, ignored `keys` list.
 
 pub(crate) mod submission;
 
@@ -48,8 +43,7 @@ use crate::{
 
 /// JSON-RPC error code of a method the EL does not serve.
 const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
-/// Proofs kept per proof type, two epochs of payloads, so a payload imported again after a reorg
-/// is submitted without proving.
+/// Proofs kept per proof type. Two epochs cover a payload imported again after a reorg.
 const PROOF_CACHE_SLOTS: usize = 64;
 
 /// JSON-RPC request envelope.
@@ -155,9 +149,8 @@ impl EngineProxyState {
         })
     }
 
-    /// Forwards a new payload as `engine_newPayloadWithWitnessV5`, answers with the
-    /// payload status without the witness, and proves a `VALID` payload in the background. An EL
-    /// without the witness method receives the original request instead.
+    /// Forwards a new payload as `engine_newPayloadWithWitnessV5`, or unchanged when the EL lacks
+    /// the method, and answers without the witness. A `VALID` payload is proven in the background.
     pub(crate) async fn new_payload(
         self: Arc<Self>,
         authorization: Option<&HeaderValue>,
@@ -260,8 +253,7 @@ impl EngineProxyState {
         })
     }
 
-    /// Builds the stateless input of a valid payload, submits the cached proof of every proof type
-    /// that proved it before, and queues it at every other zkVM worker that has not received it.
+    /// Builds the stateless input, submits cached proofs, and queues the rest at the zkVM workers.
     async fn request_proofs(
         &self,
         authorization: Option<HeaderValue>,

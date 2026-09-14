@@ -33,9 +33,8 @@ use zkboost_types::{
 /// Interval between execution payload envelope fetches.
 const ENVELOPE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Budget for fetching an execution payload envelope. Under ePBS the builder reveals the payload
-/// after the block itself and may do so as late as the payload deadline three quarters into the
-/// slot, so a whole mainnet slot bounds the wait.
+/// Budget for fetching an execution payload envelope. The builder reveals the payload after the
+/// block, so a whole mainnet slot bounds the wait.
 const ENVELOPE_TIMEOUT: Duration = Duration::from_secs(12);
 
 /// A `block` event of the beacon API event stream.
@@ -129,8 +128,8 @@ impl ClClient {
             .map_err(|error| anyhow!("{error:?}"))
     }
 
-    /// Fetches the execution payload envelope carrying a Gloas block's execution payload and
-    /// execution requests, retrying until the builder publishes it or the budget expires.
+    /// Fetches the execution payload envelope of a Gloas block. Retries until the builder
+    /// publishes it or the budget expires.
     pub(crate) async fn get_execution_payload_envelope(
         &self,
         block_root: Hash256,
@@ -212,8 +211,7 @@ impl ClClient {
             .map_err(|error| anyhow!("validator {validator_index} pubkey: {error:?}"))
     }
 
-    /// Forwards a request to the CL and returns the status, content type, and body of its
-    /// response.
+    /// Forwards a request to the CL and returns the response status, content type, and body.
     pub(crate) async fn forward(
         &self,
         method: Method,
@@ -245,11 +243,8 @@ impl ClClient {
     }
 }
 
-/// Converts a lighthouse Gloas beacon block and its execution payload envelope into the
-/// `NewPayloadRequestGloas`.
-///
-/// The block carries only a payload bid, so `envelope` supplies the execution payload and this
-/// block's execution requests.
+/// Converts a lighthouse Gloas beacon block and its envelope into `NewPayloadRequestGloas`.
+/// The block carries only a payload bid, so the envelope supplies the payload and the requests.
 pub(crate) fn new_payload_request_gloas(
     block: &SignedBeaconBlock<MainnetEthSpec>,
     envelope: &SignedExecutionPayloadEnvelope<MainnetEthSpec>,
@@ -397,8 +392,8 @@ fn builder_exit_requests(
         .into()
 }
 
-/// Builds SSZ `ExecutionRequestsGloas` from a lighthouse Gloas execution requests container, which
-/// EIP-8282 extends with the builder deposit and builder exit lists.
+/// Builds SSZ `ExecutionRequestsGloas` from the lighthouse container, which EIP-8282 extends with
+/// the builder deposit and builder exit lists.
 fn execution_requests_gloas(
     value: &LighthouseExecutionRequestsGloas<MainnetEthSpec>,
 ) -> ExecutionRequestsGloas {

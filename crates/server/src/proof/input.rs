@@ -1,5 +1,4 @@
-//! Assembles the `StatelessInput` from a `NewPayloadRequest`, its execution witness, and the
-//! chain id, then encodes it once to schema-id-prefixed SSZ bytes consumed by every zkVM backend.
+//! Assembles the `StatelessInput` of a payload and encodes it once to schema-id-prefixed SSZ.
 
 use alloy_consensus::{EthereumTxEnvelope, TxEip4844};
 use alloy_eips::Decodable2718;
@@ -40,7 +39,7 @@ impl StatelessInput {
         let gas_used = payload.gas_used;
         let public_keys = PublicKeys::from(recover_public_keys(&payload.transactions)?);
         // The root follows the request layout of ere-guests, which the guests commit. lighthouse
-        // hashes the request as a progressive container with a bounded list of versioned hashes.
+        // hashes the request differently, as a progressive container.
         let new_payload_request_root =
             Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
 
@@ -125,8 +124,7 @@ mod tests {
     const AMSTERDAM_STATELESS_INPUT: &[u8] =
         include_bytes!("../../tests/fixture/stateless_input_amsterdam.ssz");
 
-    /// The input built from the decoded fixture encodes to the fixture bytes. Consequently the
-    /// recovered public keys and the schema prefix are the ones the guest reads.
+    /// The input built from the decoded fixture encodes to the fixture bytes the guest reads.
     #[test]
     fn test_stateless_input_matches_fixture() {
         let (_, fixture) =

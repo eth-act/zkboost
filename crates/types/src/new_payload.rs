@@ -1,9 +1,7 @@
-//! Conversion between the `engine_newPayloadV5` parameters and the `NewPayloadRequest` of the
-//! stateless validator.
-//!
-//! Execution requests follow EIP-7685 on the wire. Each element is one byte of request type
-//! followed by the SSZ encoding of the request list, elements are ordered by request type, and
-//! empty lists are omitted.
+//! Conversion between the `engine_newPayloadV5` parameters and the stateless validator
+//! `NewPayloadRequest`. Execution requests follow EIP-7685 on the wire. Each element is one
+//! request type byte and the SSZ request list. The elements are ordered by type and empty lists
+//! are omitted.
 
 use alloy_eips::eip4895::Withdrawal as EngineWithdrawal;
 use alloy_primitives::{B256, Bytes, U256};
@@ -252,8 +250,7 @@ mod tests {
     const AMSTERDAM_STATELESS_INPUT: &[u8] =
         include_bytes!("../../server/tests/fixture/stateless_input_amsterdam.ssz");
 
-    /// A payload survives the trip through the Engine API parameters, including their JSON form,
-    /// unchanged.
+    /// A payload survives the trip through the Engine API parameters and their JSON form.
     #[test]
     fn test_new_payload_params_round_trip() {
         let (_, input) =

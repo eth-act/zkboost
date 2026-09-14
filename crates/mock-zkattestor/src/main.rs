@@ -1,11 +1,7 @@
-//! Mock zkattestor.
-//!
-//! Follows the beacon chain head, sends every Gloas execution payload to the proof node as
-//! `engine_newPayloadV5`, receives the
-//! generated proofs at `POST /eth/v1/beacon/execution_proofs` as SSZ validator-signed EIP-8025
-//! envelopes, verifies the signature against the validator of the CL, and verifies the proof
-//! with `ere-verifier`. Every other beacon API request is forwarded to the CL, so the proof node
-//! resolves beacon blocks through the attestor.
+//! Mock zkattestor. The attestor follows the beacon chain head. It sends every Gloas payload to
+//! the proof node as `engine_newPayloadV5`. It receives the signed EIP-8025 envelopes at
+//! `POST /eth/v1/beacon/execution_proofs` and verifies the signature and the proof. Every other
+//! beacon API request goes to the CL.
 
 #![warn(unused_crate_dependencies)]
 
@@ -177,9 +173,8 @@ struct PendingPayload {
     verified_tx: mpsc::UnboundedSender<ProofType>,
 }
 
-/// Handler for `POST /eth/v1/beacon/execution_proofs` with an SSZ body. Every envelope is
-/// verified before the response, and a rejected envelope fails the request with 400 and its
-/// index, as the beacon node answers.
+/// Handler for `POST /eth/v1/beacon/execution_proofs` with an SSZ body. A rejected envelope fails
+/// the request with 400 and its index, as the beacon node answers.
 async fn post_execution_proofs(
     State(mock_attestor): State<Arc<MockAttestor>>,
     body: Bytes,
@@ -304,8 +299,7 @@ impl MockAttestor {
         result
     }
 
-    /// Sends the `engine_newPayload` call of the parameters to the proof node and returns the
-    /// payload status.
+    /// Sends the `engine_newPayload` call to the proof node and returns the payload status.
     async fn new_payload(&self, params: &NewPayloadParams) -> anyhow::Result<String> {
         let method = NewPayloadParams::METHOD;
         let token = self.jwt_secret.encode(&Claims::with_current_timestamp())?;
@@ -333,8 +327,7 @@ impl MockAttestor {
             .with_context(|| format!("{method} response has no status"))
     }
 
-    /// Verifies a submitted envelope as the beacon node does, then the proof against the
-    /// expected public values, and returns the proof type.
+    /// Verifies the envelope as the beacon node does, then the proof, and returns the proof type.
     async fn verify(
         &self,
         pending: &PendingPayload,
@@ -385,8 +378,7 @@ impl MockAttestor {
         .to_ssz();
         let len = expected.len();
 
-        // For zkVM with fixed size public values, ensure all padding after the
-        // SSZ-encoded result are zeros.
+        // A zkVM with fixed size public values pads the SSZ result with zeros.
         anyhow::ensure!(
             public_values.len() >= len
                 && public_values[..len] == expected[..]

@@ -1,8 +1,6 @@
-//! Integration test for zkboost.
-//!
-//! A mock EL answers `engine_newPayloadWithWitnessV5` with the fixture witness and `eth_chainId`
-//! with the fixture chain id. A mock beacon node resolves the beacon block of the fixture payload.
-//! It also collects every validator-signed proof envelope of
+//! Integration test for zkboost. A mock EL answers `engine_newPayloadWithWitnessV5` with the
+//! fixture witness and `eth_chainId` with the fixture chain id. A mock beacon node resolves the
+//! beacon block of the fixture payload. It collects every signed envelope of
 //! `POST /eth/v1/beacon/execution_proofs`.
 
 use std::{
@@ -93,8 +91,7 @@ impl Fixture {
     }
 }
 
-/// Encodes the witness the way the EL returns it. The result is an RLP list of the RLP-encoded
-/// headers, the codes, and the state nodes.
+/// Encodes the witness as the EL returns it, an RLP list of the headers, codes, and state nodes.
 fn encode_engine_witness(witness: &ExecutionWitness) -> Bytes {
     fn rlp_list(items: impl Iterator<Item = Vec<u8>>) -> Vec<u8> {
         let payload: Vec<u8> = items.flatten().collect();
@@ -208,8 +205,8 @@ async fn genesis_handler() -> Json<Value> {
     Json(json!({ "data": { "genesis_validators_root": GENESIS_VALIDATORS_ROOT } }))
 }
 
-/// `GET /eth/v1/beacon/headers?parent_root=`, listing the fixture block under its parent. Every
-/// header reports the slot of the fixture payload, or the next slot under `mismatched_slot`.
+/// `GET /eth/v1/beacon/headers?parent_root=`, which lists the fixture block under its parent.
+/// Every header reports the fixture slot, or the next slot under `mismatched_slot`.
 async fn headers_handler(
     State(node): State<Arc<MockBeaconNode>>,
     Query(query): Query<HashMap<String, String>>,
@@ -229,9 +226,8 @@ async fn headers_handler(
     Json(json!({ "data": headers }))
 }
 
-/// `GET /eth/v2/beacon/blocks/{root}`, with the fixture payload bid under the fixture block and
-/// an empty bid under the other child of the parent. An ambiguous node answers the fixture payload
-/// bid under both children.
+/// `GET /eth/v2/beacon/blocks/{root}`, with the fixture payload bid under the fixture block only.
+/// An ambiguous node answers that bid under both children of the parent.
 async fn block_handler(
     State(node): State<Arc<MockBeaconNode>>,
     Path(root): Path<B256>,
@@ -318,8 +314,8 @@ async fn start_mock_beacon_node(
     (serve(app).await, envelopes_rx)
 }
 
-/// The chain spec of the mock beacon node, with every fork at genesis and the fork version of
-/// the fixture under Gloas.
+/// The chain spec of the mock beacon node. Every fork is at genesis, with the fixture fork
+/// version under Gloas.
 fn mock_spec() -> ChainSpec {
     let mut spec = ChainSpec::mainnet();
     spec.altair_fork_epoch = Some(Epoch::new(0));
@@ -497,9 +493,8 @@ impl Drop for TestHarness {
     }
 }
 
-/// The stateless input fixture matches the guest output fixture, so a verifier expects exactly
-/// the public values the mock attestor derives from the request root, the chain id, and the
-/// Amsterdam schema id.
+/// The stateless input fixture matches the guest output fixture. A verifier therefore expects the
+/// public values from the request root, the chain id, and the Amsterdam schema id.
 #[test]
 fn test_fixture_expected_output() {
     let fixture = Fixture::load();
@@ -547,8 +542,7 @@ async fn test_new_payload_proof_submitted() {
 
         harness.assert_proofs_submitted().await;
 
-        // The same payload sent again is submitted with the cached proof, before the mock could
-        // have proven it again.
+        // The same payload sent again is submitted from the cache, faster than a new proof.
         let resubmitted = Instant::now();
         harness.new_payload().await;
         harness.assert_proofs_submitted().await;
@@ -654,8 +648,7 @@ async fn test_ambiguous_block_not_submitted() {
     harness.assert_no_proof_submitted().await;
 }
 
-/// The header of the beacon block reports a different slot than the payload, so the submission
-/// stops at the slot check.
+/// The beacon block header reports a different slot, so the submission stops at the slot check.
 #[tokio::test]
 async fn test_mismatched_slot_not_submitted() {
     let mut harness = TestHarness::new(Behavior {

@@ -50,9 +50,7 @@ impl ProofType {
         }
     }
 
-    /// Returns the EIP-8025 execution proof type of the beacon chain. The values 1 to 3 are the
-    /// provisional assignments of lighthouse for the reth guests, and the ethrex guests continue
-    /// the sequence.
+    /// Returns the EIP-8025 execution proof type of the beacon chain.
     pub fn execution_proof_type(&self) -> u8 {
         match self {
             Self::RethOpenVM => 1,

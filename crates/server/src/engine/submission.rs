@@ -1,11 +1,6 @@
-//! Delivery of generated proofs to a beacon node as validator-signed EIP-8025 execution proof
-//! envelopes. A proof is submitted under the beacon block that the beacon node lists for the parent
-//! root and whose payload bid carries the proven payload. The payload bid of a Gloas block commits
-//! to the slot and to the parent, therefore one block only is valid. Two such blocks show a
-//! proposer equivocation, and no proof is submitted. The slot of the header of that block must
-//! equal the slot of the payload, which the block hash does not commit to. The envelope is signed
-//! under the fork at that slot, computed from the chain spec of the beacon node as a validator
-//! client does.
+//! Submission of proofs to a beacon node as validator-signed EIP-8025 envelopes. A proof is
+//! submitted under the beacon block whose payload bid carries the payload. Two such blocks are an
+//! equivocation. The envelope is signed under the fork at the slot of that block.
 
 use std::{fs, time::Duration};
 
@@ -113,8 +108,7 @@ impl ProofSubmitter {
                 config.validator_keystore_password_path.display()
             )
         })?;
-        // The trailing newlines of the password file are not part of the password, as in
-        // lighthouse.
+        // Trailing newlines are not part of the password, as in lighthouse.
         let password_end = password
             .iter()
             .rposition(|byte| !matches!(byte, b'\n' | b'\r'))
@@ -135,9 +129,7 @@ impl ProofSubmitter {
         })
     }
 
-    /// Signs and submits a proof of a payload under the beacon block that carries the payload at
-    /// the given slot. It errors when the block is ambiguous, the slot differs, or the beacon node
-    /// does not accept the proof.
+    /// Signs a proof under the beacon block that carries the payload and posts it.
     pub(crate) async fn submit(
         &self,
         block_hash: B256,
@@ -225,9 +217,8 @@ impl ProofSubmitter {
             .copied()
     }
 
-    /// Returns the root of the beacon block under the parent root whose payload bid carries the
-    /// payload. It errors when no block or more than one block carries the payload. It also errors
-    /// when the slot of the block header differs from the slot of the payload.
+    /// Returns the root of the beacon block under the parent root whose bid carries the payload.
+    /// It errors when no block, more than one block, or a block at another slot carries it.
     async fn find_block(
         &self,
         block_hash: B256,

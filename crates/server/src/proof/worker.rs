@@ -1,5 +1,4 @@
-//! Per-zkVM worker loop that processes proof requests sequentially within a single backend, with
-//! configurable timeout and graceful cancellation on shutdown.
+//! Per-zkVM worker loop that processes proof requests sequentially, with a timeout and shutdown.
 
 use std::{
     sync::Arc,
@@ -23,8 +22,7 @@ pub(crate) struct WorkerInput {
     pub(crate) stateless_input: Arc<StatelessInput>,
     /// The request span that the prove span joins.
     pub(crate) span: Span,
-    /// When the input was dispatched into the worker channel. The queue wait is measured at
-    /// dequeue.
+    /// When the input was dispatched into the worker channel. The queue wait ends at dequeue.
     pub(crate) queued_at: Instant,
 }
 
@@ -60,8 +58,7 @@ pub(crate) enum ProofResult {
     Timeout,
 }
 
-/// Runs a per-zkVM worker loop that processes proof requests sequentially and sends every
-/// attempt to the worker output channel.
+/// Runs the worker loop and sends every attempt to the worker output channel.
 pub(crate) async fn run_worker(
     zkvm: zkVMInstance,
     shutdown: CancellationToken,
