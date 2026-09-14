@@ -11,7 +11,7 @@ use bytes::Bytes;
 use tracing::{error, instrument};
 
 use crate::{
-    engine::{EngineResponse, NewPayload},
+    engine::{NewPayload, engine_api_client::EngineResponse},
     http::AppState,
 };
 
@@ -32,7 +32,13 @@ pub(crate) async fn post_engine(
                 .new_payload(authorization, new_payload, body)
                 .await
         }
-        None => state.engine.forward(authorization, body).await,
+        None => {
+            state
+                .engine
+                .engine_api_client
+                .forward(authorization, body)
+                .await
+        }
     };
     match upstream {
         Ok(EngineResponse { status, body }) => {

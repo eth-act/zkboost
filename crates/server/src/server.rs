@@ -75,8 +75,8 @@ impl zkBoostServer {
         self,
         shutdown_token: CancellationToken,
     ) -> anyhow::Result<(SocketAddr, Vec<JoinHandle<()>>)> {
-        let (dashboard_service_tx, dashboard_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (worker_output_tx, worker_output_rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let (dashboard_service_tx, dashboard_service_rx) = mpsc::channel(CHANNEL_CAPACITY);
         let (dashboard_event_tx, dashboard_event_rx) = broadcast::channel(CHANNEL_CAPACITY);
 
         let mut handles = Vec::new();
@@ -100,9 +100,7 @@ impl zkBoostServer {
             dashboard_service_tx,
         )?);
         handles.push(tokio::spawn(
-            engine
-                .clone()
-                .complete_proofs(shutdown_token.clone(), worker_output_rx),
+            engine.clone().run(shutdown_token.clone(), worker_output_rx),
         ));
 
         let dashboard = if self.config.dashboard.enabled {

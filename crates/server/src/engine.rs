@@ -3,29 +3,36 @@
 //! the witness is removed from the status. A `VALID` payload is proven and submitted.
 //! The witness is the RLP list `[headers, codes, state]` and an optional, ignored `keys` list.
 
-pub(crate) mod submission;
+pub(crate) mod beacon_node_client;
+pub(crate) mod engine_api_client;
+pub(crate) mod validator;
 
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     num::NonZeroUsize,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
-use alloy_primitives::Bytes as AlloyBytes;
+use alloy_primitives::{B256, Bytes as AlloyBytes};
 use alloy_rlp::{Header, PayloadView};
-use anyhow::Context;
-use axum::http::{HeaderValue, StatusCode};
+use anyhow::{Context, anyhow};
+use axum::http::HeaderValue;
+use beacon_node_client::{BEACON_NODE_RETRY_DELAY, BeaconNodeClient, ExecutionPayloadEvent};
 use bytes::Bytes;
+use engine_api_client::{EngineApiClient, EngineResponse};
+use lighthouse_bls::Keypair;
+use lighthouse_eth2_keystore::Keystore;
+use lighthouse_types::{ChainSpec, Slot};
 use lru::LruCache;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use submission::ProofSubmitter;
-use tokio::sync::{OnceCell, mpsc, mpsc::error::TrySendError};
+use tokio::sync::{mpsc, mpsc::error::TrySendError};
+use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span, debug, error, info, info_span, warn};
-use url::Url;
+use validator::Validator;
 use zkboost_types::{
     ExecutionWitness, Hash256, NewPayloadParams, NewPayloadRequest, ProgressiveList, ProofType,
     SszList,
@@ -45,6 +52,8 @@ use crate::{
 const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
 /// Proofs kept per proof type. Two epochs cover a payload imported again after a reorg.
 const PROOF_CACHE_SLOTS: usize = 64;
+/// Blocks kept from the `execution_payload` events, two epochs as the proof cache.
+const BLOCK_CACHE_SLOTS: usize = 64;
 
 /// JSON-RPC request envelope.
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,13 +73,6 @@ struct JsonRpcResponse {
     result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<Value>,
-}
-
-/// Raw HTTP response of the EL engine endpoint.
-#[derive(Debug)]
-pub(crate) struct EngineResponse {
-    pub(crate) status: StatusCode,
-    pub(crate) body: Bytes,
 }
 
 /// An `engine_newPayloadV5` request of the CL.
@@ -94,63 +96,147 @@ impl NewPayload {
     }
 }
 
-/// Client of the EL engine endpoint with the proving pipeline of every valid payload.
+/// Engine API proxy with the proving pipeline of every valid payload.
 #[allow(missing_debug_implementations)]
 pub(crate) struct EngineProxyState {
-    url: Url,
-    http_client: reqwest::Client,
-    chain_id: OnceCell<u64>,
+    /// Client of the EL that every request is forwarded to.
+    pub(crate) engine_api_client: EngineApiClient,
+    beacon_node_client: BeaconNodeClient,
+    keypair: Keypair,
+    validator: OnceLock<Validator>,
+    /// Root of the beacon block that carries a payload, by the block hash and the slot of the
+    /// payload.
+    blocks: Mutex<LruCache<(B256, Slot), B256>>,
     proofs: Mutex<LruCache<(Hash256, ProofType), Vec<u8>>>,
     requested: Mutex<HashSet<(Hash256, ProofType)>>,
-    submitter: Arc<ProofSubmitter>,
     worker_input_txs: HashMap<ProofType, mpsc::Sender<WorkerInput>>,
     dashboard_service_tx: mpsc::Sender<DashboardMessage>,
 }
 
 impl EngineProxyState {
-    /// Creates the proxy of the configured EL with the input channel of every zkVM worker.
+    /// Creates the proxy of the configured EL with the input channel of every zkVM worker. It
+    /// decrypts the validator keystore.
     pub(crate) fn new(
         config: &Config,
         worker_input_txs: HashMap<ProofType, mpsc::Sender<WorkerInput>>,
         dashboard_service_tx: mpsc::Sender<DashboardMessage>,
     ) -> anyhow::Result<Self> {
+        let keystore =
+            Keystore::from_json_file(&config.validator_keystore_path).map_err(|error| {
+                anyhow!(
+                    "read keystore {}: {error:?}",
+                    config.validator_keystore_path.display()
+                )
+            })?;
+        let password = fs::read(&config.validator_keystore_password_path).with_context(|| {
+            format!(
+                "read password {}",
+                config.validator_keystore_password_path.display()
+            )
+        })?;
+        // Trailing newlines are not part of the password, as in lighthouse.
+        let password_end = password
+            .iter()
+            .rposition(|byte| !matches!(byte, b'\n' | b'\r'))
+            .map_or(0, |position| position + 1);
+        let keypair = keystore
+            .decrypt_keypair(&password[..password_end])
+            .map_err(|error| anyhow!("decrypt keystore: {error:?}"))?;
+        info!(pubkey = %keypair.pk, "validator keystore decrypted");
         let proofs_capacity = NonZeroUsize::new(PROOF_CACHE_SLOTS * worker_input_txs.len())
             .expect("config validation requires a zkvm");
         Ok(Self {
-            url: config.el_engine_endpoint.clone(),
-            http_client: reqwest::Client::new(),
-            chain_id: OnceCell::new(),
+            engine_api_client: EngineApiClient::new(config.el_engine_endpoint.clone()),
+            beacon_node_client: BeaconNodeClient::new(config.cl_beacon_endpoint.clone())?,
+            keypair,
+            validator: OnceLock::new(),
+            blocks: Mutex::new(LruCache::new(
+                NonZeroUsize::new(BLOCK_CACHE_SLOTS).expect("BLOCK_CACHE_SLOTS is not zero"),
+            )),
             proofs: Mutex::new(LruCache::new(proofs_capacity)),
             requested: Mutex::new(HashSet::new()),
-            submitter: Arc::new(ProofSubmitter::new(config)?),
             worker_input_txs,
             dashboard_service_tx,
         })
     }
 
-    /// Forwards a JSON-RPC request body with the caller's `Authorization` header.
-    pub(crate) async fn forward(
-        &self,
-        authorization: Option<&HeaderValue>,
-        body: Bytes,
-    ) -> reqwest::Result<EngineResponse> {
-        let mut request = self
-            .http_client
-            .post(self.url.clone())
-            .header(CONTENT_TYPE, "application/json")
-            .body(body);
-        if let Some(authorization) = authorization {
-            request = request.header(AUTHORIZATION, authorization.as_bytes());
+    /// Waits until the beacon node answers the startup reads. It then keeps the block cache from
+    /// the events and records every proof attempt of the workers until the shutdown.
+    pub(crate) async fn run(
+        self: Arc<Self>,
+        shutdown: CancellationToken,
+        mut worker_output_rx: mpsc::Receiver<WorkerOutput>,
+    ) {
+        let startup_values = async {
+            loop {
+                match self.startup_reads().await {
+                    Ok(values) => break values,
+                    Err(error) => {
+                        warn!(error = %format!("{error:#}"), "waiting for the beacon node");
+                        tokio::time::sleep(BEACON_NODE_RETRY_DELAY).await;
+                    }
+                }
+            }
+        };
+        let (spec, genesis_validators_root, validator_index) = tokio::select! {
+            () = shutdown.cancelled() => return,
+            values = startup_values => values,
+        };
+        let validator = Validator::new(
+            self.keypair.clone(),
+            spec,
+            genesis_validators_root,
+            validator_index,
+        );
+        assert!(self.validator.set(validator).is_ok(), "run is called once");
+        info!(validator_index, "validator ready");
+        let mut events = self.beacon_node_client.subscribe_execution_payloads();
+        loop {
+            tokio::select! {
+                biased;
+
+                () = shutdown.cancelled() => break,
+
+                event = events.next() => match event {
+                    Some(event) => self.insert_block(&event),
+                    None => break,
+                },
+
+                output = worker_output_rx.recv() => match output {
+                    Some(output) => self.complete_proof(output),
+                    None => break,
+                },
+            }
         }
-        let response = request.send().await?;
-        Ok(EngineResponse {
-            status: response.status(),
-            body: response.bytes().await?,
-        })
     }
 
-    /// Forwards a new payload as `engine_newPayloadWithWitnessV5`, or unchanged when the EL lacks
-    /// the method, and answers without the witness. A `VALID` payload is proven in the background.
+    /// Reads the chain spec, the genesis validators root, and the index of the validator.
+    async fn startup_reads(&self) -> anyhow::Result<(ChainSpec, B256, u64)> {
+        let spec = self.beacon_node_client.spec().await?;
+        let genesis_validators_root = self.beacon_node_client.genesis_validators_root().await?;
+        let validator_index = self
+            .beacon_node_client
+            .validator_index(&self.keypair.pk)
+            .await?;
+        Ok((spec, genesis_validators_root, validator_index))
+    }
+
+    /// Inserts the beacon block root that an `execution_payload` event reports for a payload.
+    /// The first root of a payload is kept.
+    fn insert_block(&self, event: &ExecutionPayloadEvent) {
+        let ExecutionPayloadEvent {
+            slot,
+            block_hash,
+            block_root,
+        } = *event;
+        let mut blocks = self.blocks.lock().unwrap();
+        if *blocks.get_or_insert((block_hash, slot), || block_root) != block_root {
+            warn!(%block_hash, %slot, "second beacon block for the payload ignored");
+        }
+    }
+
+    /// Forwards a new payload as `engine_newPayloadWithWitnessV5` and answers without the witness.
+    /// Without the method or before the validator is ready, the payload is forwarded unchanged.
     pub(crate) async fn new_payload(
         self: Arc<Self>,
         authorization: Option<&HeaderValue>,
@@ -162,6 +248,10 @@ impl EngineProxyState {
         let block_hash = payload.block_hash;
         let block_number = payload.block_number;
         info!(%block_hash, block_number, "received new payload");
+        if let Err(error) = self.validator() {
+            warn!(%block_hash, %error, "payload not proven");
+            return self.engine_api_client.forward(authorization, body).await;
+        }
         self.notify_dashboard(DashboardMessage::request_proof(
             block_number,
             block_hash,
@@ -178,6 +268,7 @@ impl EngineProxyState {
         let upstream_body = serde_json::to_vec(&upstream_request).expect("request is serializable");
         let fetch_started = Instant::now();
         let upstream = self
+            .engine_api_client
             .forward(authorization, upstream_body.into())
             .await
             .inspect_err(|_| self.record_witness_fetch(block_hash, "error", Duration::ZERO, 0))?;
@@ -194,7 +285,7 @@ impl EngineProxyState {
         if error_code == Some(JSON_RPC_METHOD_NOT_FOUND) {
             warn!(%block_hash, method = upstream_request.method, "witness method not served by the el, forwarded without proving");
             self.record_witness_fetch(block_hash, "missing", fetch_duration, 0);
-            return self.forward(authorization, body).await;
+            return self.engine_api_client.forward(authorization, body).await;
         }
         let witness = response
             .result
@@ -228,12 +319,10 @@ impl EngineProxyState {
                     gas_used = payload.gas_used
                 );
                 let state = self.clone();
-                let authorization = authorization.cloned();
                 tokio::spawn(
                     async move {
-                        if let Err(error) = state
-                            .request_proofs(authorization, params, witness, Span::current())
-                            .await
+                        if let Err(error) =
+                            state.request_proofs(params, witness, Span::current()).await
                         {
                             error!(%block_hash, %error, "proof request failed");
                         }
@@ -255,16 +344,12 @@ impl EngineProxyState {
 
     /// Builds the stateless input, submits cached proofs, and queues the rest at the zkVM workers.
     async fn request_proofs(
-        &self,
-        authorization: Option<HeaderValue>,
+        self: &Arc<Self>,
         params: NewPayloadParams,
         witness: AlloyBytes,
         span: Span,
     ) -> anyhow::Result<()> {
-        let chain_id = self
-            .chain_id(authorization.as_ref())
-            .await
-            .context("chain id resolution")?;
+        let chain_id = self.validator()?.chain_id();
         let stateless_input = tokio::task::spawn_blocking(move || {
             let witness = decode_engine_witness(&witness)?;
             StatelessInput::new(NewPayloadRequest::try_from(params)?, witness, chain_id)
@@ -328,28 +413,8 @@ impl EngineProxyState {
         Ok(())
     }
 
-    /// Records the outcome of every proof attempt of the workers until shutdown.
-    pub(crate) async fn complete_proofs(
-        self: Arc<Self>,
-        shutdown: CancellationToken,
-        mut worker_output_rx: mpsc::Receiver<WorkerOutput>,
-    ) {
-        loop {
-            tokio::select! {
-                biased;
-
-                _ = shutdown.cancelled() => break,
-
-                output = worker_output_rx.recv() => match output {
-                    Some(output) => self.complete_proof(output),
-                    None => break,
-                },
-            }
-        }
-    }
-
     /// Records the outcome of a proof attempt and submits a proof to the beacon node.
-    fn complete_proof(&self, output: WorkerOutput) {
+    fn complete_proof(self: &Arc<Self>, output: WorkerOutput) {
         let WorkerOutput {
             new_payload_request_root,
             block_hash,
@@ -398,25 +463,44 @@ impl EngineProxyState {
 
     /// Submits a proof to the beacon node in the background.
     fn submit_proof(
-        &self,
+        self: &Arc<Self>,
         block_hash: Hash256,
         parent_beacon_block_root: Hash256,
         slot: u64,
         proof_type: ProofType,
         proof: Vec<u8>,
     ) {
-        let submitter = self.submitter.clone();
+        let state = self.clone();
+        let slot = Slot::new(slot);
         tokio::spawn(async move {
-            match submitter
-                .submit(
-                    block_hash,
-                    parent_beacon_block_root,
+            let fut = async {
+                let announced = state
+                    .blocks
+                    .lock()
+                    .unwrap()
+                    .get(&(block_hash, slot))
+                    .copied();
+                let beacon_block_root = match announced {
+                    Some(beacon_block_root) => beacon_block_root,
+                    None => {
+                        state
+                            .beacon_node_client
+                            .beacon_block_root(block_hash, parent_beacon_block_root, slot)
+                            .await?
+                    }
+                };
+                let envelopes = state.validator()?.sign_execution_proofs(
+                    beacon_block_root,
                     slot,
                     proof_type.execution_proof_type(),
                     proof,
-                )
-                .await
-            {
+                )?;
+                state
+                    .beacon_node_client
+                    .post_execution_proofs(&envelopes)
+                    .await
+            };
+            match fut.await {
                 Ok(()) => info!(%block_hash, %proof_type, "proof submitted"),
                 Err(error) => error!(%block_hash, %proof_type, %error, "proof submission failed"),
             }
@@ -428,32 +512,9 @@ impl EngineProxyState {
         let _ = self.dashboard_service_tx.try_send(message);
     }
 
-    /// Returns the chain id of the EL, read with `eth_chainId` on the first call.
-    async fn chain_id(&self, authorization: Option<&HeaderValue>) -> anyhow::Result<u64> {
-        self.chain_id
-            .get_or_try_init(|| async {
-                #[derive(Deserialize)]
-                struct Response {
-                    result: Option<alloy_primitives::U64>,
-                    error: Option<Value>,
-                }
-                let body = br#"{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}"#;
-                let response = self
-                    .forward(authorization, Bytes::from_static(body))
-                    .await
-                    .context("eth_chainId")?;
-                let response: Response =
-                    serde_json::from_slice(&response.body).context("eth_chainId response")?;
-                if let Some(error) = response.error {
-                    anyhow::bail!("eth_chainId failed: {error}");
-                }
-                Ok(response
-                    .result
-                    .context("eth_chainId response has no result")?
-                    .to())
-            })
-            .await
-            .copied()
+    /// Returns the validator, which is ready once the beacon node answers the startup reads.
+    fn validator(&self) -> anyhow::Result<&Validator> {
+        self.validator.get().context("validator not ready")
     }
 
     fn record_witness_fetch(

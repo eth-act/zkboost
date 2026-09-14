@@ -1,10 +1,10 @@
 //! Integration test for zkboost. A mock EL answers `engine_newPayloadWithWitnessV5` with the
-//! fixture witness and `eth_chainId` with the fixture chain id. A mock beacon node resolves the
-//! beacon block of the fixture payload. It collects every signed envelope of
-//! `POST /eth/v1/beacon/execution_proofs`.
+//! fixture witness. A mock beacon node resolves the beacon block of the fixture payload. It
+//! collects every signed envelope of `POST /eth/v1/beacon/execution_proofs`.
 
 use std::{
     collections::{HashMap, HashSet},
+    convert::Infallible,
     net::Ipv4Addr,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -17,13 +17,18 @@ use axum::{
     Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    response::sse::{Event as SseEvent, Sse},
 };
 use lighthouse_bls::{PublicKey, Signature};
 use lighthouse_eth2_keystore::Keystore;
 use lighthouse_types::{ChainSpec, Config as SpecConfig, Epoch, MainnetEthSpec};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde_json::{Value, json};
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{
+    net::TcpListener,
+    sync::{Notify, mpsc},
+};
+use tokio_stream::{Stream, StreamExt};
 use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_server::{
@@ -160,17 +165,12 @@ async fn mock_el_handler(
             status
         }
         method if method == NewPayloadParams::METHOD => {
-            assert!(
-                !state.witness_supported,
-                "new payload forwarded without witness"
-            );
             json!({ "status": "VALID", "latestValidHash": state.fixture.block_hash, "validationError": null })
         }
         "engine_forkchoiceUpdatedV4" => json!({
             "payloadStatus": { "status": "VALID", "latestValidHash": null, "validationError": null },
             "payloadId": null,
         }),
-        "eth_chainId" => json!(format!("0x{:x}", state.fixture.chain_id)),
         _ => Value::Null,
     };
 
@@ -198,7 +198,10 @@ struct MockBeaconNode {
     fixture: Fixture,
     ambiguous_block: bool,
     mismatched_slot: bool,
+    block_from_event: bool,
     envelopes: mpsc::UnboundedSender<SignedExecutionProofEnvelope>,
+    /// Signals `GET /eth/v1/events`, which zkboost opens once the validator is ready.
+    events_opened: Notify,
 }
 
 async fn genesis_handler() -> Json<Value> {
@@ -206,7 +209,8 @@ async fn genesis_handler() -> Json<Value> {
 }
 
 /// `GET /eth/v1/beacon/headers?parent_root=`, which lists the fixture block under its parent.
-/// Every header reports the fixture slot, or the next slot under `mismatched_slot`.
+/// Every header reports the fixture slot, or the next slot under `mismatched_slot`. A node that
+/// announces the block on the event stream lists no child.
 async fn headers_handler(
     State(node): State<Arc<MockBeaconNode>>,
     Query(query): Query<HashMap<String, String>>,
@@ -215,7 +219,9 @@ async fn headers_handler(
         .get("parent_root")
         .and_then(|root| root.parse::<B256>().ok());
     let slot = (node.fixture.slot + u64::from(node.mismatched_slot)).to_string();
-    let headers = if parent_root == Some(node.fixture.parent_beacon_block_root) {
+    let headers = if parent_root == Some(node.fixture.parent_beacon_block_root)
+        && !node.block_from_event
+    {
         json!([
             { "root": OTHER_BLOCK_ROOT, "canonical": false, "header": { "message": { "slot": slot } } },
             { "root": BEACON_BLOCK_ROOT, "canonical": true, "header": { "message": { "slot": slot } } },
@@ -243,9 +249,39 @@ async fn block_handler(
     } } } })))
 }
 
+/// `GET /eth/v1/events`, which announces the fixture block under `block_from_event`, and the
+/// other block as well under `ambiguous_block`. The stream stays open afterwards.
+async fn events_handler(
+    State(node): State<Arc<MockBeaconNode>>,
+) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    node.events_opened.notify_one();
+    let mut block_roots = Vec::new();
+    if node.block_from_event {
+        block_roots.push(BEACON_BLOCK_ROOT);
+        if node.ambiguous_block {
+            block_roots.push(OTHER_BLOCK_ROOT);
+        }
+    }
+    let events: Vec<_> = block_roots
+        .into_iter()
+        .map(|block_root| {
+            Ok(SseEvent::default()
+                .event("execution_payload")
+                .json_data(json!({
+                    "slot": node.fixture.slot.to_string(),
+                    "block_hash": node.fixture.block_hash,
+                    "block_root": block_root,
+                }))
+                .unwrap())
+        })
+        .collect();
+    Sse::new(tokio_stream::iter(events).chain(tokio_stream::pending()))
+}
+
 /// `GET /eth/v1/config/spec`, the mainnet spec with every fork at genesis.
-async fn spec_handler() -> Json<Value> {
-    Json(json!({ "data": SpecConfig::from_chain_spec::<MainnetEthSpec>(&mock_spec()) }))
+async fn spec_handler(State(node): State<Arc<MockBeaconNode>>) -> Json<Value> {
+    let spec = mock_spec(node.fixture.chain_id);
+    Json(json!({ "data": SpecConfig::from_chain_spec::<MainnetEthSpec>(&spec) }))
 }
 
 /// `GET /eth/v1/beacon/states/head/validators/{pubkey}`, known for the fixture validator only.
@@ -280,13 +316,20 @@ async fn start_mock_beacon_node(
     fixture: Fixture,
     ambiguous_block: bool,
     mismatched_slot: bool,
-) -> (Url, mpsc::UnboundedReceiver<SignedExecutionProofEnvelope>) {
+    block_from_event: bool,
+) -> (
+    Url,
+    Arc<MockBeaconNode>,
+    mpsc::UnboundedReceiver<SignedExecutionProofEnvelope>,
+) {
     let (envelopes_tx, envelopes_rx) = mpsc::unbounded_channel();
     let node = Arc::new(MockBeaconNode {
         fixture,
         ambiguous_block,
         mismatched_slot,
+        block_from_event,
         envelopes: envelopes_tx,
+        events_opened: Notify::new(),
     });
     let app = axum::Router::new()
         .route(
@@ -297,6 +340,7 @@ async fn start_mock_beacon_node(
             "/eth/v1/beacon/headers",
             axum::routing::get(headers_handler),
         )
+        .route("/eth/v1/events", axum::routing::get(events_handler))
         .route(
             "/eth/v1/beacon/states/head/validators/{pubkey}",
             axum::routing::get(validator_handler),
@@ -310,14 +354,15 @@ async fn start_mock_beacon_node(
             "/eth/v1/beacon/execution_proofs",
             axum::routing::post(execution_proofs_handler),
         )
-        .with_state(node);
-    (serve(app).await, envelopes_rx)
+        .with_state(node.clone());
+    (serve(app).await, node, envelopes_rx)
 }
 
 /// The chain spec of the mock beacon node. Every fork is at genesis, with the fixture fork
-/// version under Gloas.
-fn mock_spec() -> ChainSpec {
+/// version under Gloas and the fixture chain id.
+fn mock_spec(chain_id: u64) -> ChainSpec {
     let mut spec = ChainSpec::mainnet();
+    spec.deposit_chain_id = chain_id;
     spec.altair_fork_epoch = Some(Epoch::new(0));
     spec.bellatrix_fork_epoch = Some(Epoch::new(0));
     spec.capella_fork_epoch = Some(Epoch::new(0));
@@ -352,6 +397,8 @@ struct Behavior {
     proof_failure: bool,
     ambiguous_block: bool,
     mismatched_slot: bool,
+    block_from_event: bool,
+    beacon_node_unreachable: bool,
 }
 
 struct TestHarness {
@@ -380,10 +427,11 @@ impl TestHarness {
             !behavior.witness_unsupported,
         )
         .await;
-        let (beacon_endpoint, envelopes) = start_mock_beacon_node(
+        let (beacon_endpoint, beacon_node, envelopes) = start_mock_beacon_node(
             Fixture::load(),
             behavior.ambiguous_block,
             behavior.mismatched_slot,
+            behavior.block_from_event,
         )
         .await;
         let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
@@ -391,7 +439,12 @@ impl TestHarness {
         let config = Config {
             port: 0,
             el_engine_endpoint: el_endpoint,
-            cl_beacon_endpoint: beacon_endpoint,
+            cl_beacon_endpoint: if behavior.beacon_node_unreachable {
+                // Nothing listens on port 1, so every read of the beacon node fails.
+                "http://127.0.0.1:1/".parse().unwrap()
+            } else {
+                beacon_endpoint
+            },
             validator_keystore_path: VOTING_KEYSTORE_PATH.into(),
             validator_keystore_password_path: VOTING_KEYSTORE_PASSWORD_PATH.into(),
             dashboard: DashboardConfig::default(),
@@ -409,6 +462,14 @@ impl TestHarness {
         let shutdown = tokio_util::sync::CancellationToken::new();
         let server = zkBoostServer::new(config, metrics).await.unwrap();
         let (addr, _) = server.run(shutdown.clone()).await.unwrap();
+        if !behavior.beacon_node_unreachable {
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                beacon_node.events_opened.notified(),
+            )
+            .await
+            .expect("validator should be ready");
+        }
         Self {
             fixture: Fixture::load(),
             zkboost_endpoint: format!("http://127.0.0.1:{}", addr.port()).parse().unwrap(),
@@ -442,9 +503,9 @@ impl TestHarness {
         self.engine_call(NewPayloadParams::METHOD, params).await
     }
 
-    /// Waits for one signed envelope of every configured proof type and verifies the signature
-    /// as the beacon node does.
-    async fn assert_proofs_submitted(&mut self) {
+    /// Waits for one signed envelope of every configured proof type, verifies the signature as
+    /// the beacon node does, and returns the envelopes.
+    async fn assert_proofs_submitted(&mut self) -> Vec<SignedExecutionProofEnvelope> {
         let pubkey = validator_pubkey();
         let domain = execution_proof_domain(FORK_VERSION, GENESIS_VALIDATORS_ROOT);
         let mut remaining: HashSet<u8> = self
@@ -452,6 +513,7 @@ impl TestHarness {
             .iter()
             .map(|proof_type| proof_type.execution_proof_type())
             .collect();
+        let mut envelopes = Vec::new();
         while !remaining.is_empty() {
             let envelope = tokio::time::timeout(Duration::from_secs(60), self.envelopes.recv())
                 .await
@@ -470,7 +532,9 @@ impl TestHarness {
                 &pubkey,
                 lighthouse_bls::Hash256::from_slice(signing_root.as_slice())
             ));
+            envelopes.push(envelope);
         }
+        envelopes
     }
 
     async fn assert_no_proof_submitted(&mut self) {
@@ -659,6 +723,63 @@ async fn test_mismatched_slot_not_submitted() {
 
     let response = harness.new_payload().await;
     assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_no_proof_submitted().await;
+}
+
+/// The `execution_payload` event carries the beacon block root, so no child is listed.
+#[tokio::test]
+async fn test_proof_submitted_from_execution_payload_event() {
+    let mut harness = TestHarness::new(Behavior {
+        block_from_event: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_proofs_submitted().await;
+}
+
+/// Two `execution_payload` events carry the payload. The proof is submitted under the first
+/// announced beacon block root.
+#[tokio::test]
+async fn test_first_execution_payload_event_kept() {
+    let mut harness = TestHarness::new(Behavior {
+        block_from_event: true,
+        ambiguous_block: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    for envelope in harness.assert_proofs_submitted().await {
+        assert_eq!(envelope.message.beacon_block_root, BEACON_BLOCK_ROOT.0);
+    }
+}
+
+/// The beacon node is unreachable, so the validator is never ready. The payload is forwarded
+/// unchanged and nothing is proven.
+#[tokio::test]
+async fn test_payload_forwarded_before_validator_ready() {
+    let mut harness = TestHarness::new(Behavior {
+        beacon_node_unreachable: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    let methods: Vec<_> = harness
+        .el_calls()
+        .into_iter()
+        .map(|call| call.method)
+        .collect();
+    assert_eq!(methods, [NewPayloadParams::METHOD]);
 
     harness.assert_no_proof_submitted().await;
 }

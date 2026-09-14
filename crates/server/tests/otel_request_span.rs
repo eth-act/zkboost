@@ -40,8 +40,8 @@ async fn test_request_span_joins_remote_trace_context() {
     tracing::subscriber::set_global_default(subscriber)
         .expect("no other subscriber should be installed in this test binary");
 
-    // The server starts without contacting the EL endpoints. Nothing listens on port 1, so the
-    // forwarded request below fails fast with 502 after the request span was created.
+    // The server starts without contacting the EL. Nothing listens on port 1, so the forwarded
+    // request below fails fast with 502 after the request span was created.
     let config = Config {
         port: 0,
         el_engine_endpoint: "http://127.0.0.1:1/".parse().unwrap(),
