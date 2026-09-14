@@ -1,8 +1,11 @@
 //! Delivery of generated proofs to a beacon node as validator-signed EIP-8025 execution proof
-//! envelopes. A proof is submitted under every beacon block that the beacon node lists for the
-//! parent root and whose payload bid carries the proven payload. lighthouse lists only the
-//! canonical child of the parent root. Every envelope is signed under the fork at the slot of its
-//! block, computed from the chain spec of the beacon node as a validator client does.
+//! envelopes. A proof is submitted under the beacon block that the beacon node lists for the parent
+//! root and whose payload bid carries the proven payload. The payload bid of a Gloas block commits
+//! to the slot and to the parent, therefore one block only is valid. Two such blocks show a
+//! proposer equivocation, and no proof is submitted. The slot of the header of that block must
+//! equal the slot of the payload, which the block hash does not commit to. The envelope is signed
+//! under the fork at that slot, computed from the chain spec of the beacon node as a validator
+//! client does.
 
 use std::{fs, time::Duration};
 
@@ -132,49 +135,51 @@ impl ProofSubmitter {
         })
     }
 
-    /// Signs and submits a proof of a payload under every beacon block that carries the payload, or
-    /// errors when the beacon node does not accept it.
+    /// Signs and submits a proof of a payload under the beacon block that carries the payload at
+    /// the given slot. It errors when the block is ambiguous, the slot differs, or the beacon node
+    /// does not accept the proof.
     pub(crate) async fn submit(
         &self,
         block_hash: B256,
         parent_beacon_block_root: B256,
+        slot: u64,
         proof_type: u8,
         proof_data: Vec<u8>,
     ) -> anyhow::Result<()> {
-        let blocks = self
-            .find_blocks(block_hash, parent_beacon_block_root)
+        let slot = Slot::new(slot);
+        let (spec, genesis_validators_root, validator_index) = tokio::try_join!(
+            self.spec(),
+            self.genesis_validators_root(),
+            self.validator_index(),
+        )?;
+        let beacon_block_root = self
+            .find_block(block_hash, parent_beacon_block_root, slot)
             .await?;
-        let spec = self.spec().await?;
-        let genesis_validators_root = self.genesis_validators_root().await?;
-        let validator_index = self.validator_index().await?;
         let proof_data = SszList::try_from(proof_data)
             .map_err(|error| anyhow!("proof exceeds MAX_PROOF_SIZE: {error:?}"))?;
-        for (beacon_block_root, slot) in blocks {
-            let fork = spec.fork_at_epoch(slot.epoch(MainnetEthSpec::slots_per_epoch()));
-            let domain = execution_proof_domain(fork.current_version, genesis_validators_root);
-            let message = ExecutionProofEnvelope {
-                proof_data: proof_data.clone(),
-                proof_type,
-                beacon_block_root: beacon_block_root.0,
-            };
-            let signing_root = message.signing_root(domain);
-            let signature = self
-                .keypair
-                .sk
-                .sign(lighthouse_bls::Hash256::from_slice(signing_root.as_slice()));
-            let envelope = SignedExecutionProofEnvelope {
-                message,
-                validator_index,
-                signature: SszVector::try_from(signature.serialize().to_vec())
-                    .expect("a BLS signature has 96 bytes"),
-            };
-            let envelopes: SignedExecutionProofEnvelopes =
-                SszList::try_from(vec![envelope]).expect("one envelope is within the bound");
-            let mut body = Vec::new();
-            envelopes.ssz_append(&mut body);
-            self.post("eth/v1/beacon/execution_proofs", body).await?;
-        }
-        Ok(())
+        let fork = spec.fork_at_epoch(slot.epoch(MainnetEthSpec::slots_per_epoch()));
+        let domain = execution_proof_domain(fork.current_version, genesis_validators_root);
+        let message = ExecutionProofEnvelope {
+            proof_data,
+            proof_type,
+            beacon_block_root: beacon_block_root.0,
+        };
+        let signing_root = message.signing_root(domain);
+        let signature = self
+            .keypair
+            .sk
+            .sign(lighthouse_bls::Hash256::from_slice(signing_root.as_slice()));
+        let envelope = SignedExecutionProofEnvelope {
+            message,
+            validator_index,
+            signature: SszVector::try_from(signature.serialize().to_vec())
+                .expect("a BLS signature has 96 bytes"),
+        };
+        let envelopes: SignedExecutionProofEnvelopes =
+            SszList::try_from(vec![envelope]).expect("one envelope is within the bound");
+        let mut body = Vec::new();
+        envelopes.ssz_append(&mut body);
+        self.post("eth/v1/beacon/execution_proofs", body).await
     }
 
     /// Returns the chain spec of the beacon node, read on the first call.
@@ -220,13 +225,15 @@ impl ProofSubmitter {
             .copied()
     }
 
-    /// Returns the root and the slot of every beacon block under the parent root whose payload bid
-    /// carries the payload.
-    async fn find_blocks(
+    /// Returns the root of the beacon block under the parent root whose payload bid carries the
+    /// payload. It errors when no block or more than one block carries the payload. It also errors
+    /// when the slot of the block header differs from the slot of the payload.
+    async fn find_block(
         &self,
         block_hash: B256,
         parent_beacon_block_root: B256,
-    ) -> anyhow::Result<Vec<(B256, Slot)>> {
+        slot: Slot,
+    ) -> anyhow::Result<B256> {
         let path = format!("eth/v1/beacon/headers?parent_root={parent_beacon_block_root}");
         let headers: Vec<BlockHeader> = self.get(&path).await?.unwrap_or_default();
         let mut blocks = Vec::new();
@@ -244,14 +251,25 @@ impl ProofSubmitter {
                 .block_hash
                 == block_hash
             {
-                blocks.push((header.root, header.header.message.slot));
+                let block_slot = header.header.message.slot;
+                ensure!(
+                    block_slot == slot,
+                    "beacon block {} has slot {block_slot}, payload has slot {slot}",
+                    header.root
+                );
+                blocks.push(header.root);
             }
         }
-        ensure!(
-            !blocks.is_empty(),
-            "no beacon block with payload {block_hash} under {parent_beacon_block_root}"
-        );
-        Ok(blocks)
+        match blocks.as_slice() {
+            [block] => Ok(*block),
+            [] => {
+                bail!("no beacon block with payload {block_hash} under {parent_beacon_block_root}")
+            }
+            _ => bail!(
+                "ambiguous payload {block_hash} under {parent_beacon_block_root}, carried by {} beacon blocks",
+                blocks.len()
+            ),
+        }
     }
 
     /// Posts an SSZ body to a beacon API route, or errors with the answer of the beacon node.

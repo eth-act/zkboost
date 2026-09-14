@@ -285,6 +285,7 @@ impl EngineProxyState {
         let block_hash = stateless_input.block_hash();
         let parent_beacon_block_root = stateless_input.parent_beacon_block_root();
         let block_number = stateless_input.block_number();
+        let slot = stateless_input.slot();
 
         for (&proof_type, worker_input_tx) in &self.worker_input_txs {
             let proof = self
@@ -301,7 +302,13 @@ impl EngineProxyState {
                     proof_type,
                     &ProofResult::Ok(proof.clone()),
                 ));
-                self.submit_proof(block_hash, parent_beacon_block_root, proof_type, proof);
+                self.submit_proof(
+                    block_hash,
+                    parent_beacon_block_root,
+                    slot,
+                    proof_type,
+                    proof,
+                );
                 continue;
             }
             if !self.requested.lock().unwrap().insert((root, proof_type)) {
@@ -356,6 +363,7 @@ impl EngineProxyState {
             block_hash,
             parent_beacon_block_root,
             block_number,
+            slot,
             proof_type,
             proof_result,
             duration,
@@ -373,7 +381,13 @@ impl EngineProxyState {
                     .lock()
                     .unwrap()
                     .put((new_payload_request_root, proof_type), proof.clone());
-                self.submit_proof(block_hash, parent_beacon_block_root, proof_type, proof);
+                self.submit_proof(
+                    block_hash,
+                    parent_beacon_block_root,
+                    slot,
+                    proof_type,
+                    proof,
+                );
             }
             ProofResult::Err(error) => {
                 error!(%block_hash, block_number, %proof_type, %error, "proving failed");
@@ -395,6 +409,7 @@ impl EngineProxyState {
         &self,
         block_hash: Hash256,
         parent_beacon_block_root: Hash256,
+        slot: u64,
         proof_type: ProofType,
         proof: Vec<u8>,
     ) {
@@ -404,6 +419,7 @@ impl EngineProxyState {
                 .submit(
                     block_hash,
                     parent_beacon_block_root,
+                    slot,
                     proof_type.execution_proof_type(),
                     proof,
                 )

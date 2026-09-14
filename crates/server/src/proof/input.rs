@@ -18,6 +18,7 @@ pub(crate) struct StatelessInput {
     block_hash: Hash256,
     parent_beacon_block_root: Hash256,
     block_number: u64,
+    slot: u64,
     gas_used: u64,
 }
 
@@ -35,6 +36,7 @@ impl StatelessInput {
         let block_hash = Hash256::from(payload.block_hash);
         let parent_beacon_block_root = Hash256::from(request.parent_beacon_block_root);
         let block_number = payload.block_number;
+        let slot = payload.slot_number;
         let gas_used = payload.gas_used;
         let public_keys = PublicKeys::from(recover_public_keys(&payload.transactions)?);
         // The root follows the request layout of ere-guests, which the guests commit. lighthouse
@@ -56,6 +58,7 @@ impl StatelessInput {
             block_hash,
             parent_beacon_block_root,
             block_number,
+            slot,
             gas_used,
         })
     }
@@ -83,6 +86,11 @@ impl StatelessInput {
     /// Returns the block number.
     pub(crate) fn block_number(&self) -> u64 {
         self.block_number
+    }
+
+    /// Returns the slot of the payload.
+    pub(crate) fn slot(&self) -> u64 {
+        self.slot
     }
 
     /// Returns the gas used by the block, for mock proving-time simulation.

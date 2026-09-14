@@ -52,7 +52,6 @@ const VALIDATOR_INDEX: u64 = 256;
 const BEACON_BLOCK_ROOT: B256 = B256::repeat_byte(0xbb);
 /// Another child of the parent beacon block, without the fixture payload.
 const OTHER_BLOCK_ROOT: B256 = B256::repeat_byte(0xcc);
-const BLOCK_SLOT: u64 = 5;
 const GENESIS_VALIDATORS_ROOT: B256 = B256::repeat_byte(0x99);
 const FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x00, 0x38];
 
@@ -64,6 +63,7 @@ struct Fixture {
     new_payload_request_root: Hash256,
     block_hash: B256,
     parent_beacon_block_root: B256,
+    slot: u64,
     chain_id: u64,
     witness: Bytes,
 }
@@ -82,6 +82,7 @@ impl Fixture {
         Fixture {
             block_hash: params.execution_payload_v1().block_hash,
             parent_beacon_block_root: params.2,
+            slot: params.0.slot_number,
             params,
             new_payload_request_root: Hash256::from(
                 new_payload_request.hash_tree_root(&Sha2Hasher),
@@ -198,6 +199,8 @@ async fn start_mock_el(
 
 struct MockBeaconNode {
     fixture: Fixture,
+    ambiguous_block: bool,
+    mismatched_slot: bool,
     envelopes: mpsc::UnboundedSender<SignedExecutionProofEnvelope>,
 }
 
@@ -205,7 +208,8 @@ async fn genesis_handler() -> Json<Value> {
     Json(json!({ "data": { "genesis_validators_root": GENESIS_VALIDATORS_ROOT } }))
 }
 
-/// `GET /eth/v1/beacon/headers?parent_root=`, listing the fixture block under its parent.
+/// `GET /eth/v1/beacon/headers?parent_root=`, listing the fixture block under its parent. Every
+/// header reports the slot of the fixture payload, or the next slot under `mismatched_slot`.
 async fn headers_handler(
     State(node): State<Arc<MockBeaconNode>>,
     Query(query): Query<HashMap<String, String>>,
@@ -213,10 +217,11 @@ async fn headers_handler(
     let parent_root = query
         .get("parent_root")
         .and_then(|root| root.parse::<B256>().ok());
+    let slot = (node.fixture.slot + u64::from(node.mismatched_slot)).to_string();
     let headers = if parent_root == Some(node.fixture.parent_beacon_block_root) {
         json!([
-            { "root": OTHER_BLOCK_ROOT, "canonical": false, "header": { "message": { "slot": BLOCK_SLOT.to_string() } } },
-            { "root": BEACON_BLOCK_ROOT, "canonical": true, "header": { "message": { "slot": BLOCK_SLOT.to_string() } } },
+            { "root": OTHER_BLOCK_ROOT, "canonical": false, "header": { "message": { "slot": slot } } },
+            { "root": BEACON_BLOCK_ROOT, "canonical": true, "header": { "message": { "slot": slot } } },
         ])
     } else {
         json!([])
@@ -225,13 +230,15 @@ async fn headers_handler(
 }
 
 /// `GET /eth/v2/beacon/blocks/{root}`, with the fixture payload bid under the fixture block and
-/// an empty bid under the other child of the parent.
+/// an empty bid under the other child of the parent. An ambiguous node answers the fixture payload
+/// bid under both children.
 async fn block_handler(
     State(node): State<Arc<MockBeaconNode>>,
     Path(root): Path<B256>,
 ) -> Result<Json<Value>, StatusCode> {
     let block_hash = match root {
         BEACON_BLOCK_ROOT => node.fixture.block_hash,
+        OTHER_BLOCK_ROOT if node.ambiguous_block => node.fixture.block_hash,
         OTHER_BLOCK_ROOT => B256::ZERO,
         _ => return Err(StatusCode::NOT_FOUND),
     };
@@ -275,10 +282,14 @@ async fn execution_proofs_handler(
 
 async fn start_mock_beacon_node(
     fixture: Fixture,
+    ambiguous_block: bool,
+    mismatched_slot: bool,
 ) -> (Url, mpsc::UnboundedReceiver<SignedExecutionProofEnvelope>) {
     let (envelopes_tx, envelopes_rx) = mpsc::unbounded_channel();
     let node = Arc::new(MockBeaconNode {
         fixture,
+        ambiguous_block,
+        mismatched_slot,
         envelopes: envelopes_tx,
     });
     let app = axum::Router::new()
@@ -343,6 +354,8 @@ struct Behavior {
     witness_unsupported: bool,
     proof_timeout: bool,
     proof_failure: bool,
+    ambiguous_block: bool,
+    mismatched_slot: bool,
 }
 
 struct TestHarness {
@@ -371,7 +384,12 @@ impl TestHarness {
             !behavior.witness_unsupported,
         )
         .await;
-        let (beacon_endpoint, envelopes) = start_mock_beacon_node(Fixture::load()).await;
+        let (beacon_endpoint, envelopes) = start_mock_beacon_node(
+            Fixture::load(),
+            behavior.ambiguous_block,
+            behavior.mismatched_slot,
+        )
+        .await;
         let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
         let proof_types = vec![ProofType::RethOpenVM];
         let config = Config {
@@ -618,5 +636,36 @@ async fn test_proof_timeout_not_submitted() {
     .await;
 
     harness.new_payload().await;
+    harness.assert_no_proof_submitted().await;
+}
+
+/// Two children of the parent block carry the payload, so the submission stops at the equivocation.
+#[tokio::test]
+async fn test_ambiguous_block_not_submitted() {
+    let mut harness = TestHarness::new(Behavior {
+        ambiguous_block: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_no_proof_submitted().await;
+}
+
+/// The header of the beacon block reports a different slot than the payload, so the submission
+/// stops at the slot check.
+#[tokio::test]
+async fn test_mismatched_slot_not_submitted() {
+    let mut harness = TestHarness::new(Behavior {
+        mismatched_slot: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
     harness.assert_no_proof_submitted().await;
 }

@@ -39,6 +39,8 @@ pub(crate) struct WorkerOutput {
     pub(crate) parent_beacon_block_root: Hash256,
     /// Block number of the payload.
     pub(crate) block_number: u64,
+    /// Slot of the payload.
+    pub(crate) slot: u64,
     /// Proof type of the attempt.
     pub(crate) proof_type: ProofType,
     /// Result of the attempt.
@@ -89,6 +91,7 @@ pub(crate) async fn run_worker(
         let block_hash = input.stateless_input.block_hash();
         let parent_beacon_block_root = input.stateless_input.parent_beacon_block_root();
         let block_number = input.stateless_input.block_number();
+        let slot = input.stateless_input.slot();
 
         let queue_wait = input.queued_at.elapsed();
         metrics::record_queue_wait(proof_type, queue_wait);
@@ -136,6 +139,7 @@ pub(crate) async fn run_worker(
                 block_hash,
                 parent_beacon_block_root,
                 block_number,
+                slot,
                 proof_type,
                 proof_result,
                 duration,
