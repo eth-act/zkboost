@@ -42,6 +42,11 @@ pub enum ProofType {
 }
 
 impl ProofType {
+    /// Returns iterator of the enum variants.
+    pub fn iter() -> impl Iterator<Item = Self> {
+        <Self as IntoEnumIterator>::iter()
+    }
+
     /// Returns the stateless validator kind for this proof type.
     pub fn stateless_validator_kind(&self) -> StatelessValidatorKind {
         match self {

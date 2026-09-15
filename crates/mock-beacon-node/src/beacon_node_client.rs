@@ -83,8 +83,6 @@ impl BeaconNodeClient {
     pub(crate) fn new(endpoint: Url) -> Self {
         Self {
             endpoint,
-            // A request timeout covers the whole response, so the streamed events and bodies need
-            // a client without one.
             http_client: reqwest::Client::new(),
         }
     }
