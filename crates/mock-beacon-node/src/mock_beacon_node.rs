@@ -425,9 +425,9 @@ async fn download_vks_and_init(proof_types: &[ProofType]) -> anyhow::Result<Hash
     let mut verifiers = HashMap::new();
     for proof_type in proof_types {
         let stateless_validator = proof_type.stateless_validator_kind();
-        let zkvm = proof_type.zkvm_kind();
+        let zkvm = proof_type.zkvm_kind().as_str().parse().unwrap();
         let guest = downloader.download(stateless_validator, zkvm).await?;
-        let verifier = Verifier::new(zkvm, &guest.program_vk)?;
+        let verifier = Verifier::new(proof_type.zkvm_kind(), &guest.program_vk)?;
         verifiers.insert(proof_type.execution_proof_type(), verifier);
         info!(%proof_type, "verifier loaded");
     }
