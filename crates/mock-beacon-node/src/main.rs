@@ -1,7 +1,7 @@
 //! Mock beacon node. It mocks a beacon node with the EIP-8025 behavior. It follows the
-//! canonical head of a CL, sends new Gloas payloads to zkboost as `engine_newPayloadV5`, receives the
-//! signed EIP-8025 envelopes at `POST /eth/v1/beacon/execution_proofs`, and verifies the signature
-//! and the proof. Every other beacon API request goes to the CL.
+//! canonical head of a CL, sends new Gloas payloads to zkboost as `engine_newPayloadV5`, receives
+//! the signed EIP-8025 envelopes at `POST /eth/v1/beacon/execution_proofs`, and verifies the
+//! signature and the proof. Every other beacon API request goes to the CL.
 
 #![warn(unused_crate_dependencies)]
 
