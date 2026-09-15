@@ -3,15 +3,7 @@ participants:
     el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
     cl_type: lighthouse
     cl_image: ethpandaops/lighthouse:unstable-afadb9a
-    count: 2
-    validator_count: 256
-  # The EL of zkboost, fed by zkboost alone once its lighthouse is stopped.
-  # Geth returns no witness for a known payload.
-  - el_type: geth
-    el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
-    cl_type: lighthouse
-    cl_image: ethpandaops/lighthouse:unstable-afadb9a
-    validator_count: 0
+    count: 3
 network_params:
   gloas_fork_epoch: 0
 port_publisher:

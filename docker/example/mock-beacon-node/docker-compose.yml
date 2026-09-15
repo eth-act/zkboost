@@ -1,4 +1,21 @@
 services:
+  geth:
+    image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
+    entrypoint: ["/bin/sh", "/start_geth.sh"]
+    command: ["http://el-1-geth-lighthouse:8545"]
+    volumes:
+      - ../../scripts/start_geth.sh:/start_geth.sh:ro
+      - ../../scripts/genesis-${ENCLAVE_NAME:-local-testnet}.json:/genesis.json:ro
+    networks:
+      - zkboost
+      - kurtosis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "geth", "--exec", "eth.blockNumber", "attach", "/data/geth.ipc"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   zkboost:
     image: zkboost:local
     build:
@@ -7,13 +24,14 @@ services:
     command: ["--config", "/app/config.toml"]
     ports:
       - "3000:3000"
+    depends_on:
+      geth:
+        condition: service_healthy
     volumes:
       - ./zkboost/config.toml:/app/config.toml:ro
       - ../testnet/validator-keys:/validator-keys:ro
     networks:
       - zkboost
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -27,7 +45,7 @@ services:
     entrypoint: ["/usr/local/bin/mock-beacon-node"]
     command:
       - "--cl-endpoint"
-      - "http://host.docker.internal:33001"
+      - "http://cl-1-lighthouse-geth:4000"
       - "--zkboost-endpoint"
       - "http://zkboost:3000"
       - "--proof-types"
@@ -36,8 +54,7 @@ services:
       - "3001"
     networks:
       - zkboost
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - kurtosis
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -46,5 +63,7 @@ services:
         condition: service_healthy
 
 networks:
-  zkboost:
-    name: zkboost-mock-beacon-node
+  zkboost: {}
+  kurtosis:
+    name: kt-${ENCLAVE_NAME:-local-testnet}
+    external: true

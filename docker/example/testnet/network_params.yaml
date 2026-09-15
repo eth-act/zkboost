@@ -1,14 +1,11 @@
 participants:
-  # The block producer. Its validators hold two thirds of the stake, so the chain finalizes while
-  # the node behind zkboost is offline.
   - el_type: geth
     el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
     cl_type: lighthouse
     cl_image: ethpandaops/lighthouse:unstable-afadb9a
-    validator_count: 256
+    count: 2
   # The eth-act lighthouse behind zkboost. It receives the execution proofs, which zkboost signs
-  # as its first validator, 256. It has no EL of its own, because the package sets
-  # --execution-endpoints for a paired EL and lighthouse takes the flag once.
+  # as its first validator at index 256.
   - el_type: None
     cl_type: lighthouse
     cl_image: lighthouse:eth-act-optional-proofs-gloas
@@ -18,13 +15,6 @@ participants:
       - --proof-engine=/config/proof-engine.json
     cl_extra_mounts:
       /config: proof-engine.json
-  # The EL of zkboost, fed by zkboost alone once its lighthouse is stopped.
-  # Geth returns no witness for a known payload.
-  - el_type: geth
-    el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
-    cl_type: lighthouse
-    cl_image: ethpandaops/lighthouse:unstable-afadb9a
-    validator_count: 0
 network_params:
   gloas_fork_epoch: 0
 # The verifying keys of the reth guests of the ere-guests v0.17.0 release, for the proof types

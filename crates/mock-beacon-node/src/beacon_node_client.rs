@@ -1,5 +1,5 @@
 //! Client of the beacon API of the CL. It reads the chain spec, the genesis validators root, and
-//! the public key of a validator. It streams the `block` events and forwards every other request.
+//! the public key of a validator. It streams head notifications and forwards every other request.
 //! It decodes a Gloas block with its execution payload envelope into the `NewPayloadRequest`.
 
 use std::time::Duration;
@@ -69,13 +69,20 @@ struct Validator {
     pubkey: Vec<u8>,
 }
 
-/// A `block` event of the beacon API event stream.
-#[derive(Debug, Deserialize)]
-pub(crate) struct BlockEvent {
-    /// Slot of the block.
-    pub(crate) slot: Slot,
-    /// Root of the block.
-    pub(crate) block: Hash256,
+#[derive(Deserialize)]
+struct HeaderData {
+    root: Hash256,
+}
+
+#[derive(Deserialize)]
+struct Checkpoint {
+    root: Hash256,
+}
+
+#[derive(Deserialize)]
+struct FinalityCheckpoints {
+    current_justified: Checkpoint,
+    finalized: Checkpoint,
 }
 
 impl BeaconNodeClient {
@@ -87,29 +94,104 @@ impl BeaconNodeClient {
         }
     }
 
-    /// Subscribes to the `block` events of the beacon node. The stream reconnects after a lost
-    /// connection and does not end.
-    pub(crate) fn subscribe_blocks(&self) -> impl Stream<Item = BlockEvent> + '_ {
+    /// Signals when forkchoice may have changed, including after reconnecting. Events are hints:
+    /// callers must read the current head rather than replay potentially stale event roots.
+    pub(crate) fn subscribe_heads(&self) -> impl Stream<Item = ()> + '_ {
         let mut url = self
             .endpoint
             .join("eth/v1/events")
             .expect("the beacon endpoint accepts a relative path");
-        url.query_pairs_mut().append_pair("topics", "block");
+        url.query_pairs_mut()
+            .append_pair("topics", "head,chain_reorg,finalized_checkpoint");
         let mut event_source = EventSource::new(self.http_client.get(url))
             .expect("the stream request carries no body");
         event_source.set_retry_policy(Box::new(Constant::new(BEACON_NODE_RETRY_DELAY, None)));
         event_source.filter_map(|event| match event {
-            Ok(Event::Message(message)) if message.event == "block" => {
-                serde_json::from_str::<BlockEvent>(&message.data)
-                    .inspect_err(|error| warn!(%error, "block event not decodable"))
-                    .ok()
+            Ok(Event::Open) => Some(()),
+            Ok(Event::Message(message))
+                if matches!(
+                    message.event.as_str(),
+                    "head" | "chain_reorg" | "finalized_checkpoint"
+                ) =>
+            {
+                Some(())
             }
             Ok(_) => None,
             Err(error) => {
-                warn!(error = %format!("{error:#}"), "block stream lost");
+                warn!(error = %format!("{error:#}"), "head stream lost");
                 None
             }
         })
+    }
+
+    /// Returns the current canonical head, also used to recover missed SSE events.
+    pub(crate) async fn head_root(&self) -> anyhow::Result<Hash256> {
+        let header: HeaderData = self
+            .get("eth/v1/beacon/headers/head")
+            .await?
+            .context("head not found")?;
+        Ok(header.root)
+    }
+
+    /// Returns the justified and finalized execution hashes from the same head state.
+    pub(crate) async fn finality_hashes(
+        &self,
+        state_root: Hash256,
+    ) -> anyhow::Result<(Hash256, Hash256)> {
+        let checkpoints: FinalityCheckpoints = self
+            .get(&format!(
+                "eth/v1/beacon/states/{state_root}/finality_checkpoints"
+            ))
+            .await?
+            .context("finality checkpoints not found")?;
+        Ok((
+            self.execution_hash(checkpoints.current_justified.root)
+                .await?,
+            self.execution_hash(checkpoints.finalized.root).await?,
+        ))
+    }
+
+    /// Finds the last revealed payload at a checkpoint, walking past empty Gloas payloads.
+    async fn execution_hash(&self, mut root: Hash256) -> anyhow::Result<Hash256> {
+        while root != Hash256::ZERO {
+            let block = self.block(root).await?;
+            if block.slot() == Slot::new(0) {
+                break;
+            }
+            let envelope: Option<SignedExecutionPayloadEnvelope<MainnetEthSpec>> = self
+                .get(&format!("eth/v1/beacon/execution_payload_envelopes/{root}"))
+                .await?;
+            if let Some(envelope) = envelope {
+                return Ok(envelope.message.payload.block_hash.0);
+            }
+            root = block.parent_root();
+        }
+        // Zero means no execution checkpoint is available yet, as at genesis.
+        Ok(Hash256::ZERO)
+    }
+
+    /// Finds the payload of an execution parent along the canonical beacon ancestry.
+    pub(crate) async fn parent_payload(
+        &self,
+        mut root: Hash256,
+        hash: Hash256,
+    ) -> anyhow::Result<NewPayloadRequestGloas> {
+        while root != Hash256::ZERO {
+            let block = self.block(root).await?;
+            if block.slot() == Slot::new(0) {
+                break;
+            }
+            let envelope: Option<SignedExecutionPayloadEnvelope<MainnetEthSpec>> = self
+                .get(&format!("eth/v1/beacon/execution_payload_envelopes/{root}"))
+                .await?;
+            if let Some(envelope) = envelope
+                && envelope.message.payload.block_hash.0 == hash
+            {
+                return new_payload_request_gloas(&block, &envelope);
+            }
+            root = block.parent_root();
+        }
+        bail!("execution parent {hash} not found in beacon ancestry")
     }
 
     /// Returns the signed beacon block of a root, decoded from SSZ by its fork.
@@ -123,6 +205,7 @@ impl BeaconNodeClient {
         let response = self
             .http_client
             .get(url.clone())
+            .timeout(ENVELOPE_TIMEOUT)
             .header("Accept", "application/octet-stream")
             .send()
             .await
@@ -228,6 +311,7 @@ impl BeaconNodeClient {
         let response = self
             .http_client
             .get(url.clone())
+            .timeout(ENVELOPE_TIMEOUT)
             .send()
             .await
             .with_context(|| format!("GET {url}"))?;

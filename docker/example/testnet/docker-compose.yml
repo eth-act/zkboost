@@ -1,5 +1,22 @@
 # The guest ELFs come from the ere-guests release of the ere version of the images.
 services:
+  geth:
+    image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
+    entrypoint: ["/bin/sh", "/start_geth.sh"]
+    command: ["http://el-1-geth-lighthouse:8545"]
+    volumes:
+      - ../../scripts/start_geth.sh:/start_geth.sh:ro
+      - ../../scripts/genesis-${ENCLAVE_NAME:-local-testnet}.json:/genesis.json:ro
+    networks:
+      - zkboost
+      - kurtosis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "geth", "--exec", "eth.blockNumber", "attach", "/data/geth.ipc"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   ethrex-zisk:
     image: ghcr.io/eth-act/ere/ere-server-zisk:0.17.0-cuda
     command:
@@ -55,6 +72,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
+      geth:
+        condition: service_healthy
       ethrex-zisk:
         condition: service_healthy
       reth-zisk:
@@ -64,6 +83,7 @@ services:
       - ./validator-keys:/validator-keys:ro
     networks:
       - zkboost
+      - kurtosis
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -72,9 +92,9 @@ services:
       start_period: 1s
       start_interval: 1s
 
-# The enclave network of the Kurtosis testnet, so lighthouse reaches zkboost as `zkboost` and
-# zkboost reaches the EL and the CL by their Kurtosis service names.
+# Only geth and zkboost join the enclave network to reach the testnet EL and CL.
 networks:
-  zkboost:
-    name: kt-local-testnet
+  zkboost: {}
+  kurtosis:
+    name: kt-${ENCLAVE_NAME:-local-testnet}
     external: true

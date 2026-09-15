@@ -6,3 +6,4 @@ notes.md
 test-fixture
 *.log
 .DS_Store
+/docker/scripts/genesis-*.json

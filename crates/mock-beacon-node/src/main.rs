@@ -1,23 +1,23 @@
-//! Mock beacon node. It mocks a beacon node with the EIP-8025 behavior. It follows the beacon
-//! chain head of a CL, sends every Gloas payload to zkboost as `engine_newPayloadV5`, receives the
+//! Mock beacon node. It mocks a beacon node with the EIP-8025 behavior. It follows the
+//! canonical head of a CL, sends new Gloas payloads to zkboost as `engine_newPayloadV5`, receives the
 //! signed EIP-8025 envelopes at `POST /eth/v1/beacon/execution_proofs`, and verifies the signature
 //! and the proof. Every other beacon API request goes to the CL.
 
 #![warn(unused_crate_dependencies)]
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use anyhow::bail;
 use clap::Parser;
 use jsonwebtoken as _;
 use mock_beacon_node::MockBeaconNode;
 use tokio_stream::StreamExt;
-use tracing::{info, warn};
+use tracing::warn;
 use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_types::ProofType;
 
 mod beacon_node_client;
+mod engine_api_client;
 mod mock_beacon_node;
 
 #[derive(Parser)]
@@ -53,15 +53,19 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move { mock_beacon_node.serve(cli.port).await });
     }
 
-    let mut stream = mock_beacon_node.beacon_node_client.subscribe_blocks();
-    while let Some(block) = stream.next().await {
-        info!(slot = %block.slot, block = %block.block, "new block");
+    let mut stream = mock_beacon_node.beacon_node_client.subscribe_heads();
+    let mut refresh = tokio::time::interval(Duration::from_secs(2));
+    refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            Some(()) = stream.next() => {},
+            _ = refresh.tick() => {},
+        }
         let mock_beacon_node = mock_beacon_node.clone();
         tokio::spawn(async move {
-            if let Err(error) = mock_beacon_node.process_block(block.block).await {
-                warn!(slot = %block.slot, block = %block.block, error = %error, "block failed");
+            if let Err(error) = mock_beacon_node.process_head().await {
+                warn!(error = %error, "head processing failed");
             }
         });
     }
-    bail!("block stream ended")
 }

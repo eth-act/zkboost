@@ -10,8 +10,8 @@ use std::{
     time::Duration,
 };
 
-use alloy_rpc_types_engine::{Claims, JwtSecret};
-use anyhow::{Context, bail, ensure};
+use alloy_rpc_types_engine::PayloadStatusEnum;
+use anyhow::{bail, ensure};
 use axum::{
     Json, Router,
     body::{Body, Bytes, to_bytes},
@@ -23,11 +23,11 @@ use axum::{
 use ere_verifier::Verifier;
 use lighthouse_bls::Signature;
 use lighthouse_types::{ChainSpec, EthSpec, ForkName, Hash256, MainnetEthSpec, Slot};
-use serde_json::{Value, json};
+use serde_json::json;
 use stateless_validator_downloader::Downloader;
 use tokio::{
     net::TcpListener,
-    sync::{OnceCell, mpsc},
+    sync::{Mutex, OnceCell, mpsc},
     time::{Instant, timeout_at},
 };
 use tracing::{info, warn};
@@ -38,13 +38,12 @@ use zkboost_types::{
     StatelessValidationResult, execution_proof_domain,
 };
 
-use crate::beacon_node_client::{BeaconNodeClient, new_payload_request_gloas};
+use crate::{
+    beacon_node_client::{BeaconNodeClient, new_payload_request_gloas},
+    engine_api_client::EngineApiClient,
+};
 
 const ERE_GUESTS_TAG: &str = "v0.17.0";
-
-/// The static JWT secret of the ethereum-package, which every EL of a Kurtosis testnet accepts.
-/// The mock beacon node only runs against such testnets.
-const JWT_SECRET: &str = "0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b";
 
 /// Budget for all proofs of one payload to arrive.
 const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
@@ -62,12 +61,12 @@ pub(crate) struct PendingPayload {
 pub(crate) struct MockBeaconNode {
     /// Client of the beacon API of the beacon node.
     pub(crate) beacon_node_client: BeaconNodeClient,
-    zkboost_endpoint: Url,
-    jwt_secret: JwtSecret,
-    http: reqwest::Client,
+    engine_api_client: EngineApiClient,
     spec: OnceCell<ChainSpec>,
     genesis_validators_root: OnceCell<Hash256>,
     verifiers: HashMap<u8, Verifier>,
+    /// Serializes execution updates; proof verification can continue in parallel.
+    execution_update: Mutex<()>,
     /// The payloads awaiting proofs, keyed by beacon block root.
     pub(crate) pending: std::sync::Mutex<HashMap<Hash256, PendingPayload>>,
 }
@@ -84,12 +83,11 @@ impl MockBeaconNode {
         let verifiers = download_vks_and_init(proof_types).await?;
         Ok(Self {
             beacon_node_client,
-            zkboost_endpoint,
-            jwt_secret: JwtSecret::from_hex(JWT_SECRET)?,
-            http: reqwest::Client::new(),
+            engine_api_client: EngineApiClient::new(zkboost_endpoint)?,
             spec: OnceCell::new(),
             genesis_validators_root: OnceCell::new(),
             verifiers,
+            execution_update: Mutex::new(()),
             pending: Default::default(),
         })
     }
@@ -124,8 +122,14 @@ impl MockBeaconNode {
             .copied()
     }
 
-    /// Sends the payload of a Gloas block to zkboost and waits for the proof of every proof type.
-    pub(crate) async fn process_block(&self, block_root: Hash256) -> anyhow::Result<()> {
+    /// Reconciles execution with the upstream canonical head, then waits for its proofs.
+    pub(crate) async fn process_head(&self) -> anyhow::Result<()> {
+        // Coalesce notifications while a refresh is in flight. A periodic refresh also retries
+        // SYNCING, recovers missed events, and handles a restarted execution node.
+        let Ok(execution_update) = self.execution_update.try_lock() else {
+            return Ok(());
+        };
+        let block_root = self.beacon_node_client.head_root().await?;
         let beacon_block = self.beacon_node_client.block(block_root).await?;
         let request = match beacon_block.fork_name_unchecked() {
             ForkName::Gloas => {
@@ -142,6 +146,43 @@ impl MockBeaconNode {
         };
 
         let params = NewPayloadParams::try_from(&request)?;
+        let block_hash = Hash256::from(params.block_hash().0);
+        let parent_hash = Hash256::from(
+            params
+                .0
+                .payload_inner
+                .payload_inner
+                .payload_inner
+                .parent_hash
+                .0,
+        );
+        let (safe_hash, finalized_hash) = self
+            .beacon_node_client
+            .finality_hashes(beacon_block.state_root())
+            .await?;
+        // Geth does not regenerate witnesses for known payloads. This also handles restarting
+        // the mock or returning to an already executed block during a reorg.
+        if self
+            .engine_api_client
+            .update_known_head(block_hash, safe_hash, finalized_hash)
+            .await?
+        {
+            return Ok(());
+        }
+
+        // Announce and sync the parent first. Syncing to the new payload itself would import it
+        // over P2P, so a subsequent newPayload call would return VALID without a witness.
+        if !self
+            .prepare_parent(beacon_block.parent_root(), parent_hash)
+            .await?
+        {
+            info!(%block_root, %parent_hash, "execution parent syncing");
+            return Ok(());
+        }
+        // REST reads and sync can take time. Never apply an older notification after a new head.
+        if self.beacon_node_client.head_root().await? != block_root {
+            return Ok(());
+        }
         let new_payload_request_root = Hash256::from(request.hash_tree_root(&Sha2Hasher));
         let expected_public_values = StatelessValidationResult {
             new_payload_request_root: new_payload_request_root.0,
@@ -161,9 +202,21 @@ impl MockBeaconNode {
             },
         );
         let result = async {
-            let status = self.new_payload(&params).await?;
-            ensure!(status == "VALID", "new payload status {status}");
-            info!(%block_root, %new_payload_request_root, status, "new payload sent");
+            let status = self.engine_api_client.new_payload(&params).await?;
+            ensure!(
+                status == PayloadStatusEnum::Valid,
+                "new payload status {status}"
+            );
+            let status = self
+                .engine_api_client
+                .forkchoice_updated(block_hash, safe_hash, finalized_hash)
+                .await?;
+            ensure!(
+                status == PayloadStatusEnum::Valid,
+                "forkchoice status {status}"
+            );
+            drop(execution_update);
+            info!(%block_root, %new_payload_request_root, %status, "new payload sent");
 
             let mut remaining: HashSet<u8> = self.verifiers.keys().copied().collect();
             let deadline = Instant::now() + PROOF_TIMEOUT;
@@ -181,32 +234,42 @@ impl MockBeaconNode {
         result
     }
 
-    /// Sends the `engine_newPayload` call to zkboost and returns the payload status.
-    async fn new_payload(&self, params: &NewPayloadParams) -> anyhow::Result<String> {
-        let method = NewPayloadParams::METHOD;
-        let token = self.jwt_secret.encode(&Claims::with_current_timestamp())?;
-        let response: Value = self
-            .http
-            .post(self.zkboost_endpoint.clone())
-            .bearer_auth(token)
-            .json(&json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": method,
-                "params": params,
-            }))
-            .send()
+    /// Registers an unknown parent header so forkchoice can trigger ordinary peer sync.
+    async fn prepare_parent(
+        &self,
+        beacon_parent: Hash256,
+        parent_hash: Hash256,
+    ) -> anyhow::Result<bool> {
+        if self
+            .engine_api_client
+            .forkchoice_updated(parent_hash, Hash256::ZERO, Hash256::ZERO)
             .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        if let Some(error) = response.get("error") {
-            bail!("{method} failed: {error}");
+            == PayloadStatusEnum::Valid
+        {
+            return Ok(true);
         }
-        response["result"]["status"]
-            .as_str()
-            .map(str::to_owned)
-            .with_context(|| format!("{method} response has no status"))
+        let parent = self
+            .beacon_node_client
+            .parent_payload(beacon_parent, parent_hash)
+            .await?;
+        let status = self
+            .engine_api_client
+            .new_payload(&NewPayloadParams::try_from(&NewPayloadRequest::Gloas(
+                parent,
+            ))?)
+            .await?;
+        ensure!(
+            matches!(
+                status,
+                PayloadStatusEnum::Valid | PayloadStatusEnum::Syncing | PayloadStatusEnum::Accepted
+            ),
+            "parent payload status {status}"
+        );
+        Ok(self
+            .engine_api_client
+            .forkchoice_updated(parent_hash, Hash256::ZERO, Hash256::ZERO)
+            .await?
+            == PayloadStatusEnum::Valid)
     }
 
     /// Verifies the envelope as the beacon node does, then the proof, and returns the proof type.
@@ -375,10 +438,172 @@ async fn download_vks_and_init(proof_types: &[ProofType]) -> anyhow::Result<Hash
 mod tests {
     use std::{fs, path::Path};
 
+    use alloy_rpc_types_engine::PayloadStatusEnum;
     use url::Url;
     use zkboost_types::ProofType;
 
     use crate::mock_beacon_node::MockBeaconNode;
+
+    /// Builds a node with a local Engine API stub and no proof verifiers.
+    async fn engine_stub(
+        results: Vec<serde_json::Value>,
+    ) -> (
+        MockBeaconNode,
+        tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use axum::{Json, Router, routing::post};
+        let results = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
+            results,
+        )));
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route(
+            "/",
+            post(move |Json(request): Json<serde_json::Value>| {
+                let tx = tx.clone();
+                let result = results
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("unexpected Engine API request");
+                async move {
+                    let _ = tx.send(request);
+                    Json(result)
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let node = MockBeaconNode {
+            beacon_node_client: crate::beacon_node_client::BeaconNodeClient::new(
+                Url::parse("x:").unwrap(),
+            ),
+            engine_api_client: crate::engine_api_client::EngineApiClient::new(endpoint).unwrap(),
+            spec: Default::default(),
+            genesis_validators_root: Default::default(),
+            verifiers: Default::default(),
+            execution_update: Default::default(),
+            pending: Default::default(),
+        };
+        (node, rx, server)
+    }
+
+    #[tokio::test]
+    async fn forkchoice_carries_checkpoints_without_building_a_payload() {
+        use lighthouse_types::Hash256;
+        use serde_json::json;
+        let (node, mut requests, server) = engine_stub(vec![
+            json!({"result": {"payloadStatus": {"status": "SYNCING"}}}),
+        ])
+        .await;
+        let head = Hash256::repeat_byte(3);
+        let safe = Hash256::repeat_byte(2);
+        let finalized = Hash256::repeat_byte(1);
+        assert_eq!(
+            node.engine_api_client
+                .forkchoice_updated(head, safe, finalized)
+                .await
+                .unwrap(),
+            PayloadStatusEnum::Syncing
+        );
+        let request = requests.recv().await.unwrap();
+        assert_eq!(request["method"], "engine_forkchoiceUpdatedV4");
+        let params = request["params"].as_array().unwrap();
+        assert_eq!(params.len(), 3);
+        assert_eq!(params[0]["headBlockHash"], json!(head));
+        assert_eq!(params[0]["safeBlockHash"], json!(safe));
+        assert_eq!(params[0]["finalizedBlockHash"], json!(finalized));
+        assert!(params[1].is_null());
+        assert!(params[2].is_null());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn known_parent_does_not_need_a_payload_or_beacon_fetch() {
+        use lighthouse_types::Hash256;
+        use serde_json::json;
+        let (node, mut requests, server) = engine_stub(vec![
+            json!({"result": {"payloadStatus": {"status": "VALID"}}}),
+        ])
+        .await;
+        let parent = Hash256::repeat_byte(1);
+        assert!(
+            node.prepare_parent(Hash256::repeat_byte(2), parent)
+                .await
+                .unwrap()
+        );
+        let request = requests.recv().await.unwrap();
+        assert_eq!(request["params"][0]["headBlockHash"], json!(parent));
+        assert!(requests.try_recv().is_err());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn invalid_forkchoice_is_not_treated_as_syncing() {
+        use lighthouse_types::Hash256;
+        use serde_json::json;
+        for response in [
+            json!({"result": {"payloadStatus": {"status": "INVALID", "validationError": "bad ancestor"}}}),
+            json!({"error": {"code": -38002, "message": "invalid forkchoice state"}}),
+            json!({"result": {}}),
+        ] {
+            let (node, _, server) = engine_stub(vec![response]).await;
+            assert!(
+                node.prepare_parent(Hash256::ZERO, Hash256::repeat_byte(1))
+                    .await
+                    .is_err()
+            );
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn revisited_head_needs_valid_execution_state_but_no_new_payload() {
+        use lighthouse_types::Hash256;
+        use serde_json::json;
+        let head = Hash256::repeat_byte(3);
+        for status in ["VALID", "SYNCING"] {
+            let (node, mut requests, server) = engine_stub(vec![
+                json!({"result": {"hash": head}}),
+                json!({"result": {"payloadStatus": {"status": status}}}),
+            ])
+            .await;
+            assert_eq!(
+                node.engine_api_client
+                    .update_known_head(head, Hash256::ZERO, Hash256::ZERO)
+                    .await
+                    .unwrap(),
+                status == "VALID"
+            );
+            assert_eq!(
+                requests.recv().await.unwrap()["method"],
+                "eth_getBlockByHash"
+            );
+            assert_eq!(
+                requests.recv().await.unwrap()["method"],
+                "engine_forkchoiceUpdatedV4"
+            );
+            assert!(requests.try_recv().is_err());
+            server.abort();
+        }
+        let (node, mut requests, server) = engine_stub(vec![json!({"result": null})]).await;
+        assert!(
+            !node
+                .engine_api_client
+                .update_known_head(head, Hash256::ZERO, Hash256::ZERO)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            requests.recv().await.unwrap()["method"],
+            "eth_getBlockByHash"
+        );
+        assert!(requests.try_recv().is_err());
+        server.abort();
+    }
 
     #[tokio::test]
     async fn test_fixture_proofs_verify() -> anyhow::Result<()> {

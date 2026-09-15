@@ -1,7 +1,7 @@
 port = 3000
-el_engine_endpoint = "http://host.docker.internal:32015"
+el_engine_endpoint = "http://geth:8551"
 cl_beacon_endpoint = "http://mock-beacon-node:3001"
-# Validator 256 of the Kurtosis testnet, the first validator of the second participant, with the
+# Validator 256 of the Kurtosis testnet, the first validator of the third participant, with the
 # keystore of docker/example/testnet/validator-keys.
 validator_keystore_path = "/validator-keys/keys/0xb756817e69f8ae36929d275d0c0de9013520090965cb0a2f50eb72e099a33aad6515a660d64cdd9f75c9b9dd827d852f/voting-keystore.json"
 validator_keystore_password_path = "/validator-keys/secrets/0xb756817e69f8ae36929d275d0c0de9013520090965cb0a2f50eb72e099a33aad6515a660d64cdd9f75c9b9dd827d852f"

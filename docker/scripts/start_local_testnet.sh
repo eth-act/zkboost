@@ -7,8 +7,8 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-ENCLAVE_NAME=local-testnet
-NETWORK_PARAMS_FILE=$SCRIPT_DIR/network_params.yaml
+ENCLAVE_NAME=${ENCLAVE_NAME:-local-testnet}
+NETWORK_PARAMS_FILE=$SCRIPT_DIR/../example/testnet/network_params.yaml
 ETHEREUM_PKG_VERSION=main
 
 BUILD_IMAGE=true
@@ -26,17 +26,14 @@ while getopts "b:n:kh" flag; do
         echo "usage: $0 <Options>"
         echo
         echo "Options:"
-        echo "   -b: whether to build Lighthouse docker image    default: $BUILD_IMAGE"
-        echo "   -n: kurtosis network params file path           default: $NETWORK_PARAMS_FILE"
+        echo "   -b: whether to build the custom Lighthouse image when used    default: $BUILD_IMAGE"
+        echo "   -n: example network params file path                       default: $NETWORK_PARAMS_FILE"
         echo "   -k: keeping enclave to allow starting the testnet without destroying the existing one"
         echo "   -h: this help"
         exit
         ;;
   esac
 done
-
-LH_BRANCH=optional-proofs-gloas
-LH_IMAGE_NAME=$(yq eval ".participants[1].cl_image" $NETWORK_PARAMS_FILE)
 
 if ! command -v docker &> /dev/null; then
     echo "Docker is not installed. Please install Docker and try again."
@@ -53,7 +50,10 @@ if ! command -v yq &> /dev/null; then
     exit 1
 fi
 
-if [ "$BUILD_IMAGE" = true ]; then
+LH_BRANCH=optional-proofs-gloas
+LH_IMAGE_NAME=$(yq eval '.participants[] | select(.cl_image == "lighthouse:eth-act-optional-proofs-gloas") | .cl_image' "$NETWORK_PARAMS_FILE")
+
+if [ "$BUILD_IMAGE" = true ] && [ -n "$LH_IMAGE_NAME" ]; then
   # eth-act/lighthouse publishes no image of this branch.
   echo "Building Lighthouse docker image ($LH_IMAGE_NAME) from eth-act/lighthouse@$LH_BRANCH."
   LH_SRC=$(mktemp -d)
@@ -66,12 +66,15 @@ fi
 
 if [ "$KEEP_ENCLAVE" = false ]; then
   # Stop local testnet
-  kurtosis enclave rm -f $ENCLAVE_NAME 2>/dev/null || true
+  kurtosis enclave rm -f "$ENCLAVE_NAME" 2>/dev/null || true
 fi
 
-kurtosis run --enclave $ENCLAVE_NAME github.com/ethpandaops/ethereum-package@$ETHEREUM_PKG_VERSION --args-file $NETWORK_PARAMS_FILE
+kurtosis run --enclave "$ENCLAVE_NAME" "github.com/ethpandaops/ethereum-package@$ETHEREUM_PKG_VERSION" --args-file "$NETWORK_PARAMS_FILE"
 
-# Only the second participant, through zkboost, feeds the third EL from now on.
-kurtosis service stop $ENCLAVE_NAME cl-3-lighthouse-geth
+# Initialize the dedicated Compose geth with the genesis of this enclave.
+GENESIS_TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$GENESIS_TMP_DIR"' EXIT
+kurtosis files download "$ENCLAVE_NAME" el_cl_genesis_data "$GENESIS_TMP_DIR/genesis"
+cp "$GENESIS_TMP_DIR/genesis/genesis.json" "$SCRIPT_DIR/genesis-$ENCLAVE_NAME.json"
 
 echo "Started!"

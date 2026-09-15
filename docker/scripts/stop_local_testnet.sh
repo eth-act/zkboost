@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-ENCLAVE_NAME=${1:-local-testnet}
+ENCLAVE_NAME=${1:-${ENCLAVE_NAME:-local-testnet}}
 LOGS_PATH=$SCRIPT_DIR/logs
 LOGS_SUBDIR=$LOGS_PATH/$ENCLAVE_NAME
 
@@ -20,12 +20,11 @@ for service in $services; do
 done
 
 # Delete existing logs directory and make sure parent directory exists.
-rm -rf $LOGS_SUBDIR && mkdir -p $LOGS_PATH
-kurtosis enclave dump $ENCLAVE_NAME $LOGS_SUBDIR
+rm -rf "$LOGS_SUBDIR"
+mkdir -p "$LOGS_PATH"
+kurtosis enclave dump "$ENCLAVE_NAME" "$LOGS_SUBDIR"
 echo "Local testnet logs stored to $LOGS_SUBDIR."
-echo "The lighthouse beacon nodes' logs (including dependency logs) can be found in $LOGS_SUBDIR/files/cl-*-lighthouse-geth-logs and $LOGS_SUBDIR/files/cl-2-lighthouse-logs."
+echo "The lighthouse beacon nodes' logs (including dependency logs) can be found in $LOGS_SUBDIR/files/cl-*-logs."
 
-kurtosis enclave rm -f $ENCLAVE_NAME
-# Stops every enclave on the host, not only this one.
-kurtosis engine stop
+kurtosis enclave rm -f "$ENCLAVE_NAME"
 echo "Local testnet stopped."
