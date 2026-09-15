@@ -16,7 +16,7 @@ zkboost is an Engine API proxy between a consensus client (CL) and its execution
 - [Configuration](#configuration)
 - [Engine API](#engine-api)
 - [Proof Submission](#proof-submission)
-- [Mock CL](#mock-cl)
+- [Mock Beacon Node](#mock-beacon-node)
 - [Observability](#observability)
   - [Docker Compose with Grafana](#docker-compose-with-grafana)
   - [Available Metrics](#available-metrics)
@@ -26,7 +26,7 @@ zkboost is an Engine API proxy between a consensus client (CL) and its execution
 
 ## Quick Start
 
-See [docker/example/testnet](docker/example/testnet) for a Docker Compose setup that runs zkboost with real Ere backends on a local testnet. See [docker/example/mock-cl](docker/example/mock-cl) for mock backends without a GPU. There `mock-cl` stands in for the beacon node.
+See [docker/example/testnet](docker/example/testnet) for a Docker Compose setup that runs zkboost with real Ere backends on a local testnet. See [docker/example/mock-beacon-node](docker/example/mock-beacon-node) for mock backends without a GPU. There `mock-beacon-node` stands in for the beacon node.
 
 ## Manual Build
 
@@ -193,25 +193,22 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 | `5`          | `ethrex-sp1`       |
 | `6`          | `ethrex-zisk`      |
 
-## Mock CL
+## Mock Beacon Node
 
-`mock-cl` mocks a CL implementation with the EIP-8025 behavior. It stands in for the beacon node in the examples.
+`mock-beacon-node` mocks a beacon node with the EIP-8025 behavior. It stands in for the beacon node in the examples.
 
 - It follows the block events of a CL. It sends every Gloas payload to zkboost as `engine_newPayloadV5`.
 - It receives the proofs at `POST /eth/v1/beacon/execution_proofs`. It verifies the validator signature as the beacon node does.
 - It verifies each proof with `ere-verifier`. The check covers the request root, a successful validation, the `DEPOSIT_CHAIN_ID` of the CL, and the Amsterdam schema id.
 - The mock proof bytes `MOCK` pass as valid.
-- It forwards every other beacon API request to the CL. zkboost therefore uses the mock CL as its `cl_beacon_endpoint`.
+- It forwards every other beacon API request to the CL. zkboost therefore uses the mock beacon node as its `cl_beacon_endpoint`.
 
-| Flag                                       | Description                                                                                                                  |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--cl-endpoint <URL>`                      | Beacon API endpoint of the CL to follow                                                                                      |
-| `--zkboost-endpoint <URL>`                 | Engine API endpoint of zkboost                                                                                               |
-| `--proof-types <a,b>`                      | Proof types expected for every payload                                                                                       |
-| `--port <u16>`                             | Port serving the beacon API (default: 3001)                                                                                  |
-| `--program-vk <PROOF_TYPE>=<PATH or URL>`  | Program verifying key per proof type (repeatable). Proofs of a type without a verifying key are only accepted as `MOCK`.     |
-
-Verifying keys are published next to the ELFs in the [ere-guests v0.17.0 release](https://github.com/eth-act/ere-guests/releases/tag/v0.17.0), which matches the ere version, e.g. `https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-reth-zisk-v1.1.0-alpha.vk`.
+| Flag                       | Description                                 |
+| -------------------------- | ------------------------------------------- |
+| `--cl-endpoint <URL>`      | Beacon API endpoint of the CL to follow     |
+| `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost              |
+| `--proof-types <a,b>`      | Proof types expected for every payload      |
+| `--port <u16>`             | Port serving the beacon API (default: 3001) |
 
 ## Observability
 

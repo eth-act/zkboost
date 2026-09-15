@@ -8,7 +8,7 @@ use std::time::Duration;
 use alloy_primitives::B256;
 use anyhow::{Context, bail, ensure};
 use lighthouse_bls::PublicKey;
-use lighthouse_types::{ChainSpec, Config as SpecConfig, MainnetEthSpec, Slot};
+use lighthouse_types::{ChainSpec, MainnetEthSpec, Slot};
 use reqwest::header::CONTENT_TYPE;
 use reqwest_eventsource::{Event, EventSource, retry::Constant};
 use serde::{Deserialize, de::DeserializeOwned};
@@ -196,7 +196,7 @@ impl BeaconNodeClient {
 
     /// Returns the chain spec of the beacon node.
     pub(crate) async fn spec(&self) -> anyhow::Result<ChainSpec> {
-        let config: SpecConfig = self
+        let config = self
             .get("eth/v1/config/spec")
             .await?
             .context("spec not found")?;

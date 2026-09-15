@@ -50,9 +50,28 @@ impl NewPayloadParams {
         (method == Self::METHOD).then(|| serde_json::from_value(params))
     }
 
-    /// Returns the fork-independent fields of the execution payload.
-    pub fn execution_payload_v1(&self) -> &ExecutionPayloadV1 {
-        &self.0.payload_inner.payload_inner.payload_inner
+    /// Returns the block hash of the payload.
+    pub fn block_hash(&self) -> B256 {
+        self.0.payload_inner.payload_inner.payload_inner.block_hash
+    }
+
+    /// Returns the block number of the payload.
+    pub fn block_number(&self) -> u64 {
+        self.0
+            .payload_inner
+            .payload_inner
+            .payload_inner
+            .block_number
+    }
+
+    /// Returns the timestamp of the payload.
+    pub fn timestamp(&self) -> u64 {
+        self.0.payload_inner.payload_inner.payload_inner.timestamp
+    }
+
+    /// Returns the gas used by the payload.
+    pub fn gas_used(&self) -> u64 {
+        self.0.payload_inner.payload_inner.payload_inner.gas_used
     }
 }
 

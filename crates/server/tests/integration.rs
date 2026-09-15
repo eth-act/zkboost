@@ -83,7 +83,7 @@ impl Fixture {
         } = input;
         let params = NewPayloadParams::try_from(&new_payload_request).unwrap();
         Fixture {
-            block_hash: params.execution_payload_v1().block_hash,
+            block_hash: params.block_hash(),
             parent_beacon_block_root: params.2,
             slot: params.0.slot_number,
             params,

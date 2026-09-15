@@ -1,7 +1,7 @@
-//! Mock CL. It mocks a consensus client implementation with the EIP-8025 behavior. It follows the
-//! beacon chain head of a CL, sends every Gloas payload to the proof node as `engine_newPayloadV5`,
-//! receives the signed EIP-8025 envelopes at `POST /eth/v1/beacon/execution_proofs`, and verifies
-//! the signature and the proof. Every other beacon API request goes to the CL.
+//! Mock beacon node. It mocks a beacon node with the EIP-8025 behavior. It follows the beacon
+//! chain head of a CL, sends every Gloas payload to zkboost as `engine_newPayloadV5`, receives the
+//! signed EIP-8025 envelopes at `POST /eth/v1/beacon/execution_proofs`, and verifies the signature
+//! and the proof. Every other beacon API request goes to the CL.
 
 #![warn(unused_crate_dependencies)]
 
@@ -22,40 +22,46 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use cl_client::{ClClient, new_payload_request_gloas};
+use beacon_node_client::{BeaconNodeClient, new_payload_request_gloas};
 use clap::Parser;
 use ere_verifier::Verifier;
-use futures::StreamExt;
-// Selects the HMAC backend of the JWT encoder behind `alloy_rpc_types_engine::JwtSecret`.
 use jsonwebtoken as _;
 use lighthouse_bls::Signature;
-use lighthouse_types::{ForkName, Hash256};
+use lighthouse_types::{ChainSpec, EthSpec, ForkName, Hash256, MainnetEthSpec, Slot};
 use serde_json::{Value, json};
-use tokio::{net::TcpListener, sync::mpsc};
+use stateless_validator_downloader::Downloader;
+use tokio::{
+    net::TcpListener,
+    sync::mpsc,
+    time::{Instant, timeout_at},
+};
+use tokio_stream::StreamExt;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_types::{
-    Hash256 as B256, HashTreeRoot, MOCK_PROOF, NewPayloadParams, NewPayloadRequest, ProofType,
-    ProtocolFork, Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes,
-    SszDecode, SszEncode, StatelessValidationResult, execution_proof_domain,
+    HashTreeRoot, MOCK_PROOF, NewPayloadParams, NewPayloadRequest, ProofType, ProtocolFork,
+    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode, SszEncode,
+    StatelessValidationResult, execution_proof_domain,
 };
 
-mod cl_client;
+mod beacon_node_client;
+
+const ERE_GUESTS_TAG: &str = "v0.17.0";
 
 /// The static JWT secret of the ethereum-package, which every EL of a Kurtosis testnet accepts.
-/// The mock CL only runs against such testnets.
+/// The mock beacon node only runs against such testnets.
 const JWT_SECRET: &str = "0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b";
 
 /// Budget for all proofs of one payload to arrive.
-const PROOF_TIMEOUT: Duration = Duration::from_secs(600);
+const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Parser)]
 struct Cli {
     /// Beacon API endpoint of the CL to follow.
     #[arg(long)]
     cl_endpoint: Url,
-    /// Engine API endpoint of the proof node.
+    /// Engine API endpoint of zkboost.
     #[arg(long)]
     zkboost_endpoint: Url,
     /// Proof types expected for every payload.
@@ -64,17 +70,6 @@ struct Cli {
     /// Port serving the beacon API.
     #[arg(long, default_value_t = 3001)]
     port: u16,
-    /// Program verifying key per proof type, as `<proof_type>=<path or URL>`. Proofs of a type
-    /// without a verifying key are only accepted as the mock proof bytes.
-    #[arg(long, value_parser = parse_program_vk)]
-    program_vk: Vec<(ProofType, String)>,
-}
-
-fn parse_program_vk(value: &str) -> anyhow::Result<(ProofType, String)> {
-    let (proof_type, source) = value
-        .split_once('=')
-        .context("expected <proof_type>=<path or URL>")?;
-    Ok((proof_type.parse()?, source.to_owned()))
 }
 
 #[tokio::main]
@@ -85,27 +80,31 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let cl_client = ClClient::new(cli.cl_endpoint);
+    let beacon_node_client = BeaconNodeClient::new(cli.cl_endpoint);
 
-    let chain_id = cl_client.get_spec().await?.deposit_chain_id;
-    let genesis_validators_root = cl_client.get_genesis_validators_root().await?;
+    let spec = beacon_node_client.spec().await?;
+    let genesis_validators_root = beacon_node_client.genesis_validators_root().await?;
 
     let mut verifiers = HashMap::new();
-    for (proof_type, source) in cli.program_vk {
-        let program_vk = load(&source).await?;
-        let verifier = Verifier::new(proof_type.zkvm_kind(), &program_vk)
-            .with_context(|| format!("init verifier for {proof_type}"))?;
-        verifiers.insert(proof_type, verifier);
+    let downloader = Downloader::from_tag(ERE_GUESTS_TAG).await?;
+    for proof_type in &cli.proof_types {
+        let stateless_validator_kind = proof_type.stateless_validator_kind();
+        let zkvm_kind = proof_type.zkvm_kind();
+        let program_vk = downloader
+            .download(stateless_validator_kind, zkvm_kind)
+            .await?
+            .program_vk;
+        let verifier = Verifier::new(zkvm_kind, &program_vk)?;
+        verifiers.insert(proof_type.execution_proof_type(), verifier);
         info!(%proof_type, "verifier loaded");
     }
 
-    let mock_cl = Arc::new(MockCl {
-        cl_client,
+    let mock_beacon_node = Arc::new(MockBeaconNode {
+        beacon_node_client,
         zkboost_endpoint: cli.zkboost_endpoint,
         jwt_secret: JwtSecret::from_hex(JWT_SECRET)?,
         http: reqwest::Client::new(),
-        proof_types: cli.proof_types,
-        chain_id,
+        spec,
         genesis_validators_root,
         verifiers,
         pending: Default::default(),
@@ -118,79 +117,73 @@ async fn main() -> anyhow::Result<()> {
             post(post_execution_proofs),
         )
         .fallback(forward_to_cl)
-        .with_state(mock_cl.clone());
+        .with_state(mock_beacon_node.clone());
     tokio::spawn(async move { axum::serve(listener, router).await });
     info!(port = cli.port, "beacon api listening");
 
-    let mut stream = Box::pin(mock_cl.cl_client.subscribe_block_events());
-    while let Some(Ok(block)) = stream.next().await {
-        info!(slot = block.slot, block = %block.block, "new block");
-        let mock_cl = mock_cl.clone();
+    let mut stream = mock_beacon_node.beacon_node_client.subscribe_blocks();
+    while let Some(block) = stream.next().await {
+        info!(slot = %block.slot, block = %block.block, "new block");
+        let mock_beacon_node = mock_beacon_node.clone();
         tokio::spawn(async move {
-            if let Err(error) = mock_cl.process_block(block.block).await {
-                warn!(slot = block.slot, block = %block.block, error = %error, "block failed");
+            if let Err(error) = mock_beacon_node.process_block(block.block).await {
+                warn!(slot = %block.slot, block = %block.block, error = %error, "block failed");
             }
         });
     }
     bail!("block stream ended")
 }
 
-/// Loads bytes from a local path or a remote URL.
-async fn load(source: &str) -> anyhow::Result<Vec<u8>> {
-    match Url::parse(source) {
-        Ok(url) if url.scheme().starts_with("http") => Ok(reqwest::get(url)
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?
-            .to_vec()),
-        _ => tokio::fs::read(source)
-            .await
-            .with_context(|| format!("read {source}")),
-    }
-}
-
-struct MockCl {
-    cl_client: ClClient,
+struct MockBeaconNode {
+    beacon_node_client: BeaconNodeClient,
     zkboost_endpoint: Url,
     jwt_secret: JwtSecret,
     http: reqwest::Client,
-    proof_types: Vec<ProofType>,
-    chain_id: u64,
+    spec: ChainSpec,
     genesis_validators_root: Hash256,
-    verifiers: HashMap<ProofType, Verifier>,
+    verifiers: HashMap<u8, Verifier>,
     /// The payloads awaiting proofs, keyed by beacon block root.
     pending: std::sync::Mutex<HashMap<Hash256, PendingPayload>>,
 }
 
-/// A payload sent to the proof node, with what its proofs are verified against.
+/// A payload sent to zkboost, with what its proofs are verified against.
 #[derive(Clone)]
 struct PendingPayload {
-    state_root: Hash256,
-    new_payload_request_root: Hash256,
-    schema_id: u16,
+    slot: Slot,
+    expected_public_values: Vec<u8>,
     /// Receives the proof type of every verified proof.
-    verified_tx: mpsc::UnboundedSender<ProofType>,
+    verified_tx: mpsc::UnboundedSender<u8>,
 }
 
 /// Handler for `POST /eth/v1/beacon/execution_proofs` with an SSZ body. A rejected envelope fails
 /// the request with 400 and its index, as the beacon node answers.
-async fn post_execution_proofs(State(mock_cl): State<Arc<MockCl>>, body: Bytes) -> Response {
+async fn post_execution_proofs(
+    State(mock_beacon_node): State<Arc<MockBeaconNode>>,
+    body: Bytes,
+) -> Response {
     let Ok(envelopes) = SignedExecutionProofEnvelopes::from_ssz_bytes(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
     let mut failures = Vec::new();
     for (index, envelope) in envelopes.iter().enumerate() {
         let block_root = Hash256::from(envelope.message.beacon_block_root);
-        let pending = mock_cl.pending.lock().unwrap().get(&block_root).cloned();
-        let verified = match pending {
-            Some(pending) => mock_cl.verify(&pending, envelope).await.map(|proof_type| {
-                info!(%block_root, %proof_type, "proof verified");
-                let _ = pending.verified_tx.send(proof_type);
-            }),
+        let pending = mock_beacon_node
+            .pending
+            .lock()
+            .unwrap()
+            .get(&block_root)
+            .cloned();
+        let result = match pending {
+            Some(pending) => mock_beacon_node
+                .verify(&pending, envelope)
+                .await
+                .map(|proof_type| {
+                    info!(%block_root, %proof_type, "proof verified");
+                    let _ = pending.verified_tx.send(proof_type);
+                }),
             None => Err(anyhow::anyhow!("unknown block")),
         };
-        if let Err(error) = verified {
+        if let Err(error) = result {
             warn!(%block_root, %error, "proof rejected");
             failures.push(json!({ "index": index, "message": error.to_string() }));
         }
@@ -204,7 +197,10 @@ async fn post_execution_proofs(State(mock_cl): State<Arc<MockCl>>, body: Bytes) 
 }
 
 /// Handler for every other beacon API request, forwarded to the CL.
-async fn forward_to_cl(State(mock_cl): State<Arc<MockCl>>, request: Request) -> Response {
+async fn forward_to_cl(
+    State(mock_beacon_node): State<Arc<MockBeaconNode>>,
+    request: Request,
+) -> Response {
     let method = request.method().clone();
     let path_and_query = request
         .uri()
@@ -214,8 +210,8 @@ async fn forward_to_cl(State(mock_cl): State<Arc<MockCl>>, request: Request) -> 
     let Ok(body) = to_bytes(request.into_body(), usize::MAX).await else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    match mock_cl
-        .cl_client
+    match mock_beacon_node
+        .beacon_node_client
         .forward(method, &path_and_query, body)
         .await
     {
@@ -235,14 +231,14 @@ async fn forward_to_cl(State(mock_cl): State<Arc<MockCl>>, request: Request) -> 
     }
 }
 
-impl MockCl {
+impl MockBeaconNode {
     async fn process_block(&self, block_root: Hash256) -> anyhow::Result<()> {
-        let beacon_block = self.cl_client.get_beacon_block(block_root).await?;
+        let beacon_block = self.beacon_node_client.block(block_root).await?;
         let request = match beacon_block.fork_name_unchecked() {
             ForkName::Gloas => {
                 let envelope = self
-                    .cl_client
-                    .get_execution_payload_envelope(block_root)
+                    .beacon_node_client
+                    .execution_payload_envelope(block_root)
                     .await?;
                 NewPayloadRequest::Gloas(new_payload_request_gloas(&beacon_block, &envelope)?)
             }
@@ -251,33 +247,35 @@ impl MockCl {
                 return Ok(());
             }
         };
-        let state_root = beacon_block.state_root();
+
         let params = NewPayloadParams::try_from(&request)?;
-        let block_hash = params.execution_payload_v1().block_hash;
-        let schema_id = ProtocolFork::Amsterdam.schema_id();
         let new_payload_request_root = Hash256::from(request.hash_tree_root(&Sha2Hasher));
+        let expected_public_values = StatelessValidationResult {
+            new_payload_request_root: new_payload_request_root.0,
+            successful_validation: true,
+            chain_id: self.spec.deposit_chain_id,
+            schema_id: ProtocolFork::Amsterdam.schema_id(),
+        }
+        .to_ssz();
 
         let (verified_tx, mut verified_rx) = mpsc::unbounded_channel();
         self.pending.lock().unwrap().insert(
             block_root,
             PendingPayload {
-                state_root,
-                new_payload_request_root,
-                schema_id,
+                slot: beacon_block.slot(),
+                expected_public_values,
                 verified_tx,
             },
         );
         let result = async {
             let status = self.new_payload(&params).await?;
             ensure!(status == "VALID", "new payload status {status}");
-            info!(%block_root, %new_payload_request_root, %block_hash, status, "new payload sent");
+            info!(%block_root, %new_payload_request_root, status, "new payload sent");
 
-            let mut remaining: HashSet<ProofType> = self.proof_types.iter().copied().collect();
-            let deadline = tokio::time::Instant::now() + PROOF_TIMEOUT;
+            let mut remaining: HashSet<u8> = self.verifiers.keys().copied().collect();
+            let deadline = Instant::now() + PROOF_TIMEOUT;
             while !remaining.is_empty() {
-                let Ok(Some(proof_type)) =
-                    tokio::time::timeout_at(deadline, verified_rx.recv()).await
-                else {
+                let Ok(Some(proof_type)) = timeout_at(deadline, verified_rx.recv()).await else {
                     bail!("proofs {remaining:?} not verified in time");
                 };
                 remaining.remove(&proof_type);
@@ -290,7 +288,7 @@ impl MockCl {
         result
     }
 
-    /// Sends the `engine_newPayload` call to the proof node and returns the payload status.
+    /// Sends the `engine_newPayload` call to zkboost and returns the payload status.
     async fn new_payload(&self, params: &NewPayloadParams) -> anyhow::Result<String> {
         let method = NewPayloadParams::METHOD;
         let token = self.jwt_secret.encode(&Claims::with_current_timestamp())?;
@@ -323,59 +321,55 @@ impl MockCl {
         &self,
         pending: &PendingPayload,
         envelope: &SignedExecutionProofEnvelope,
-    ) -> anyhow::Result<ProofType> {
-        let proof_type = self
-            .proof_types
-            .iter()
-            .copied()
-            .find(|proof_type| proof_type.execution_proof_type() == envelope.message.proof_type)
-            .with_context(|| format!("unsupported proof type {}", envelope.message.proof_type))?;
-        ensure!(!envelope.message.proof_data.is_empty(), "empty proof data");
-        let pubkey = self
-            .cl_client
-            .get_validator_pubkey(envelope.validator_index)
-            .await?;
-        let fork_version = self.cl_client.get_fork_version(pending.state_root).await?;
-        let domain =
-            execution_proof_domain(fork_version, B256::from(self.genesis_validators_root.0));
-        let signing_root = envelope.message.signing_root(domain);
-        let signature = Signature::deserialize(&envelope.signature)
-            .map_err(|error| anyhow::anyhow!("signature: {error:?}"))?;
-        ensure!(
-            signature.verify(
-                &pubkey,
-                lighthouse_bls::Hash256::from_slice(signing_root.as_slice())
-            ),
-            "invalid signature of validator {}",
-            envelope.validator_index
-        );
+    ) -> anyhow::Result<u8> {
+        let proof_type = envelope.message.proof_type;
+        let Some(verifier) = self.verifiers.get(&proof_type) else {
+            bail!("unsupported proof type {}", proof_type)
+        };
 
-        let proof_data: &[u8] = &envelope.message.proof_data;
+        self.verify_execution_proofs_signature(pending.slot, envelope)
+            .await?;
+
+        let proof_data = &*envelope.message.proof_data;
         if proof_data == MOCK_PROOF {
             return Ok(proof_type);
         }
-        let verifier = self
-            .verifiers
-            .get(&proof_type)
-            .with_context(|| format!("no verifier for {proof_type}"))?;
+
         let public_values = verifier.verify(proof_data)?;
 
-        let expected = StatelessValidationResult {
-            new_payload_request_root: pending.new_payload_request_root.0,
-            successful_validation: true,
-            chain_id: self.chain_id,
-            schema_id: pending.schema_id,
-        }
-        .to_ssz();
-        let len = expected.len();
-
         // A zkVM with fixed size public values pads the SSZ result with zeros.
+        let expected_public_values = &pending.expected_public_values;
+        let len = expected_public_values.len();
         anyhow::ensure!(
             public_values.len() >= len
-                && public_values[..len] == expected[..]
+                && public_values[..len] == expected_public_values[..]
                 && public_values[len..].iter().all(|byte| *byte == 0),
-            "unexpected public values, expected {expected:?}, got: {public_values:?}"
+            "unexpected public values, expected {expected_public_values:?}, got: {public_values:?}"
         );
+
         Ok(proof_type)
+    }
+
+    async fn verify_execution_proofs_signature(
+        &self,
+        slot: Slot,
+        envelope: &SignedExecutionProofEnvelope,
+    ) -> anyhow::Result<()> {
+        let signature = Signature::deserialize(&envelope.signature)
+            .map_err(|err| anyhow::anyhow!("{err:?}"))?;
+        let pubkey = self
+            .beacon_node_client
+            .validator_pubkey(envelope.validator_index)
+            .await?;
+        let epoch = slot.epoch(MainnetEthSpec::slots_per_epoch());
+        let fork = self.spec.fork_at_epoch(epoch);
+        let domain = execution_proof_domain(fork.current_version, self.genesis_validators_root);
+        let signing_root = envelope.message.signing_root(domain);
+        ensure!(
+            signature.verify(&pubkey, signing_root),
+            "invalid signature of validator {}",
+            envelope.validator_index
+        );
+        Ok(())
     }
 }

@@ -167,21 +167,21 @@ impl EngineProxyState {
         shutdown: CancellationToken,
         mut worker_output_rx: mpsc::Receiver<WorkerOutput>,
     ) {
-        let startup_values = async {
-            loop {
-                match self.startup_reads().await {
-                    Ok(values) => break values,
-                    Err(error) => {
-                        warn!(error = %format!("{error:#}"), "waiting for the beacon node");
-                        tokio::time::sleep(BEACON_NODE_RETRY_DELAY).await;
-                    }
-                }
-            }
-        };
         let (spec, genesis_validators_root, validator_index) = tokio::select! {
             () = shutdown.cancelled() => return,
-            values = startup_values => values,
+            values = async {
+                loop {
+                    match self.startup_reads().await {
+                        Ok(values) => break values,
+                        Err(error) => {
+                            warn!(error = %format!("{error:#}"), "waiting for the beacon node");
+                            tokio::time::sleep(BEACON_NODE_RETRY_DELAY).await;
+                        }
+                    }
+                }
+            } => values,
         };
+
         let validator = Validator::new(
             self.keypair.clone(),
             spec,
@@ -190,6 +190,7 @@ impl EngineProxyState {
         );
         assert!(self.validator.set(validator).is_ok(), "run is called once");
         info!(validator_index, "validator ready");
+
         let mut events = self.beacon_node_client.subscribe_execution_payloads();
         loop {
             tokio::select! {
@@ -244,9 +245,8 @@ impl EngineProxyState {
         body: Bytes,
     ) -> reqwest::Result<EngineResponse> {
         let NewPayload { request, params } = new_payload;
-        let payload = params.execution_payload_v1();
-        let block_hash = payload.block_hash;
-        let block_number = payload.block_number;
+        let block_hash = params.block_hash();
+        let block_number = params.block_number();
         info!(%block_hash, block_number, "received new payload");
         if let Err(error) = self.validator() {
             warn!(%block_hash, %error, "payload not proven");
@@ -255,8 +255,8 @@ impl EngineProxyState {
         self.notify_dashboard(DashboardMessage::request_proof(
             block_number,
             block_hash,
-            payload.timestamp,
-            payload.gas_used,
+            params.timestamp(),
+            params.gas_used(),
             self.worker_input_txs.keys().copied(),
         ));
         self.notify_dashboard(DashboardMessage::fetch_witness_start(block_hash));
@@ -315,8 +315,8 @@ impl EngineProxyState {
                     "request_proof",
                     %block_hash,
                     block_number,
-                    timestamp = payload.timestamp,
-                    gas_used = payload.gas_used
+                    timestamp = params.timestamp(),
+                    gas_used = params.gas_used()
                 );
                 let state = self.clone();
                 tokio::spawn(

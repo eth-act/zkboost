@@ -22,9 +22,9 @@ services:
       start_period: 1s
       start_interval: 1s
 
-  mock-cl:
+  mock-beacon-node:
     image: zkboost:local
-    entrypoint: ["/usr/local/bin/mock-cl"]
+    entrypoint: ["/usr/local/bin/mock-beacon-node"]
     command:
       - "--cl-endpoint"
       - "http://host.docker.internal:33001"
@@ -47,4 +47,4 @@ services:
 
 networks:
   zkboost:
-    name: zkboost-mock-cl
+    name: zkboost-mock-beacon-node

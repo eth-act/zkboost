@@ -21,9 +21,9 @@ COPY . .
 RUN --mount=type=cache,sharing=locked,target=/app/target/ \
     --mount=type=cache,sharing=locked,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry/ \
-    cargo build --release --features otel --bin zkboost --bin mock-cl && \
+    cargo build --release --features otel --bin zkboost --bin mock-beacon-node && \
     cp /app/target/release/zkboost /app/zkboost && \
-    cp /app/target/release/mock-cl /app/mock-cl
+    cp /app/target/release/mock-beacon-node /app/mock-beacon-node
 
 FROM debian:bookworm-slim
 
@@ -37,6 +37,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/zkboost /usr/local/bin/zkboost
-COPY --from=builder /app/mock-cl /usr/local/bin/mock-cl
+COPY --from=builder /app/mock-beacon-node /usr/local/bin/mock-beacon-node
 
 ENTRYPOINT ["/usr/local/bin/zkboost"]

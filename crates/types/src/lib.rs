@@ -1,4 +1,4 @@
-//! Shared types for the zkboost proof node and the mock CL. The crate holds the proof type
+//! Shared types for the zkboost proof node and the mock beacon node. The crate holds the proof type
 //! identifiers, the `engine_newPayloadV5` conversion, and the EIP-8025 execution proof envelopes.
 
 #![warn(unused_crate_dependencies)]
@@ -21,5 +21,5 @@ mod proof_type;
 /// 32-byte hash.
 pub type Hash256 = alloy_primitives::B256;
 
-/// Proof bytes of the mock zkVM, accepted as valid without a verifier.
+/// Proof bytes of the mock zkVM, accepted by the mock beacon node as valid without a verifier.
 pub const MOCK_PROOF: &[u8] = b"MOCK";

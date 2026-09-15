@@ -1,5 +1,5 @@
 [package]
-name = "mock-cl"
+name = "mock-beacon-node"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,10 +10,8 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
-async-stream.workspace = true
 axum.workspace = true
 clap = { workspace = true, features = ["derive"] }
-futures.workspace = true
 jsonwebtoken.workspace = true
 reqwest = { workspace = true, features = ["json", "stream"] }
 reqwest-eventsource.workspace = true
@@ -21,6 +19,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["full"] }
+tokio-stream.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url.workspace = true
@@ -28,13 +27,16 @@ url.workspace = true
 # alloy
 alloy-rpc-types-engine = { workspace = true, features = ["jwt"] }
 
-# ere
-ere-verifier.workspace = true
-
 # lighthouse
 lighthouse_bls.workspace = true
 ethereum_serde_utils.workspace = true
 lighthouse_types.workspace = true
+
+# ere
+ere-verifier.workspace = true
+
+# ere-guests
+stateless-validator-downloader.workspace = true
 
 # local
 zkboost-types.workspace = true

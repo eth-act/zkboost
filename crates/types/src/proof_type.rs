@@ -8,6 +8,7 @@ use std::{
 
 use ere_catalog::zkVMKind;
 use serde::{Deserialize, Serialize};
+use stateless_validator_catalog::StatelessValidatorKind;
 use strum::IntoEnumIterator;
 
 /// Execution layer proof type.
@@ -41,6 +42,16 @@ pub enum ProofType {
 }
 
 impl ProofType {
+    /// Returns the stateless validator kind for this proof type.
+    pub fn stateless_validator_kind(&self) -> StatelessValidatorKind {
+        match self {
+            Self::EthrexSP1 | Self::EthrexOpenVM | Self::EthrexZisk => {
+                StatelessValidatorKind::Ethrex
+            }
+            Self::RethSP1 | Self::RethOpenVM | Self::RethZisk => StatelessValidatorKind::Reth,
+        }
+    }
+
     /// Returns the zkVM kind for this proof type.
     pub fn zkvm_kind(&self) -> zkVMKind {
         match self {

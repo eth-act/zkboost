@@ -2,7 +2,7 @@
 members = [
     "crates/server",
     "crates/types",
-    "crates/mock-cl",
+    "crates/mock-beacon-node",
 ]
 resolver = "2"
 
@@ -29,11 +29,9 @@ result_large_err = "allow"
 
 [workspace.dependencies]
 anyhow = "1.0"
-async-stream = "0.3"
 axum = "0.8"
 bytes = "1"
 clap = "4.5"
-futures = "0.3"
 jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 lru = "0.12"
 metrics = "0.24"
@@ -86,7 +84,9 @@ ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.17
 ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.17.0" }
 
 # ere-guests
+stateless-validator-catalog = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0" }
 stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0", features = ["host"] }
+stateless-validator-downloader = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0" }
 
 # local
 zkboost-types = { path = "crates/types" }

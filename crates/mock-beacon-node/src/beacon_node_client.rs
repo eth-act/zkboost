@@ -1,27 +1,30 @@
-//! CL beacon API client, request forwarding to the CL, and Gloas beacon block decoding.
+//! Client of the beacon API of the CL. It reads the chain spec, the genesis validators root, and
+//! the public key of a validator. It streams the `block` events and forwards every other request.
+//! It decodes a Gloas block with its execution payload envelope into the `NewPayloadRequest`.
 
 use std::time::Duration;
 
-use anyhow::{anyhow, bail};
+use anyhow::{Context, anyhow, bail};
 use axum::{
     body::Bytes,
     http::{HeaderValue, Method, StatusCode, header::CONTENT_TYPE},
 };
-use futures::{Stream, StreamExt};
 use lighthouse_bls::PublicKey;
 use lighthouse_types::{
     BeaconBlockRef, BuilderDepositRequests as LighthouseBuilderDepositRequests,
-    BuilderExitRequests as LighthouseBuilderExitRequests,
+    BuilderExitRequests as LighthouseBuilderExitRequests, ChainSpec,
     ConsolidationRequests as LighthouseConsolidationRequests,
     DepositRequests as LighthouseDepositRequests,
     ExecutionRequestsGloas as LighthouseExecutionRequestsGloas, ForkName, ForkVersionDecode,
     Hash256, KzgCommitment, MainnetEthSpec, SignedBeaconBlock, SignedExecutionPayloadEnvelope,
-    WithdrawalRequests as LighthouseWithdrawalRequests,
+    Slot, WithdrawalRequests as LighthouseWithdrawalRequests,
 };
-use reqwest_eventsource::{Event as SseEvent, EventSource};
+use reqwest_eventsource::{Event, EventSource, retry::Constant};
 use serde::{Deserialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
 use tokio::time::{Instant, sleep, timeout_at};
+use tokio_stream::{Stream, StreamExt};
+use tracing::warn;
 use url::Url;
 use zkboost_types::{
     BuilderDepositRequest, BuilderDepositRequests, BuilderExitRequest, BuilderExitRequests,
@@ -30,96 +33,111 @@ use zkboost_types::{
     VersionedHashes, Withdrawal, WithdrawalRequest, WithdrawalRequests,
 };
 
+/// Delay between two connection attempts of the event stream.
+const BEACON_NODE_RETRY_DELAY: Duration = Duration::from_secs(2);
 /// Interval between execution payload envelope fetches.
 const ENVELOPE_RETRY_INTERVAL: Duration = Duration::from_millis(200);
-
 /// Budget for fetching an execution payload envelope. The builder reveals the payload after the
 /// block, so a whole mainnet slot bounds the wait.
 const ENVELOPE_TIMEOUT: Duration = Duration::from_secs(12);
 
+/// Client of the beacon API of the CL.
+#[derive(Debug)]
+pub(crate) struct BeaconNodeClient {
+    endpoint: Url,
+    http_client: reqwest::Client,
+}
+
+#[derive(Deserialize)]
+struct Data<T> {
+    data: T,
+}
+
+#[derive(Deserialize)]
+struct Genesis {
+    genesis_validators_root: Hash256,
+}
+
+#[derive(Deserialize)]
+struct ValidatorData {
+    validator: Validator,
+}
+
+#[derive(Deserialize)]
+struct Validator {
+    #[serde(with = "serde_utils::hex_vec")]
+    pubkey: Vec<u8>,
+}
+
 /// A `block` event of the beacon API event stream.
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct Block {
+#[derive(Debug, Deserialize)]
+pub(crate) struct BlockEvent {
     /// Slot of the block.
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub(crate) slot: u64,
+    pub(crate) slot: Slot,
     /// Root of the block.
     pub(crate) block: Hash256,
 }
 
-/// CL config.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub(crate) struct Spec {
-    /// Chain id of the deposit contract, which is the chain id of the EL.
-    #[serde(with = "serde_utils::quoted_u64")]
-    pub(crate) deposit_chain_id: u64,
-}
-
-/// Client of the beacon API of the CL.
-#[derive(Clone)]
-pub(crate) struct ClClient {
-    base_url: Url,
-    http: reqwest::Client,
-}
-
-impl ClClient {
-    /// Creates a client of the beacon API at `base_url`.
-    pub(crate) fn new(base_url: Url) -> Self {
+impl BeaconNodeClient {
+    /// Creates the client of the beacon API at the endpoint.
+    pub(crate) fn new(endpoint: Url) -> Self {
         Self {
-            base_url,
-            http: reqwest::Client::new(),
+            endpoint,
+            // A request timeout covers the whole response, so the streamed events and bodies need
+            // a client without one.
+            http_client: reqwest::Client::new(),
         }
     }
 
-    /// Streams every `block` event of the beacon API event stream.
-    pub(crate) fn subscribe_block_events(
-        &self,
-    ) -> impl Stream<Item = Result<Block, anyhow::Error>> + Send + '_ {
-        async_stream::try_stream! {
-            let mut url = self.base_url.join("eth/v1/events")?;
-            url.query_pairs_mut().append_pair("topics", "block");
-            let mut event_source = EventSource::new(self.http.get(url))?;
-            while let Some(event) = event_source.next().await {
-                match event {
-                    Ok(SseEvent::Open) => {}
-                    Ok(SseEvent::Message(message)) if message.event == "block" => {
-                        let block_event: Block = serde_json::from_str(&message.data)?;
-                        yield block_event
-                    }
-                    Ok(SseEvent::Message(_)) => {}
-                    Err(error) => {
-                        event_source.close();
-                        Err(anyhow!("{error}"))?;
-                    }
-                }
+    /// Subscribes to the `block` events of the beacon node. The stream reconnects after a lost
+    /// connection and does not end.
+    pub(crate) fn subscribe_blocks(&self) -> impl Stream<Item = BlockEvent> + '_ {
+        let mut url = self
+            .endpoint
+            .join("eth/v1/events")
+            .expect("the beacon endpoint accepts a relative path");
+        url.query_pairs_mut().append_pair("topics", "block");
+        let mut event_source = EventSource::new(self.http_client.get(url))
+            .expect("the stream request carries no body");
+        event_source.set_retry_policy(Box::new(Constant::new(BEACON_NODE_RETRY_DELAY, None)));
+        event_source.filter_map(|event| match event {
+            Ok(Event::Message(message)) if message.event == "block" => {
+                serde_json::from_str::<BlockEvent>(&message.data)
+                    .inspect_err(|error| warn!(%error, "block event not decodable"))
+                    .ok()
             }
-        }
+            Ok(_) => None,
+            Err(error) => {
+                warn!(error = %format!("{error:#}"), "block stream lost");
+                None
+            }
+        })
     }
 
-    /// Fetches a signed beacon block by root, decoded from SSZ by its fork.
-    pub(crate) async fn get_beacon_block(
+    /// Returns the signed beacon block of a root, decoded from SSZ by its fork.
+    pub(crate) async fn block(
         &self,
-        block_root: Hash256,
+        root: Hash256,
     ) -> anyhow::Result<SignedBeaconBlock<MainnetEthSpec>> {
         let url = self
-            .base_url
-            .join(&format!("eth/v2/beacon/blocks/{block_root}"))?;
+            .endpoint
+            .join(&format!("eth/v2/beacon/blocks/{root}"))?;
         let response = self
-            .http
-            .get(url)
+            .http_client
+            .get(url.clone())
             .header("Accept", "application/octet-stream")
             .send()
-            .await?;
-        if !response.status().is_success() {
-            let status = response.status();
+            .await
+            .with_context(|| format!("GET {url}"))?;
+        let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            bail!("{status}: {body}");
+            bail!("GET {url}: {status}: {body}");
         }
         let fork_name: ForkName = response
             .headers()
             .get("Eth-Consensus-Version")
-            .ok_or_else(|| anyhow!("missing Eth-Consensus-Version"))?
+            .context("missing Eth-Consensus-Version")?
             .to_str()?
             .parse()
             .map_err(|error: String| anyhow!("{error}"))?;
@@ -128,24 +146,25 @@ impl ClClient {
             .map_err(|error| anyhow!("{error:?}"))
     }
 
-    /// Fetches the execution payload envelope of a Gloas block. Retries until the builder
-    /// publishes it or the budget expires.
-    pub(crate) async fn get_execution_payload_envelope(
+    /// Returns the execution payload envelope of a Gloas block. It retries until the builder
+    /// publishes the envelope or the budget expires.
+    pub(crate) async fn execution_payload_envelope(
         &self,
-        block_root: Hash256,
+        root: Hash256,
     ) -> anyhow::Result<SignedExecutionPayloadEnvelope<MainnetEthSpec>> {
-        let path = format!("eth/v1/beacon/execution_payload_envelopes/{block_root}");
+        let path = format!("eth/v1/beacon/execution_payload_envelopes/{root}");
         let deadline = Instant::now() + ENVELOPE_TIMEOUT;
         let mut last_error = None;
         loop {
-            match timeout_at(deadline, self.get_json(&path)).await {
-                Ok(Ok(envelope)) => return Ok(envelope),
+            match timeout_at(deadline, self.get(&path)).await {
+                Ok(Ok(Some(envelope))) => return Ok(envelope),
+                Ok(Ok(None)) => last_error = None,
                 Ok(Err(error)) => last_error = Some(error),
                 Err(_) => {}
             }
             if Instant::now() >= deadline {
                 let context =
-                    format!("execution payload envelope for {block_root} not published in time");
+                    format!("execution payload envelope for {root} not published in time");
                 return Err(match last_error {
                     Some(error) => error.context(context),
                     None => anyhow!(context),
@@ -155,60 +174,34 @@ impl ClClient {
         }
     }
 
-    /// Fetches the spec.
-    pub(crate) async fn get_spec(&self) -> anyhow::Result<Spec> {
-        self.get_json("eth/v1/config/spec").await
-    }
-
-    /// Fetches the genesis validators root.
-    pub(crate) async fn get_genesis_validators_root(&self) -> anyhow::Result<Hash256> {
-        #[derive(Deserialize)]
-        struct Genesis {
-            genesis_validators_root: Hash256,
-        }
-
-        Ok(self
-            .get_json::<Genesis>("eth/v1/beacon/genesis")
+    /// Returns the chain spec of the beacon node.
+    pub(crate) async fn spec(&self) -> anyhow::Result<ChainSpec> {
+        let config = self
+            .get("eth/v1/config/spec")
             .await?
-            .genesis_validators_root)
+            .context("spec not found")?;
+        ChainSpec::from_config::<MainnetEthSpec>(&config)
+            .context("beacon node spec is not the mainnet preset")
     }
 
-    /// Fetches the current fork version of a state.
-    pub(crate) async fn get_fork_version(&self, state_root: Hash256) -> anyhow::Result<[u8; 4]> {
-        #[derive(Deserialize)]
-        struct Fork {
-            #[serde(with = "serde_utils::bytes_4_hex")]
-            current_version: [u8; 4],
-        }
-
-        Ok(self
-            .get_json::<Fork>(&format!("eth/v1/beacon/states/{state_root}/fork"))
+    /// Returns the public key of a validator in the head state.
+    pub(crate) async fn validator_pubkey(&self, validator_index: u64) -> anyhow::Result<PublicKey> {
+        let path = format!("eth/v1/beacon/states/head/validators/{validator_index}");
+        let validator: ValidatorData = self
+            .get(&path)
             .await?
-            .current_version)
-    }
-
-    /// Fetches the public key of a validator.
-    pub(crate) async fn get_validator_pubkey(
-        &self,
-        validator_index: u64,
-    ) -> anyhow::Result<PublicKey> {
-        #[derive(Deserialize)]
-        struct ValidatorData {
-            validator: Validator,
-        }
-        #[derive(Deserialize)]
-        struct Validator {
-            #[serde(with = "serde_utils::hex_vec")]
-            pubkey: Vec<u8>,
-        }
-
-        let data: ValidatorData = self
-            .get_json(&format!(
-                "eth/v1/beacon/states/head/validators/{validator_index}"
-            ))
-            .await?;
-        PublicKey::deserialize(&data.validator.pubkey)
+            .with_context(|| format!("validator {validator_index} not found"))?;
+        PublicKey::deserialize(&validator.validator.pubkey)
             .map_err(|error| anyhow!("validator {validator_index} pubkey: {error:?}"))
+    }
+
+    /// Returns the genesis validators root of the beacon node.
+    pub(crate) async fn genesis_validators_root(&self) -> anyhow::Result<Hash256> {
+        let genesis: Genesis = self
+            .get("eth/v1/beacon/genesis")
+            .await?
+            .context("genesis not found")?;
+        Ok(genesis.genesis_validators_root)
     }
 
     /// Forwards a request to the CL and returns the response status, content type, and the
@@ -219,28 +212,36 @@ impl ClClient {
         path_and_query: &str,
         body: Bytes,
     ) -> anyhow::Result<(StatusCode, Option<HeaderValue>, reqwest::Response)> {
-        let url = self.base_url.join(path_and_query)?;
-        let response = self.http.request(method, url).body(body).send().await?;
+        let url = self.endpoint.join(path_and_query)?;
+        let response = self
+            .http_client
+            .request(method, url)
+            .body(body)
+            .send()
+            .await?;
         let status = response.status();
         let content_type = response.headers().get(CONTENT_TYPE).cloned();
         Ok((status, content_type, response))
     }
 
-    /// Fetches a beacon-API endpoint and returns its `data` payload.
-    async fn get_json<T: DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
-        #[derive(Deserialize)]
-        struct Data<T> {
-            data: T,
+    /// Fetches the `data` of a beacon API resource, or `None` when it does not exist.
+    async fn get<T: DeserializeOwned>(&self, path: &str) -> anyhow::Result<Option<T>> {
+        let url = self.endpoint.join(path)?;
+        let response = self
+            .http_client
+            .get(url.clone())
+            .send()
+            .await
+            .with_context(|| format!("GET {url}"))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
         }
-
-        let url = self.base_url.join(path)?;
-        let response = self.http.get(url).send().await?;
-        if !response.status().is_success() {
-            let status = response.status();
+        let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            bail!("{path}: {status}: {body}");
+            bail!("GET {url}: {status}: {body}");
         }
-        Ok(response.json::<Data<T>>().await?.data)
+        Ok(Some(response.json::<Data<T>>().await?.data))
     }
 }
 

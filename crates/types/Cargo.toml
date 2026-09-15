@@ -30,6 +30,7 @@ ere-catalog.workspace = true
 
 # ere-guests
 stateless-validator-common.workspace = true
+stateless-validator-catalog.workspace = true
 
 [dev-dependencies]
 # lighthouse
