@@ -17,13 +17,38 @@ services:
       timeout: 5s
       retries: 30
 
-  ethrex-zisk:
+  ethrex-openvm:
+    image: ghcr.io/eth-act/ere/ere-server-openvm:0.17.0-cuda
+    command:
+      - "--port"
+      - "3000"
+      - "--elf-url"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-ethrex-openvm-v2.1.0-preview.elf"
+      - "gpu"
+    shm_size: 2G
+    networks:
+      - zkboost
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
+      start_period: 300s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+
+  reth-zisk:
     image: ghcr.io/eth-act/ere/ere-server-zisk:0.17.0-cuda
     command:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-ethrex-zisk-v1.1.0-alpha.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-reth-zisk-v1.1.0-alpha.elf"
       - "gpu"
     shm_size: 32G
     ulimits:
@@ -44,23 +69,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0', '1', '2', '3']
-              capabilities: [gpu]
-
-  reth-zisk:
-    extends: ethrex-zisk
-    command:
-      - "--port"
-      - "3000"
-      - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-reth-zisk-v1.1.0-alpha.elf"
-      - "gpu"
-    deploy: !override
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['4', '5', '6', '7']
+              device_ids: ['1']
               capabilities: [gpu]
 
   zkboost:
@@ -74,7 +83,7 @@ services:
     depends_on:
       geth:
         condition: service_healthy
-      ethrex-zisk:
+      ethrex-openvm:
         condition: service_healthy
       reth-zisk:
         condition: service_healthy

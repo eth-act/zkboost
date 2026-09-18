@@ -15,6 +15,16 @@ participants:
       - --proof-engine=/config/proof-engine.json
     cl_extra_mounts:
       /config: proof-engine.json
+  # Proof-only observer: no execution client, Engine API endpoint, or validators.
+  # Receives proofs over gossip from the third Lighthouse after zkboost submits them.
+  - el_type: None
+    cl_type: lighthouse
+    cl_image: lighthouse:eth-act-optional-proofs-gloas
+    validator_count: 0
+    cl_extra_params:
+      - --proof-engine=/config/proof-engine.json
+    cl_extra_mounts:
+      /config: proof-engine.json
 network_params:
   gloas_fork_epoch: 0
 # The verifying keys of the guests of the ere-guests v0.17.0 release, by EIP-8025 proof type.

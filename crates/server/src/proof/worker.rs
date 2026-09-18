@@ -103,7 +103,7 @@ pub(crate) async fn run_worker(
             .await
         {
             Ok(Ok(proof)) => ProofResult::Ok(proof),
-            Ok(Err(error)) => ProofResult::Err(error.to_string()),
+            Ok(Err(error)) => ProofResult::Err(format!("{error:#}")),
             Err(_) => ProofResult::Timeout,
         };
         let duration = start.elapsed();

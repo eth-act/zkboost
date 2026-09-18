@@ -82,13 +82,20 @@ proof_type = "ethrex-zisk"
 # Endpoint of the Ere server
 endpoint = "http://ere-server:3000"
 
-# External proving cluster (ZisK proof types only)
+# External proving cluster (ZisK and OpenVM proof types)
 [[zkvm]]
 kind = "cluster"
 proof_type = "reth-zisk"
 endpoint = "http://zisk-cluster:50051"
 elf_url = "https://example.com/stateless-validator-reth-zisk.elf"
 # elf_path = "/path/to/program.elf"   # mutually exclusive with elf_url
+
+# An OpenVM cluster is the manager of the han0110/axiom-edge fork. Its loadout must hold the guest named after the ELF.
+[[zkvm]]
+kind = "cluster"
+proof_type = "reth-openvm"
+endpoint = "http://openvm-cluster:3000"
+elf_url = "https://example.com/stateless-validator-reth-openvm.elf"
 
 # Mock zkVMs (in-process, for testing without Docker/GPU).
 # The mock sleeps for the simulated proving time and returns the proof bytes `MOCK`.

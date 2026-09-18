@@ -118,7 +118,7 @@ impl Config {
             } = zkvm
             {
                 ensure!(
-                    matches!(proof_type.zkvm_kind(), zkVMKind::Zisk),
+                    matches!(proof_type.zkvm_kind(), zkVMKind::Zisk | zkVMKind::OpenVM),
                     "proof_type {proof_type} is not supported by cluster backend"
                 );
                 ensure!(
@@ -190,7 +190,7 @@ pub enum zkVMConfig {
     },
     /// Remote cluster backend.
     Cluster {
-        /// Proof type. Currently only supports ZisK proof types.
+        /// Proof type of a ZisK or OpenVM guest.
         proof_type: ProofType,
         /// Timeout in seconds for proof generation.
         #[serde(default = "default_proof_timeout_secs")]
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cluster_non_zisk_rejected() {
+    fn test_cluster_sp1_rejected() {
         let toml = r#"
             [[zkvm]]
             kind = "cluster"
@@ -426,6 +426,19 @@ mod tests {
         "#;
         let config = parse(toml);
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_cluster_openvm_accepted() {
+        let toml = r#"
+            [[zkvm]]
+            kind = "cluster"
+            proof_type = "reth-openvm"
+            endpoint = "http://openvm-cluster:3000"
+            elf_path = "/tmp/stateless-validator-reth-openvm.elf"
+        "#;
+        let config = parse(toml);
+        config.validate().unwrap();
     }
 
     #[test]

@@ -51,9 +51,10 @@ if ! command -v yq &> /dev/null; then
 fi
 
 LH_BRANCH=optional-proofs-gloas
-LH_IMAGE_NAME=$(yq eval '.participants[] | select(.cl_image == "lighthouse:eth-act-optional-proofs-gloas") | .cl_image' "$NETWORK_PARAMS_FILE")
+LH_IMAGE_NAME=lighthouse:eth-act-optional-proofs-gloas
 
-if [ "$BUILD_IMAGE" = true ] && [ -n "$LH_IMAGE_NAME" ]; then
+if [ "$BUILD_IMAGE" = true ] &&
+  LH_IMAGE_NAME="$LH_IMAGE_NAME" yq -e '[.participants[].cl_image == strenv(LH_IMAGE_NAME)] | any' "$NETWORK_PARAMS_FILE" > /dev/null; then
   # eth-act/lighthouse publishes no image of this branch.
   echo "Building Lighthouse docker image ($LH_IMAGE_NAME) from eth-act/lighthouse@$LH_BRANCH."
   LH_SRC=$(mktemp -d)

@@ -11,8 +11,8 @@ enabled = true
 
 [[zkvm]]
 kind = "ere"
-proof_type = "ethrex-zisk"
-endpoint = "http://ethrex-zisk:3000"
+proof_type = "ethrex-openvm"
+endpoint = "http://ethrex-openvm:3000"
 
 [[zkvm]]
 kind = "ere"

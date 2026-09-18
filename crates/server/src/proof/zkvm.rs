@@ -38,7 +38,7 @@ pub(crate) enum zkVMInstance {
         /// Mock zkVM implementation.
         vm: MockzkVM,
     },
-    /// External cluster, currently only supports ZisK.
+    /// External cluster of a ZisK or OpenVM guest.
     Cluster {
         /// Proof type identifier.
         proof_type: ProofType,
