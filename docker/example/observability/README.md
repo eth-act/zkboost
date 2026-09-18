@@ -2,15 +2,15 @@
 
 This example runs zkboost with three mock zkVM backends, `mock-beacon-node`, Prometheus, Tempo, and Grafana against a local Kurtosis testnet.
 
-The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks. Docker Compose runs a separate Geth whose Engine API is used only by zkboost.
+The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks. Docker Compose runs a separate Geth. Only zkboost uses its Engine API.
 
 ## Proof flow
 
-- The mock beacon node follows the canonical head of the first participant’s Lighthouse and sends its Gloas payloads to zkboost as `engine_newPayloadV5`.
+- The mock beacon node follows the canonical head of the Lighthouse of the first participant. It sends the Gloas payloads to zkboost as `engine_newPayloadV5`.
 - zkboost forwards the payload to the dedicated Geth, proves it with the mocks, and exports its spans to Tempo.
 - zkboost submits the signed proofs to the mock beacon node, which verifies them.
 
-The `reth-sp1` mock has `mock_failure = true`. It shows the failure path and makes the mock beacon node wait its proof timeout for every block.
+The `reth-sp1` mock has `mock_failure = true`. Its proof always fails, so the mock beacon node waits the full proof timeout for every block.
 
 ## Start
 
@@ -19,11 +19,11 @@ The `reth-sp1` mock has `mock_failure = true`. It shows the failure path and mak
 
 ### Testnet settings
 
-- **Requirements:** Docker, Kurtosis, and `yq`.
-- **Enclave:** defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before running the scripts and Compose.
-- **Genesis:** saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.
-- **Networks:** `zkboost` is scoped to the Compose project; services that access the testnet also join `kt-${ENCLAVE_NAME}`.
-- **After recreating the testnet:** recreate the Compose Geth container too. Its chain data lives in the container.
+- The scripts need Docker, Kurtosis, and `yq`.
+- The enclave name defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before you run the scripts and Compose.
+- The genesis is saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.
+- Compose services share the project-scoped `zkboost` network. Geth and the mock beacon node also join the enclave network `kt-${ENCLAVE_NAME}`.
+- After you recreate the testnet, also recreate the Compose Geth container. Its chain data lives in the container.
 
 ### Dedicated Geth
 
@@ -34,13 +34,13 @@ The `reth-sp1` mock has `mock_failure = true`. It shows the failure path and mak
 
 ### Head tracking and sync
 
-The mock beacon node refreshes the canonical head on SSE notifications and every two seconds, including after reconnecting.
+The mock beacon node refreshes the canonical head on every SSE head event and every two seconds. The periodic refresh also recovers missed events after a reconnect.
 
-1. Announce missing parents and send `engine_forkchoiceUpdatedV4` to sync history from the peer.
-2. Execute the new payload through zkboost, then advance forkchoice.
-3. Verify proofs independently while processing further execution updates in order.
+1. It announces a missing parent with `engine_forkchoiceUpdatedV4`, so Geth syncs the history from the peer.
+2. It executes the new payload through zkboost, then advances forkchoice.
+3. It waits for the proofs of the block and processes the next heads meanwhile.
 
-Catch-up retries on subsequent refreshes.
+If the parent is still syncing, the next refresh retries.
 
 ## Dashboards
 
@@ -50,7 +50,7 @@ Catch-up retries on subsequent refreshes.
 | Prometheus | http://localhost:9090           | -             |
 | Grafana    | http://localhost:3002           | admin / admin |
 
-The zkboost dashboard of Grafana is provisioned under Dashboards.
+Grafana provisions the zkboost dashboard under Dashboards.
 
 ## Stop
 

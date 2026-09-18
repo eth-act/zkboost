@@ -2,7 +2,7 @@
 
 This example runs a local Kurtosis testnet with geth and lighthouse. Gloas is active from genesis. zkboost runs beside it with two Ere GPU provers for `ethrex-zisk` and `reth-zisk`. A lighthouse built from the `optional-proofs-gloas` branch of [eth-act/lighthouse](https://github.com/eth-act/lighthouse) uses zkboost as its Engine API endpoint.
 
-zkboost forwards every request to a dedicated Geth started by Docker Compose. It obtains the execution witness of every valid payload and proves that payload.
+zkboost forwards every request to a dedicated Geth started by Docker Compose. It obtains the execution witness of each valid payload and requests a proof.
 
 ```mermaid
 sequenceDiagram
@@ -22,22 +22,22 @@ sequenceDiagram
 
 ## Testnet layout
 
-| Participants | Role |
-| --- | --- |
-| First two | Geth and Lighthouse block producers, holding two thirds of the stake. |
-| Third | eth-act Lighthouse; follows gossip and executes through zkboost and the Compose Geth. |
+| Participants | Role                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| First two    | Geth and Lighthouse block producers with two thirds of the stake.                        |
+| Third        | eth-act Lighthouse. It follows gossip and executes through zkboost and the Compose Geth. |
 
-The third Lighthouse uses the proof-engine verifying keys in `network_params.yaml`. zkboost signs proofs as **validator 256**, using the keystore in `docker/example/testnet/validator-keys`, and submits them to this Lighthouse.
+The third Lighthouse uses the proof-engine verifying keys in `network_params.yaml`. zkboost signs proofs as validator 256 with the keystore in `docker/example/testnet/validator-keys` and submits them to this Lighthouse.
 
 ### Networking
 
 Compose services share the project-scoped `zkboost` network. Geth and zkboost also join the enclave network.
 
-| Connection | Address |
-| --- | --- |
-| Lighthouse → zkboost | `zkboost:3000` |
-| zkboost → Geth | `geth:8551` |
-| zkboost → Lighthouse | `cl-3-lighthouse:4000` |
+| Connection            | Address                |
+| --------------------- | ---------------------- |
+| Lighthouse to zkboost | `zkboost:3000`         |
+| zkboost to Geth       | `geth:8551`            |
+| zkboost to Lighthouse | `cl-3-lighthouse:4000` |
 
 ### Dedicated Geth
 
@@ -46,12 +46,13 @@ Compose services share the project-scoped `zkboost` network. Geth and zkboost al
 - Needs no fixed node key. Its Engine API has no published host port.
 - All Kurtosis Lighthouse nodes keep running.
 
-## Not ready
+## Compatibility
 
-The example runs the Engine API flow and the proof delivery end to end. lighthouse accepts every envelope, checks the validator signature, and its proof engine rejects every proof with `InvalidProof`.
+The start script builds Lighthouse from the tip of `optional-proofs-gloas`. Commit [`12702b39e`](https://github.com/eth-act/lighthouse/commit/12702b39e565c8827e90e14a100bff1d2ed308d5) and later commits of the branch are compatible with this example. An older image with the same tag can contain an incompatible verifier. Rebuild it before you pass `-b false`.
 
-- lighthouse has a newer ere verifier than the provers, so it rejects their proofs. lighthouse also knows the proof types of the reth guests only.
-- The public values that the [proof engine](https://github.com/eth-act/lighthouse/blob/a62a9709da55d98664f4d903e75041f71aae23d8/beacon_node/proof_engine/src/ere/mod.rs#L45-L67) of lighthouse expects differ from the output of the guests.
+Lighthouse accepts only the reth proof types 1 to 3 (`reth-openvm`, `reth-sp1`, `reth-zisk`). It does not support the ethrex proof types 4 to 6, and their verifying keys do not enable them. Consequently Lighthouse verifies only the `reth-zisk` proofs of this example.
+
+The third Lighthouse executes every payload through zkboost and verifies the submitted proofs. The example runs no proof-only node and no proof gossip between proof-enabled nodes. The other two Lighthouse nodes do not subscribe to execution proofs. Lighthouse therefore logs `NoPeersSubscribedToTopic` for `execution_proof` after a successful local verification.
 
 ## Installation
 
@@ -61,42 +62,14 @@ The example runs the Engine API flow and the proof delivery end to end. lighthou
 
 1. Install [`yq`](https://github.com/mikefarah/yq). On Ubuntu, `snap install yq` installs it.
 
-## (Optional) Build image locally with GPU acceleration
-
-The pre-built ZisK prover image (`ghcr.io/eth-act/ere/ere-server-zisk:0.17.0-cuda`) supports Blackwell GPUs only (ZisK only supports single architecture codegen). If you have a Blackwell GPU, for example RTX 50 series or RTX PRO 6000, skip this section.
-
-Build the image with the compute capability of local GPU:
-
-```bash
-git clone --depth 1 --branch v0.17.0 https://github.com/eth-act/ere
-cd ere
-CUDA_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
-echo "Building for CUDA architecture: $CUDA_ARCH"
-bash .github/scripts/build-image.sh \
-    --registry ghcr.io/eth-act/ere \
-    --zkvm zisk \
-    --tag 0.17.0-cuda \
-    --base \
-    --server \
-    --cuda \
-    --cuda-archs "$CUDA_ARCH"
-```
-
-This produces `ghcr.io/eth-act/ere/ere-server-zisk:0.17.0-cuda`. The compose file references this image.
-
 ## Start local testnet
 
-The start script:
+Run every command from the repository root.
 
-- Saves the enclave genesis for the dedicated Geth.
-- Builds `lighthouse:eth-act-optional-proofs-gloas` from the eth-act branch. This takes several minutes; pass `-b false` to reuse an existing image.
+The start script builds `lighthouse:eth-act-optional-proofs-gloas` from the eth-act branch, starts the enclave, and saves the enclave genesis for the dedicated Geth. The image build takes several minutes. Pass `-b false` to reuse an existing image.
 
-### Enclave settings
-
-- **Name:** defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before running the scripts and Compose.
-- **Genesis:** saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.
-
-In `zkboost` repo:
+- The enclave name defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before you run the scripts and Compose.
+- The genesis is saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.
 
 ```
 ./docker/scripts/start_local_testnet.sh
@@ -104,11 +77,9 @@ In `zkboost` repo:
 
 ## Start zkboost and provers
 
-After recreating the testnet, recreate the Compose Geth container too: its chain data lives in the container.
+After you recreate the testnet, also recreate the Compose Geth container. Its chain data lives in the container.
 
 Set the GPU devices in `docker-compose.yml`. The default assigns GPUs 0 to 3 to `ethrex-zisk` and 4 to 7 to `reth-zisk`.
-
-In `zkboost` repo:
 
 ```
 docker compose -f ./docker/example/testnet/docker-compose.yml build
@@ -117,24 +88,21 @@ docker compose -f ./docker/example/testnet/docker-compose.yml up -d
 
 ### Check progress
 
-- **Dashboard:** http://localhost:3000/dashboard.
-- **Execution:** the third Lighthouse logs `exec_hash: ... (verified)` for payloads executed through zkboost.
-- **Proof delivery:** zkboost logs `proof submitted` or `proof submission failed`, including the Lighthouse reason.
+- The dashboard is at http://localhost:3000/dashboard.
+- zkboost logs `received new payload` and then `proof dispatched` for each payload. The third Lighthouse reports `is_optimistic: false` and `el_offline: false` at `/eth/v1/node/syncing`. Its Gloas status log can show `exec_hash: "n/a"`. Use the two checks below for proof verification.
+- zkboost logs `proof submitted` with `proof_type=reth-zisk` after Lighthouse accepts the signed proof. A `proof submission failed` log includes the Lighthouse reason.
+- Query `GET /eth/v1/beacon/execution_proofs/{block_id}` on the third Lighthouse with the root or slot of the proven block. A `data` entry with proof type `"3"` shows that Lighthouse cached the proof. Query soon after the submission, because the cache is bounded. The `head` block can be newer than the proven block.
 
-## Stop zkboost
+For example (replace `3` with a proven slot in your run):
 
-In `zkboost` repo:
-
+```bash
+SLOT="3"
+BEACON_API=$(kurtosis port print "${ENCLAVE_NAME:-local-testnet}" cl-3-lighthouse http)
+curl -fsS "$BEACON_API/eth/v1/beacon/execution_proofs/$SLOT" \
+  | yq -p=json '.data[] | {"proof_type": .message.proof_type, "validator_index": .validator_index, "beacon_block_root": .message.beacon_block_root}'
 ```
-docker compose -f ./docker/example/testnet/docker-compose.yml down
-```
 
-## Stop local testnet
+## Stop
 
-The Compose services stop first, because Kurtosis removes the enclave network while the Compose containers are attached to it.
-
-In `zkboost` repo:
-
-```
-./docker/scripts/stop_local_testnet.sh
-```
+1. Run `docker compose -f ./docker/example/testnet/docker-compose.yml down`.
+2. Run `./docker/scripts/stop_local_testnet.sh`.
