@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::{Context, ensure};
-use ere_verifier::zkVMKind;
+use ere_catalog::zkVMKind;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use zkboost_types::ProofType;

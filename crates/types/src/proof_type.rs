@@ -113,6 +113,7 @@ impl FromStr for ProofType {
             "reth-openvm" => Self::RethOpenVM,
             "reth-sp1" => Self::RethSP1,
             "reth-zisk" => Self::RethZisk,
+            "zesu-zisk" => Self::ZesuZisk,
             _ => return Err(ProofTypeParseError(s.to_string())),
         })
     }

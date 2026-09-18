@@ -54,11 +54,14 @@ impl DashboardState {
         }
     }
 
-    fn insert_block(&mut self, hash: Hash256, record: HistoricalBlock) {
-        if self.historical_blocks.contains(&hash) {
-            return;
+    /// Inserts the record of a block, unless the block has one, and returns the record.
+    fn insert_block(&mut self, hash: Hash256, record: HistoricalBlock) -> &mut HistoricalBlock {
+        if !self.historical_blocks.contains(&hash) {
+            self.historical_blocks.push(hash, record);
         }
-        self.historical_blocks.push(hash, record);
+        self.historical_blocks
+            .peek_mut(&hash)
+            .expect("the block record was inserted")
     }
 }
 
@@ -117,9 +120,6 @@ pub(crate) struct HistoricalBlock {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HistoricalProof {
-    /// Seconds since block timestamp when the proof was requested. None if unknown.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) requested_s: Option<f64>,
     /// Seconds since block timestamp when proving started. None before proving begins.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) started_s: Option<f64>,
@@ -140,8 +140,8 @@ pub(crate) struct HistoricalProof {
 /// Messages consumed by the dashboard service event loop.
 #[derive(Debug)]
 pub(crate) enum DashboardMessage {
-    /// A new proof request was submitted for a block.
-    RequestProof {
+    /// Witness fetch started for a block, which starts its record.
+    FetchWitnessStart {
         /// Block number.
         block_number: u64,
         /// Block hash.
@@ -150,15 +150,6 @@ pub(crate) enum DashboardMessage {
         block_timestamp: u64,
         /// Gas used by the block.
         gas_used: u64,
-        /// Proof types requested, sorted.
-        proof_types: Vec<ProofType>,
-        /// Unix time of the request in seconds.
-        timestamp_secs: f64,
-    },
-    /// Witness fetch started for a block.
-    FetchWitnessStart {
-        /// Block hash.
-        block_hash: Hash256,
         /// Unix time of the fetch start in seconds.
         timestamp_secs: f64,
     },
@@ -200,30 +191,18 @@ pub(crate) enum DashboardMessage {
 }
 
 impl DashboardMessage {
-    /// Builds the request message of a block, with the proof types sorted.
-    pub(crate) fn request_proof(
+    /// Builds the witness fetch start message of a block, timed now.
+    pub(crate) fn fetch_witness_start(
         block_number: u64,
         block_hash: Hash256,
         block_timestamp: u64,
         gas_used: u64,
-        proof_types: impl Iterator<Item = ProofType>,
     ) -> Self {
-        let mut proof_types: Vec<_> = proof_types.collect();
-        proof_types.sort();
-        Self::RequestProof {
+        Self::FetchWitnessStart {
             block_number,
             block_hash,
             block_timestamp,
             gas_used,
-            proof_types,
-            timestamp_secs: now_secs(),
-        }
-    }
-
-    /// Builds the witness fetch start message of a block, timed now.
-    pub(crate) fn fetch_witness_start(block_hash: Hash256) -> Self {
-        Self::FetchWitnessStart {
-            block_hash,
             timestamp_secs: now_secs(),
         }
     }
@@ -277,9 +256,9 @@ impl DashboardMessage {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub(crate) enum DashboardEvent {
-    /// A new proof request was submitted.
+    /// Witness fetch started, which starts the record of the block.
     #[serde(rename_all = "camelCase")]
-    RequestProof {
+    FetchWitnessStart {
         /// Block number.
         block_number: u64,
         /// Block hash.
@@ -288,16 +267,6 @@ pub(crate) enum DashboardEvent {
         block_timestamp: u64,
         /// Gas used by the block.
         gas_used: u64,
-        /// Seconds since block timestamp when the proofs were requested.
-        started_s: f64,
-        /// Proof types requested, sorted.
-        proof_types: Vec<ProofType>,
-    },
-    /// Witness fetch started.
-    #[serde(rename_all = "camelCase")]
-    FetchWitnessStart {
-        /// Block hash.
-        block_hash: Hash256,
         /// Seconds since block timestamp when the fetch started.
         started_s: f64,
     },
@@ -347,7 +316,6 @@ impl DashboardEvent {
     /// Returns the SSE event name and JSON-serialized data for this event.
     pub(crate) fn to_parts(&self) -> (&'static str, String) {
         let event_name = match self {
-            Self::RequestProof { .. } => "requestProof",
             Self::FetchWitnessStart { .. } => "fetchWitnessStart",
             Self::FetchWitnessEnd { .. } => "fetchWitnessEnd",
             Self::ProveStart { .. } => "proveStart",
@@ -397,17 +365,16 @@ impl DashboardService {
 
     async fn handle_message(&mut self, message: DashboardMessage) {
         match message {
-            DashboardMessage::RequestProof {
+            DashboardMessage::FetchWitnessStart {
                 block_number,
                 block_hash,
                 block_timestamp,
                 gas_used,
-                proof_types,
                 timestamp_secs,
             } => {
                 let started_s = timestamp_secs - block_timestamp as f64;
                 let mut state = self.state.write().await;
-                state.insert_block(
+                let block = state.insert_block(
                     block_hash,
                     HistoricalBlock {
                         block_number,
@@ -417,39 +384,14 @@ impl DashboardService {
                         ..Default::default()
                     },
                 );
-                if let Some(block) = state.historical_blocks.peek_mut(&block_hash) {
-                    for &proof_type in &proof_types {
-                        block.proofs.entry(proof_type).or_insert(HistoricalProof {
-                            requested_s: Some(started_s),
-                            ..Default::default()
-                        });
-                    }
-                }
-                drop(state);
-
-                let _ = self.event_tx.send(DashboardEvent::RequestProof {
-                    block_number,
-                    block_hash,
-                    block_timestamp,
-                    gas_used,
-                    started_s,
-                    proof_types,
-                });
-            }
-            DashboardMessage::FetchWitnessStart {
-                block_hash,
-                timestamp_secs,
-            } => {
-                let mut state = self.state.write().await;
-                let Some(block) = state.historical_blocks.peek_mut(&block_hash) else {
-                    return;
-                };
-                let started_s = timestamp_secs - block.block_timestamp as f64;
                 block.witness_started_s = Some(started_s);
                 drop(state);
 
                 let _ = self.event_tx.send(DashboardEvent::FetchWitnessStart {
+                    block_number,
                     block_hash,
+                    block_timestamp,
+                    gas_used,
                     started_s,
                 });
             }
@@ -486,9 +428,7 @@ impl DashboardService {
                     return;
                 };
                 let started_s = timestamp_secs - block.block_timestamp as f64;
-                if let Some(record) = block.proofs.get_mut(&proof_type) {
-                    record.started_s = Some(started_s);
-                }
+                block.proofs.entry(proof_type).or_default().started_s = Some(started_s);
                 drop(state);
 
                 let _ = self.event_tx.send(DashboardEvent::ProveStart {
@@ -510,12 +450,11 @@ impl DashboardService {
                     return;
                 };
                 let ended_s = timestamp_secs - block.block_timestamp as f64;
-                if let Some(record) = block.proofs.get_mut(&proof_type) {
-                    record.result = Some(result);
-                    record.error = error.clone();
-                    record.ended_s = Some(ended_s);
-                    record.proof_size = proof_size;
-                }
+                let record = block.proofs.entry(proof_type).or_default();
+                record.result = Some(result);
+                record.error = error.clone();
+                record.ended_s = Some(ended_s);
+                record.proof_size = proof_size;
                 drop(state);
 
                 let _ = self.event_tx.send(DashboardEvent::ProveEnd {

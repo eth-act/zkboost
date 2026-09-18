@@ -19,7 +19,7 @@ use zkboost_types::{SignedExecutionProofEnvelopes, SszEncode};
 
 /// Timeout of a beacon node request, the slot time of mainnet.
 const BEACON_NODE_TIMEOUT: Duration = Duration::from_secs(12);
-/// Delay between two attempts to read the beacon node at startup.
+/// Delay between two attempts of a beacon node request.
 pub(crate) const BEACON_NODE_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Client of the beacon API of the configured endpoint.

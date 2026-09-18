@@ -128,6 +128,7 @@ Available proof types:
 | `reth-openvm`   | `reth`   | OpenVM |
 | `reth-sp1`      | `reth`   | SP1    |
 | `reth-zisk`     | `reth`   | ZisK   |
+| `zesu-zisk`     | `zesu`   | ZisK   |
 
 ## Engine API
 
@@ -186,12 +187,13 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 
 | `proof_type` | zkboost proof type |
 | ------------ | ------------------ |
-| `1`          | `reth-openvm`      |
-| `2`          | `reth-sp1`         |
-| `3`          | `reth-zisk`        |
-| `4`          | `ethrex-openvm`    |
-| `5`          | `ethrex-sp1`       |
-| `6`          | `ethrex-zisk`      |
+| `1`          | `ethrex-openvm`    |
+| `2`          | `ethrex-sp1`       |
+| `3`          | `ethrex-zisk`      |
+| `4`          | `reth-openvm`      |
+| `5`          | `reth-sp1`         |
+| `6`          | `reth-zisk`        |
+| `7`          | `zesu-zisk`        |
 
 ## Mock Beacon Node
 

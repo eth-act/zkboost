@@ -9,42 +9,68 @@ use zkboost_types::{
     Sha2Hasher, Transactions,
 };
 
-/// A wrapper for `stateless_input_bytes` with payload metadata.
+/// The metadata of a `NewPayloadRequest`, known before the witness. The root identifies the
+/// request and its proofs.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NewPayloadRequestMeta {
+    /// The hash tree root of the `NewPayloadRequest`. It follows the request layout of ere-guests,
+    /// which the guests commit. lighthouse hashes the request differently, as a progressive
+    /// container.
+    pub(crate) new_payload_request_root: Hash256,
+    /// Block hash of the payload.
+    pub(crate) block_hash: Hash256,
+    /// Parent beacon block root of the payload.
+    pub(crate) parent_beacon_block_root: Hash256,
+    /// Block number of the payload.
+    pub(crate) block_number: u64,
+    /// Slot of the payload.
+    pub(crate) slot: u64,
+    /// Gas used by the block, for mock proving-time simulation.
+    pub(crate) gas_used: u64,
+}
+
+impl NewPayloadRequestMeta {
+    /// Reads the metadata of a Gloas payload request.
+    pub(crate) fn new(payload: &NewPayloadRequest) -> Self {
+        let NewPayloadRequest::Gloas(request) = payload else {
+            unreachable!("engine_newPayloadV5 params convert to a gloas request")
+        };
+        let execution_payload = &request.execution_payload;
+        Self {
+            new_payload_request_root: Hash256::from(payload.hash_tree_root(&Sha2Hasher)),
+            block_hash: Hash256::from(execution_payload.block_hash),
+            parent_beacon_block_root: Hash256::from(request.parent_beacon_block_root),
+            block_number: execution_payload.block_number,
+            slot: execution_payload.slot_number,
+            gas_used: execution_payload.gas_used,
+        }
+    }
+}
+
+/// A wrapper for `stateless_input_bytes` with the metadata of the request.
 #[derive(Debug)]
 pub(crate) struct StatelessInput {
+    payload_meta: NewPayloadRequestMeta,
     stateless_input_bytes: Vec<u8>,
-    new_payload_request_root: Hash256,
-    block_hash: Hash256,
-    parent_beacon_block_root: Hash256,
-    block_number: u64,
-    slot: u64,
-    gas_used: u64,
 }
 
 impl StatelessInput {
     /// Builds the `StatelessInput` of a Gloas payload request, proven under the Amsterdam rules.
     pub(crate) fn new(
-        new_payload_request: NewPayloadRequest,
+        payload_meta: NewPayloadRequestMeta,
+        payload: NewPayloadRequest,
         witness: ExecutionWitness,
         chain_id: u64,
     ) -> anyhow::Result<Self> {
-        let NewPayloadRequest::Gloas(request) = &new_payload_request else {
+        let NewPayloadRequest::Gloas(request) = &payload else {
             unreachable!("engine_newPayloadV5 params convert to a gloas request")
         };
-        let payload = &request.execution_payload;
-        let block_hash = Hash256::from(payload.block_hash);
-        let parent_beacon_block_root = Hash256::from(request.parent_beacon_block_root);
-        let block_number = payload.block_number;
-        let slot = payload.slot_number;
-        let gas_used = payload.gas_used;
-        let public_keys = PublicKeys::from(recover_public_keys(&payload.transactions)?);
-        // The root follows the request layout of ere-guests, which the guests commit. lighthouse
-        // hashes the request differently, as a progressive container.
-        let new_payload_request_root =
-            Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
+        let public_keys = PublicKeys::from(recover_public_keys(
+            &request.execution_payload.transactions,
+        )?);
 
         let stateless_input_bytes = stateless_validator_common::guest::StatelessInput {
-            new_payload_request,
+            new_payload_request: payload,
             witness,
             chain_id,
             public_keys,
@@ -52,49 +78,19 @@ impl StatelessInput {
         .to_schema_prefixed_ssz(ProtocolFork::Amsterdam);
 
         Ok(Self {
-            new_payload_request_root,
+            payload_meta,
             stateless_input_bytes,
-            block_hash,
-            parent_beacon_block_root,
-            block_number,
-            slot,
-            gas_used,
         })
     }
 
-    /// Returns the hash-tree-root of the `NewPayloadRequest`.
-    pub(crate) fn root(&self) -> Hash256 {
-        self.new_payload_request_root
+    /// Returns the metadata of the request of the input.
+    pub(crate) fn payload_meta(&self) -> NewPayloadRequestMeta {
+        self.payload_meta
     }
 
     /// Returns the schema-id-prefixed SSZ bytes used as zkVM stdin.
     pub(crate) fn stateless_input_bytes(&self) -> &[u8] {
         &self.stateless_input_bytes
-    }
-
-    /// Returns the block hash.
-    pub(crate) fn block_hash(&self) -> Hash256 {
-        self.block_hash
-    }
-
-    /// Returns the parent beacon block root of the payload.
-    pub(crate) fn parent_beacon_block_root(&self) -> Hash256 {
-        self.parent_beacon_block_root
-    }
-
-    /// Returns the block number.
-    pub(crate) fn block_number(&self) -> u64 {
-        self.block_number
-    }
-
-    /// Returns the slot of the payload.
-    pub(crate) fn slot(&self) -> u64 {
-        self.slot
-    }
-
-    /// Returns the gas used by the block, for mock proving-time simulation.
-    pub(crate) fn gas_used(&self) -> u64 {
-        self.gas_used
     }
 }
 
@@ -118,7 +114,7 @@ fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; P
 
 #[cfg(test)]
 mod tests {
-    use crate::proof::input::StatelessInput;
+    use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
 
     /// The stateless input of block 93354 of glamsterdam-devnet-8.
     const AMSTERDAM_STATELESS_INPUT: &[u8] =
@@ -133,6 +129,7 @@ mod tests {
             )
             .unwrap();
         let input = StatelessInput::new(
+            NewPayloadRequestMeta::new(&fixture.new_payload_request),
             fixture.new_payload_request,
             fixture.witness,
             fixture.chain_id,

@@ -180,7 +180,7 @@ impl MockzkVM {
     /// Simulates proof generation with configurable delay, returning [`MOCK_PROOF`].
     pub(crate) async fn prove(&self, input: &StatelessInput) -> anyhow::Result<Vec<u8>> {
         let start = Instant::now();
-        let gas_used = input.gas_used();
+        let gas_used = input.payload_meta().gas_used;
 
         let duration = match &self.mock_proving_time {
             MockProvingTime::Constant { ms } => Duration::from_millis(*ms),

@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use ere_catalog::zkVMKind;
 use ere_cluster_client_zisk::{Error as ZiskError, Input, RemoteProverConfig, ZiskClusterClient};
-use ere_verifier::zkVMKind;
 use ere_verifier_zisk::codec::Encode;
 use tracing::{Span, info, warn};
 use zkboost_types::ProofType;

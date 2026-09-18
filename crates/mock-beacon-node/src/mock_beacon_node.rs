@@ -15,7 +15,7 @@ use anyhow::{bail, ensure};
 use axum::{
     Json, Router,
     body::{Body, Bytes, to_bytes},
-    extract::{Request, State},
+    extract::{DefaultBodyLimit, Request, State},
     http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
     routing::post,
@@ -33,9 +33,10 @@ use tokio::{
 use tracing::{info, warn};
 use url::Url;
 use zkboost_types::{
-    HashTreeRoot, MOCK_PROOF, NewPayloadParams, NewPayloadRequest, ProofType, ProtocolFork,
-    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode, SszEncode,
-    StatelessValidationResult, execution_proof_domain,
+    HashTreeRoot, MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, MOCK_PROOF, NewPayloadParams,
+    NewPayloadRequest, ProofType, ProtocolFork, Sha2Hasher, SignedExecutionProofEnvelope,
+    SignedExecutionProofEnvelopes, SszDecode, SszEncode, StatelessValidationResult,
+    execution_proof_domain,
 };
 
 use crate::{
@@ -47,6 +48,12 @@ const ERE_GUESTS_TAG: &str = "v0.17.0";
 
 /// Budget for all proofs of one payload to arrive.
 const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The SSZ size of a submission of `MAX_EXECUTION_PROOFS_PER_PAYLOAD` proofs of `MAX_PROOF_SIZE`.
+/// Every envelope adds its list offset, the offset of its message, the offset of the proof data,
+/// the proof type, the beacon block root, and the signature to the proof data.
+const MAX_SUBMISSION_SIZE: usize =
+    MAX_EXECUTION_PROOFS_PER_PAYLOAD * (4 + 4 + 4 + 1 + 32 + 96 + MAX_PROOF_SIZE);
 
 /// A payload sent to zkboost, with what its proofs are verified against.
 #[derive(Clone)]
@@ -92,19 +99,24 @@ impl MockBeaconNode {
         })
     }
 
-    /// Serves the beacon API, verifying execution proofs and forwarding other requests to the
-    /// beacon node.
+    /// Serves the beacon API.
     pub(crate) async fn serve(self: Arc<Self>, port: u16) -> std::io::Result<()> {
         let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)).await?;
-        let router = Router::new()
+        info!(port, "beacon api listening");
+        axum::serve(listener, self.router()).await
+    }
+
+    /// Builds the beacon API router, which verifies execution proofs and forwards other requests
+    /// to the beacon node.
+    pub(crate) fn router(self: Arc<Self>) -> Router {
+        Router::new()
             .route(
                 "/eth/v1/beacon/execution_proofs",
                 post(post_execution_proofs),
             )
+            .route_layer(DefaultBodyLimit::max(MAX_SUBMISSION_SIZE))
             .fallback(forward)
-            .with_state(self);
-        info!(port, "beacon api listening");
-        axum::serve(listener, router).await
+            .with_state(self)
     }
 
     /// Returns the chain spec, fetching it on first access.
@@ -440,7 +452,7 @@ mod tests {
 
     use alloy_rpc_types_engine::PayloadStatusEnum;
     use url::Url;
-    use zkboost_types::ProofType;
+    use zkboost_types::{MAX_PROOF_SIZE, ProofType};
 
     use crate::mock_beacon_node::MockBeaconNode;
 
@@ -605,11 +617,40 @@ mod tests {
         server.abort();
     }
 
+    /// A submission of the size of one maximum proof reaches the SSZ decoder, which rejects the
+    /// zero bytes, instead of the body limit.
+    #[tokio::test]
+    async fn maximum_proof_size_submission_is_decoded() {
+        let (node, _, server) = engine_stub(vec![]).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!(
+            "http://{}/eth/v1/beacon/execution_proofs",
+            listener.local_addr().unwrap()
+        );
+        let beacon_api = tokio::spawn(async move {
+            axum::serve(listener, std::sync::Arc::new(node).router())
+                .await
+                .unwrap();
+        });
+        let response = reqwest::Client::new()
+            .post(endpoint)
+            .body(vec![0; MAX_PROOF_SIZE])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+        beacon_api.abort();
+        server.abort();
+    }
+
     #[tokio::test]
     async fn test_fixture_proofs_verify() -> anyhow::Result<()> {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fixture");
         let public_values = fs::read(fixture.join("public_values.bin")).unwrap();
-        let proof_types = ProofType::iter().collect::<Vec<_>>();
+        // The zesu guest of ere-guests v0.17.0 cannot be proved yet, so it has no fixture proof.
+        let proof_types = ProofType::iter()
+            .filter(|proof_type| *proof_type != ProofType::ZesuZisk)
+            .collect::<Vec<_>>();
         let proofs = proof_types
             .iter()
             .map(|proof_type| {

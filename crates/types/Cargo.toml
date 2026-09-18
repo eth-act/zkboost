@@ -35,4 +35,3 @@ stateless-validator-catalog.workspace = true
 [dev-dependencies]
 # lighthouse
 lighthouse_types.workspace = true
-

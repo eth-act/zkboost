@@ -573,6 +573,7 @@
             'reth-openvm',
             'reth-sp1',
             'reth-zisk',
+            'zesu-zisk',
         ];
         const PROOF_TYPE_HEX = Object.fromEntries(PROOF_TYPE_KEYS.map((key, i) => [key, cssVar(`--pt-${i}`)]));
         const PROOF_TYPE_COLORS = Object.fromEntries(
@@ -898,10 +899,6 @@
                     blockHash: witnessBlockHash,
                     blockNumber: block.blockNumber ?? 0,
                     blockTimestamp: block.blockTimestamp ?? 0,
-                    witnessRequestedS: Object.values(block.proofs ?? {}).reduce(
-                        (min, p) => (p.requestedS != null && (min == null || p.requestedS < min) ? p.requestedS : min),
-                        null,
-                    ),
                     witnessStartedS: block.witnessStartedS ?? null,
                     witnessEndedS: block.witnessEndedS ?? null,
                     witnessSuccess: block.witnessSuccess ?? false,
@@ -915,13 +912,7 @@
                 if (!proofBlockHash) continue;
                 const block = historicalBlocks.value.find((b) => b.blockHash === proofBlockHash) ?? {};
                 const proof = block.proofs?.[proofType] ?? null;
-                const proofData = proof
-                    ? {
-                        ...proof,
-                        proofType,
-                        requestedS: proof.requestedS ?? null,
-                    }
-                    : null;
+                const proofData = proof ? { ...proof, proofType } : null;
                 result.proving[proofType] = {
                     blockHash: proofBlockHash,
                     blockNumber: block.blockNumber ?? 0,
@@ -980,29 +971,13 @@
 
         // SSE Handlers
 
-        const handleRequestProof = (event) => {
-            const {
-                blockNumber,
-                blockTimestamp,
-                blockHash,
-                gasUsed,
-                proofTypes: requestedTypes,
-                startedS,
-            } = JSON.parse(event.data);
+        const handleFetchWitnessStart = (event) => {
+            const { blockNumber, blockTimestamp, blockHash, gasUsed, startedS } = JSON.parse(event.data);
             if (blockTimestamp && blockTimestamp > latestBlockTimestamp.value) {
                 latestBlockNumber.value = blockNumber;
                 latestBlockTimestamp.value = blockTimestamp;
             }
-            const proofs = {};
-            if (requestedTypes) {
-                for (const proofType of requestedTypes) proofs[proofType] = { requestedS: startedS };
-            }
-            updateHistoricalBlock(blockHash, { blockNumber, gasUsed, blockTimestamp, proofs });
-        };
-
-        const handleFetchWitnessStart = (event) => {
-            const { blockHash, startedS } = JSON.parse(event.data);
-            updateHistoricalBlock(blockHash, { witnessStartedS: startedS });
+            updateHistoricalBlock(blockHash, { blockNumber, gasUsed, blockTimestamp, witnessStartedS: startedS });
             updateLatestEvent(blockHash);
         };
 
@@ -1018,12 +993,7 @@
 
         const handleProveStart = (event) => {
             const { blockHash, proofType, startedS } = JSON.parse(event.data);
-            const existing = historicalBlocks.value.find((b) => b.blockHash === blockHash)?.proofs[proofType];
-            updateHistoricalBlock(blockHash, {
-                proofs: {
-                    [proofType]: { requestedS: existing?.requestedS ?? null, startedS },
-                },
-            });
+            updateHistoricalBlock(blockHash, { proofs: { [proofType]: { startedS } } });
             updateLatestEvent(blockHash, proofType);
         };
 
@@ -1038,7 +1008,6 @@
                         startedS: existing?.startedS ?? null,
                         endedS,
                         proofSize: proofSize ?? null,
-                        requestedS: existing?.requestedS ?? null,
                     },
                 },
             });
@@ -1046,7 +1015,6 @@
         };
 
         const SSE_HANDLERS = {
-            requestProof: handleRequestProof,
             fetchWitnessStart: handleFetchWitnessStart,
             fetchWitnessEnd: handleFetchWitnessEnd,
             proveStart: handleProveStart,
@@ -1223,7 +1191,6 @@
                 <${MonoCell} right>-<//>
                 <${MonoCell} right>-<//>
                 <${MonoCell} right>-<//>
-                <${MonoCell} right>-<//>
                 <${MonoCell}>-<//>
             </tr>`;
 
@@ -1241,7 +1208,7 @@
             const gasStr = formatGas(block.gasUsed);
             const witnessStr =
                 ended != null && !block.witnessSuccess
-                    ? html`<span style="color:var(--yellow)">TIMEOUT</span>`
+                    ? html`<span style="color:var(--yellow)">FAILED</span>`
                     : ended != null
                     ? formatBytes(block.witnessSize)
                     : '-';
@@ -1252,7 +1219,6 @@
                     ${block.blockNumber}${' '}
                     <${HashWithCopy} hash=${block.blockHash ?? ''} />
                 <//>
-                <${MonoCell} right>${formatOffset(block.witnessRequestedS)}<//>
                 <${MonoCell} right> ${formatOffset(started)}<//>
                 <${MonoCell} right> ${formatOffset(ended)}<//>
                 <${MonoCell} right> ${duration}<//>
@@ -1282,14 +1248,12 @@
                     : html`<span style="color:var(${STATUS_COLOR_VAR[proof.result]})"
                         >${proof.result.toUpperCase()}</span
                     >`;
-            const requested = proof.requestedS != null ? formatOffset(proof.requestedS) : '-';
             return html`<tr>
                 <td>${label}</td>
                 <${MonoCell}>
                     ${block.blockNumber}${' '}
                     <${HashWithCopy} hash=${block.blockHash ?? ''} />
                 <//>
-                <${MonoCell} right> ${requested}<//>
                 <${MonoCell} right> ${formatOffset(started)}<//>
                 <${MonoCell} right> ${formatOffset(ended)}<//>
                 <${MonoCell} right> ${duration}<//>
@@ -1310,7 +1274,6 @@
                                 <tr>
                                     <th class="cell-left">Event</th>
                                     <th>Block</th>
-                                    <th class="th-timestamp">Requested</th>
                                     <th class="th-timestamp">Started</th>
                                     <th class="th-timestamp">Ended</th>
                                     <th>Duration</th>
@@ -1635,7 +1598,6 @@
                         <thead>
                             <tr>
                                 <th>Type</th>
-                                <th>Requested</th>
                                 <th>Started</th>
                                 <th>Ended</th>
                                 <th>Duration</th>
@@ -1648,7 +1610,6 @@
                             ${sorted.map((entry) => {
                                 return html`<tr>
                                     <td><${ProofTypeBadge} type=${entry.proofType} /></td>
-                                    <${MonoCell} right> ${formatOffset(entry.requestedS)}<//>
                                     <${MonoCell} right> ${formatOffset(entry.startedS)}<//>
                                     <${MonoCell} right> ${formatOffset(entry.endedS)}<//>
                                     <${MonoCell} right> ${formatDuration(provingSecs(entry))}<//>

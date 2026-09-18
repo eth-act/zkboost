@@ -50,8 +50,6 @@ Compose services share the project-scoped `zkboost` network. Geth and zkboost al
 
 The start script builds Lighthouse from the tip of `optional-proofs-gloas`. Commit [`12702b39e`](https://github.com/eth-act/lighthouse/commit/12702b39e565c8827e90e14a100bff1d2ed308d5) and later commits of the branch are compatible with this example. An older image with the same tag can contain an incompatible verifier. Rebuild it before you pass `-b false`.
 
-Lighthouse accepts only the reth proof types 1 to 3 (`reth-openvm`, `reth-sp1`, `reth-zisk`). It does not support the ethrex proof types 4 to 6, and their verifying keys do not enable them. Consequently Lighthouse verifies only the `reth-zisk` proofs of this example.
-
 The third Lighthouse executes every payload through zkboost and verifies the submitted proofs. The example runs no proof-only node and no proof gossip between proof-enabled nodes. The other two Lighthouse nodes do not subscribe to execution proofs. Lighthouse therefore logs `NoPeersSubscribedToTopic` for `execution_proof` after a successful local verification.
 
 ## Installation
@@ -90,8 +88,8 @@ docker compose -f ./docker/example/testnet/docker-compose.yml up -d
 
 - The dashboard is at http://localhost:3000/dashboard.
 - zkboost logs `received new payload` and then `proof dispatched` for each payload. The third Lighthouse reports `is_optimistic: false` and `el_offline: false` at `/eth/v1/node/syncing`. Its Gloas status log can show `exec_hash: "n/a"`. Use the two checks below for proof verification.
-- zkboost logs `proof submitted` with `proof_type=reth-zisk` after Lighthouse accepts the signed proof. A `proof submission failed` log includes the Lighthouse reason.
-- Query `GET /eth/v1/beacon/execution_proofs/{block_id}` on the third Lighthouse with the root or slot of the proven block. A `data` entry with proof type `"3"` shows that Lighthouse cached the proof. Query soon after the submission, because the cache is bounded. The `head` block can be newer than the proven block.
+- zkboost logs `proof submitted` with `proof_type=ethrex-zisk` and `proof_type=reth-zisk` after Lighthouse accepts the signed proofs. A `proof submission failed` log includes the Lighthouse reason.
+- Query `GET /eth/v1/beacon/execution_proofs/{block_id}` on the third Lighthouse with the root or slot of the proven block. A `data` entry with proof type `"3"` or `"6"` shows that Lighthouse cached the proof. Query soon after the submission, because the cache is bounded. The `head` block can be newer than the proven block.
 
 For example (replace `3` with a proven slot in your run):
 

@@ -63,7 +63,7 @@ alloy-rlp.workspace = true
 
 # ere
 ere-server-client.workspace = true
-ere-verifier.workspace = true
+ere-catalog.workspace = true
 ere-cluster-client-zisk.workspace = true
 ere-verifier-zisk.workspace = true
 

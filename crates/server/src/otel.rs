@@ -12,7 +12,7 @@ use opentelemetry_sdk::{
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::Registry;
 
-/// The tracing layer that exports spans over OTLP.
+/// Type alias for the OpenTelemetry tracing layer.
 pub type OtelLayer = OpenTelemetryLayer<Registry, SdkTracer>;
 
 /// [`Extractor`] over HTTP headers, used to extract W3C trace context

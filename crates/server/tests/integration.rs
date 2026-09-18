@@ -1,12 +1,16 @@
 //! Integration test for zkboost. A mock EL answers `engine_newPayloadWithWitnessV5` with the
-//! fixture witness. A mock beacon node resolves the beacon block of the fixture payload. It
-//! collects every signed envelope of `POST /eth/v1/beacon/execution_proofs`.
+//! fixture witness on the first request of the payload, and like geth without a witness
+//! afterwards. A mock beacon node resolves the beacon block of the fixture payload. It collects
+//! every signed envelope of `POST /eth/v1/beacon/execution_proofs`.
 
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
     net::Ipv4Addr,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -159,7 +163,16 @@ async fn mock_el_handler(
                 "latestValidHash": state.fixture.block_hash,
                 "validationError": null,
             });
-            if state.payload_status == "VALID" {
+            // Like geth, the witness comes with the first answer of the payload only.
+            let first_request = state
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call.method == method)
+                .count()
+                == 1;
+            if state.payload_status == "VALID" && first_request {
                 status["witness"] = json!(state.fixture.witness);
             }
             status
@@ -199,6 +212,8 @@ struct MockBeaconNode {
     ambiguous_block: bool,
     mismatched_slot: bool,
     block_from_event: bool,
+    /// Set while the next headers read answers 503.
+    headers_error: AtomicBool,
     envelopes: mpsc::UnboundedSender<SignedExecutionProofEnvelope>,
     /// Signals `GET /eth/v1/events`, which zkboost opens once the validator is ready.
     events_opened: Notify,
@@ -210,11 +225,15 @@ async fn genesis_handler() -> Json<Value> {
 
 /// `GET /eth/v1/beacon/headers?parent_root=`, which lists the fixture block under its parent.
 /// Every header reports the fixture slot, or the next slot under `mismatched_slot`. A node that
-/// announces the block on the event stream lists no child.
+/// announces the block on the event stream lists no child. Under `beacon_node_error_once` the
+/// first read answers 503.
 async fn headers_handler(
     State(node): State<Arc<MockBeaconNode>>,
     Query(query): Query<HashMap<String, String>>,
-) -> Json<Value> {
+) -> Result<Json<Value>, StatusCode> {
+    if node.headers_error.swap(false, Ordering::SeqCst) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
     let parent_root = query
         .get("parent_root")
         .and_then(|root| root.parse::<B256>().ok());
@@ -229,7 +248,7 @@ async fn headers_handler(
     } else {
         json!([])
     };
-    Json(json!({ "data": headers }))
+    Ok(Json(json!({ "data": headers })))
 }
 
 /// `GET /eth/v2/beacon/blocks/{root}`, with the fixture payload bid under the fixture block only.
@@ -317,6 +336,7 @@ async fn start_mock_beacon_node(
     ambiguous_block: bool,
     mismatched_slot: bool,
     block_from_event: bool,
+    beacon_node_error_once: bool,
 ) -> (
     Url,
     Arc<MockBeaconNode>,
@@ -328,6 +348,7 @@ async fn start_mock_beacon_node(
         ambiguous_block,
         mismatched_slot,
         block_from_event,
+        headers_error: AtomicBool::new(beacon_node_error_once),
         envelopes: envelopes_tx,
         events_opened: Notify::new(),
     });
@@ -399,6 +420,7 @@ struct Behavior {
     mismatched_slot: bool,
     block_from_event: bool,
     beacon_node_unreachable: bool,
+    beacon_node_error_once: bool,
 }
 
 struct TestHarness {
@@ -432,6 +454,7 @@ impl TestHarness {
             behavior.ambiguous_block,
             behavior.mismatched_slot,
             behavior.block_from_event,
+            behavior.beacon_node_error_once,
         )
         .await;
         let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
@@ -725,6 +748,21 @@ async fn test_mismatched_slot_not_submitted() {
     assert_eq!(response["result"]["status"], "VALID");
 
     harness.assert_no_proof_submitted().await;
+}
+
+/// The first headers read of the beacon node fails, so the submission is retried.
+#[tokio::test]
+async fn test_proof_submitted_after_beacon_node_error() {
+    let mut harness = TestHarness::new(Behavior {
+        beacon_node_error_once: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_proofs_submitted().await;
 }
 
 /// The `execution_payload` event carries the beacon block root, so no child is listed.

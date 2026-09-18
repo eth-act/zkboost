@@ -67,14 +67,17 @@ pub fn init_metrics() -> PrometheusHandle {
         .install_recorder()
         .expect("failed to install Prometheus recorder");
 
+    // HTTP layer metrics
     describe_counter!(HTTP_REQUESTS_TOTAL, "total http requests");
     describe_histogram!(HTTP_REQUEST_DURATION_SECONDS, "http request duration");
     describe_gauge!(HTTP_REQUESTS_IN_FLIGHT, "http requests in flight");
 
+    // Witness operation metrics
     describe_counter!(WITNESS_FETCH_TOTAL, "total witness fetch operations");
     describe_histogram!(WITNESS_FETCH_DURATION_SECONDS, "witness fetch duration");
     describe_histogram!(WITNESS_BYTES, "witness size");
 
+    // Prove operation metrics
     describe_histogram!(
         QUEUE_WAIT_DURATION_SECONDS,
         "time a proof request waits in the worker channel between dispatch and dequeue"
@@ -83,6 +86,7 @@ pub fn init_metrics() -> PrometheusHandle {
     describe_histogram!(PROVE_DURATION_SECONDS, "proof generation duration");
     describe_histogram!(PROVE_PROOF_BYTES, "proof size");
 
+    // Application metrics
     describe_gauge!(PROGRAMS_LOADED, "zkvm programs loaded");
     describe_gauge!(BUILD_INFO, "build info");
 
