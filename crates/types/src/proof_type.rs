@@ -39,6 +39,8 @@ pub enum ProofType {
     RethSP1,
     /// Reth with Zisk backend.
     RethZisk,
+    /// Zesu with Zisk backend.
+    ZesuZisk,
 }
 
 impl ProofType {
@@ -54,6 +56,7 @@ impl ProofType {
                 StatelessValidatorKind::Ethrex
             }
             Self::RethSP1 | Self::RethOpenVM | Self::RethZisk => StatelessValidatorKind::Reth,
+            Self::ZesuZisk => StatelessValidatorKind::Zesu,
         }
     }
 
@@ -62,19 +65,20 @@ impl ProofType {
         match self {
             Self::EthrexSP1 | Self::RethSP1 => zkVMKind::SP1,
             Self::EthrexOpenVM | Self::RethOpenVM => zkVMKind::OpenVM,
-            Self::EthrexZisk | Self::RethZisk => zkVMKind::Zisk,
+            Self::EthrexZisk | Self::RethZisk | Self::ZesuZisk => zkVMKind::Zisk,
         }
     }
 
     /// Returns the EIP-8025 execution proof type of the beacon chain.
     pub fn execution_proof_type(&self) -> u8 {
         match self {
-            Self::RethOpenVM => 1,
-            Self::RethSP1 => 2,
-            Self::RethZisk => 3,
-            Self::EthrexOpenVM => 4,
-            Self::EthrexSP1 => 5,
-            Self::EthrexZisk => 6,
+            Self::EthrexOpenVM => 1,
+            Self::EthrexSP1 => 2,
+            Self::EthrexZisk => 3,
+            Self::RethOpenVM => 4,
+            Self::RethSP1 => 5,
+            Self::RethZisk => 6,
+            Self::ZesuZisk => 7,
         }
     }
 
@@ -87,6 +91,7 @@ impl ProofType {
             Self::RethOpenVM => "reth-openvm",
             Self::RethSP1 => "reth-sp1",
             Self::RethZisk => "reth-zisk",
+            Self::ZesuZisk => "zesu-zisk",
         }
     }
 }
