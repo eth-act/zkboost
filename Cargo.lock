@@ -3660,22 +3660,17 @@ dependencies = [
 name = "mock-beacon-node"
 version = "0.9.0"
 dependencies = [
- "alloy-rpc-types-engine",
  "anyhow",
  "axum",
  "bls",
  "clap",
  "ere-verifier",
  "ethereum_serde_utils",
- "jsonwebtoken",
  "reqwest",
- "reqwest-eventsource",
  "serde",
  "serde_json",
- "sha2",
  "stateless-validator-downloader",
  "tokio",
- "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "types",

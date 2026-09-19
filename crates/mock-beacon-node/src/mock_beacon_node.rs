@@ -1,33 +1,35 @@
-//! State of the mock beacon node. It sends every Gloas payload to zkboost as
-//! `engine_newPayloadV5` and waits for the proof of every configured proof type. It verifies the
-//! signature of every envelope as the beacon node does, then the proof against the expected
-//! public values.
+//! State of the mock beacon node. It forwards every Engine API request of the CL to zkboost and
+//! waits for the proof of every configured proof type of every valid `engine_newPayloadV5`
+//! payload. It verifies the signature of every envelope as the beacon node does, then the proof
+//! against the expected public values.
 
 use std::{
     collections::{HashMap, HashSet},
-    net::Ipv4Addr,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
-use alloy_rpc_types_engine::PayloadStatusEnum;
-use anyhow::{bail, ensure};
+use anyhow::{Context, bail, ensure};
 use axum::{
     Json, Router,
     body::{Body, Bytes, to_bytes},
     extract::{DefaultBodyLimit, Request, State},
-    http::{StatusCode, header::CONTENT_TYPE},
+    http::{
+        HeaderMap, StatusCode,
+        header::{AUTHORIZATION, CONTENT_TYPE},
+    },
     response::{IntoResponse, Response},
     routing::post,
 };
 use ere_verifier::Verifier;
 use lighthouse_bls::Signature;
-use lighthouse_types::{ChainSpec, EthSpec, ForkName, Hash256, MainnetEthSpec, Slot};
-use serde_json::json;
+use lighthouse_types::{BeaconBlockRef, ChainSpec, EthSpec, Hash256, MainnetEthSpec, Slot};
+use serde::Deserialize;
+use serde_json::{Value, json};
 use stateless_validator_downloader::Downloader;
 use tokio::{
     net::TcpListener,
-    sync::{Mutex, OnceCell, mpsc},
+    sync::{OnceCell, mpsc},
     time::{Instant, timeout_at},
 };
 use tracing::{info, warn};
@@ -39,10 +41,7 @@ use zkboost_types::{
     execution_proof_domain,
 };
 
-use crate::{
-    beacon_node_client::{BeaconNodeClient, new_payload_request_gloas},
-    engine_api_client::EngineApiClient,
-};
+use crate::{beacon_node_client::BeaconNodeClient, engine_api_client::EngineApiClient};
 
 const ERE_GUESTS_TAG: &str = "v0.17.0";
 
@@ -55,68 +54,93 @@ const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_SUBMISSION_SIZE: usize =
     MAX_EXECUTION_PROOFS_PER_PAYLOAD * (4 + 4 + 4 + 1 + 32 + 96 + MAX_PROOF_SIZE);
 
-/// A payload sent to zkboost, with what its proofs are verified against.
+/// A valid payload of the CL, with what its proofs are verified against.
 #[derive(Clone)]
 pub(crate) struct PendingPayload {
     slot: Slot,
     expected_public_values: Vec<u8>,
     /// Receives the proof type of every verified proof.
-    pub(crate) verified_tx: mpsc::UnboundedSender<u8>,
+    verified_tx: mpsc::UnboundedSender<u8>,
 }
 
-/// The mock beacon node, shared by the block loop and the beacon API handlers.
+/// The mock beacon node, shared by the beacon API and the Engine API handlers.
 pub(crate) struct MockBeaconNode {
-    /// Client of the beacon API of the beacon node.
-    pub(crate) beacon_node_client: BeaconNodeClient,
+    beacon_node_client: BeaconNodeClient,
     engine_api_client: EngineApiClient,
     spec: OnceCell<ChainSpec>,
     genesis_validators_root: OnceCell<Hash256>,
     verifiers: HashMap<u8, Verifier>,
-    /// Serializes execution updates; proof verification can continue in parallel.
-    execution_update: Mutex<()>,
-    /// The payloads awaiting proofs, keyed by beacon block root.
-    pub(crate) pending: std::sync::Mutex<HashMap<Hash256, PendingPayload>>,
+    /// The valid payloads awaiting proofs, keyed by block hash.
+    pending: Mutex<HashMap<Hash256, PendingPayload>>,
+}
+
+/// JSON-RPC request envelope, decoded to find `engine_newPayloadV5`.
+#[derive(Deserialize)]
+struct JsonRpcRequest {
+    method: String,
+    params: Value,
+}
+
+/// JSON-RPC response envelope of `engine_newPayloadV5`. Every other field is ignored.
+#[derive(Deserialize)]
+struct NewPayloadResponse {
+    result: Option<PayloadStatus>,
+}
+
+/// Payload status of `engine_newPayloadV5`. Every other field is ignored.
+#[derive(Deserialize)]
+struct PayloadStatus {
+    status: String,
 }
 
 impl MockBeaconNode {
-    /// Builds the mock beacon node with the static JWT secret and downloads the verifier of
-    /// every proof type. The chain spec and genesis validators root are fetched on first access.
+    /// Builds the mock beacon node and downloads the verifier of every proof type. The chain
+    /// spec and genesis validators root are fetched on first access.
     pub(crate) async fn new(
         cl_endpoint: Url,
         zkboost_endpoint: Url,
         proof_types: &[ProofType],
     ) -> anyhow::Result<Self> {
-        let beacon_node_client = BeaconNodeClient::new(cl_endpoint);
         let verifiers = download_vks_and_init(proof_types).await?;
         Ok(Self {
-            beacon_node_client,
-            engine_api_client: EngineApiClient::new(zkboost_endpoint)?,
+            beacon_node_client: BeaconNodeClient::new(cl_endpoint),
+            engine_api_client: EngineApiClient::new(zkboost_endpoint),
             spec: OnceCell::new(),
             genesis_validators_root: OnceCell::new(),
             verifiers,
-            execution_update: Mutex::new(()),
             pending: Default::default(),
         })
     }
 
-    /// Serves the beacon API.
-    pub(crate) async fn serve(self: Arc<Self>, port: u16) -> std::io::Result<()> {
-        let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, port)).await?;
-        info!(port, "beacon api listening");
-        axum::serve(listener, self.router()).await
-    }
-
-    /// Builds the beacon API router, which verifies execution proofs and forwards other requests
-    /// to the beacon node.
-    pub(crate) fn router(self: Arc<Self>) -> Router {
-        Router::new()
+    /// Serves the beacon API on the listener. It verifies the execution proofs and forwards every
+    /// other request to the beacon node.
+    pub(crate) async fn serve_beacon_api(
+        self: Arc<Self>,
+        listener: TcpListener,
+    ) -> std::io::Result<()> {
+        info!(address = %listener.local_addr()?, "beacon api listening");
+        let router = Router::new()
             .route(
                 "/eth/v1/beacon/execution_proofs",
                 post(post_execution_proofs),
             )
             .route_layer(DefaultBodyLimit::max(MAX_SUBMISSION_SIZE))
-            .fallback(forward)
-            .with_state(self)
+            .fallback(forward_beacon_api_request)
+            .with_state(self);
+        axum::serve(listener, router).await
+    }
+
+    /// Serves the Engine API on the listener to the CL. It forwards every request to zkboost.
+    pub(crate) async fn serve_engine_api(
+        self: Arc<Self>,
+        listener: TcpListener,
+    ) -> std::io::Result<()> {
+        info!(address = %listener.local_addr()?, "engine api listening");
+        let router = Router::new()
+            .route("/", post(forward_engine_api_request))
+            .layer(DefaultBodyLimit::max(1 << 30))
+            .with_state(self);
+        axum::serve(listener, router).await
     }
 
     /// Returns the chain spec, fetching it on first access.
@@ -134,154 +158,90 @@ impl MockBeaconNode {
             .copied()
     }
 
-    /// Reconciles execution with the upstream canonical head, then waits for its proofs.
-    pub(crate) async fn process_head(&self) -> anyhow::Result<()> {
-        // Coalesce notifications while a refresh is in flight. A periodic refresh also retries
-        // SYNCING, recovers missed events, and handles a restarted execution node.
-        let Ok(execution_update) = self.execution_update.try_lock() else {
+    /// Awaits the proofs of the payload of an `engine_newPayloadV5` request that zkboost
+    /// answered with `VALID`. Every other request needs nothing.
+    async fn new_payload(self: &Arc<Self>, request: &[u8], response: &[u8]) -> anyhow::Result<()> {
+        let Ok(request) = serde_json::from_slice::<JsonRpcRequest>(request) else {
             return Ok(());
         };
-        let block_root = self.beacon_node_client.head_root().await?;
-        let beacon_block = self.beacon_node_client.block(block_root).await?;
-        let request = match beacon_block.fork_name_unchecked() {
-            ForkName::Gloas => {
-                let envelope = self
-                    .beacon_node_client
-                    .execution_payload_envelope(block_root)
-                    .await?;
-                NewPayloadRequest::Gloas(new_payload_request_gloas(&beacon_block, &envelope)?)
-            }
-            fork => {
-                info!(%block_root, %fork, "fork not proven, skipped");
-                return Ok(());
-            }
+        let Some(params) = NewPayloadParams::decode(&request.method, request.params) else {
+            return Ok(());
         };
+        let params = params.context("decode new payload params")?;
+        let response: NewPayloadResponse =
+            serde_json::from_slice(response).context("decode new payload response")?;
+        let status = response.result.map(|result| result.status);
+        if status.as_deref() != Some("VALID") {
+            info!(block_hash = %params.block_hash(), ?status, "payload not valid");
+            return Ok(());
+        }
+        let chain_id = self.spec().await?.deposit_chain_id;
+        self.await_proofs(params, chain_id)
+    }
 
-        let params = NewPayloadParams::try_from(&request)?;
+    /// Registers a valid payload and waits in the background for the proof of every proof type.
+    fn await_proofs(
+        self: &Arc<Self>,
+        params: NewPayloadParams,
+        chain_id: u64,
+    ) -> anyhow::Result<()> {
         let block_hash = Hash256::from(params.block_hash().0);
-        let parent_hash = Hash256::from(
-            params
-                .0
-                .payload_inner
-                .payload_inner
-                .payload_inner
-                .parent_hash
-                .0,
-        );
-        let (safe_hash, finalized_hash) = self
-            .beacon_node_client
-            .finality_hashes(beacon_block.state_root())
-            .await?;
-        // Geth does not regenerate witnesses for known payloads. This also handles restarting
-        // the mock or returning to an already executed block during a reorg.
-        if self
-            .engine_api_client
-            .update_known_head(block_hash, safe_hash, finalized_hash)
-            .await?
-        {
-            return Ok(());
-        }
-
-        // Announce and sync the parent first. Syncing to the new payload itself would import it
-        // over P2P, so a subsequent newPayload call would return VALID without a witness.
-        if !self
-            .prepare_parent(beacon_block.parent_root(), parent_hash)
-            .await?
-        {
-            info!(%block_root, %parent_hash, "execution parent syncing");
-            return Ok(());
-        }
-        // REST reads and sync can take time. Never apply an older notification after a new head.
-        if self.beacon_node_client.head_root().await? != block_root {
-            return Ok(());
-        }
+        let request = NewPayloadRequest::try_from(params).context("decode payload")?;
+        let NewPayloadRequest::Gloas(gloas) = &request else {
+            unreachable!("engine_newPayloadV5 params convert to a gloas request")
+        };
+        let slot = Slot::new(gloas.execution_payload.slot_number);
         let new_payload_request_root = Hash256::from(request.hash_tree_root(&Sha2Hasher));
         let expected_public_values = StatelessValidationResult {
             new_payload_request_root: new_payload_request_root.0,
             successful_validation: true,
-            chain_id: self.spec().await?.deposit_chain_id,
+            chain_id,
             schema_id: ProtocolFork::Amsterdam.schema_id(),
         }
         .to_ssz();
-
         let (verified_tx, mut verified_rx) = mpsc::unbounded_channel();
         self.pending.lock().unwrap().insert(
-            block_root,
+            block_hash,
             PendingPayload {
-                slot: beacon_block.slot(),
+                slot,
                 expected_public_values,
                 verified_tx,
             },
         );
-        let result = async {
-            let status = self.engine_api_client.new_payload(&params).await?;
-            ensure!(
-                status == PayloadStatusEnum::Valid,
-                "new payload status {status}"
-            );
-            let status = self
-                .engine_api_client
-                .forkchoice_updated(block_hash, safe_hash, finalized_hash)
-                .await?;
-            ensure!(
-                status == PayloadStatusEnum::Valid,
-                "forkchoice status {status}"
-            );
-            drop(execution_update);
-            info!(%block_root, %new_payload_request_root, %status, "new payload sent");
+        info!(%block_hash, %new_payload_request_root, "valid payload forwarded");
 
-            let mut remaining: HashSet<u8> = self.verifiers.keys().copied().collect();
+        let mock_beacon_node = self.clone();
+        tokio::spawn(async move {
+            let mut remaining: HashSet<u8> = mock_beacon_node.verifiers.keys().copied().collect();
             let deadline = Instant::now() + PROOF_TIMEOUT;
             while !remaining.is_empty() {
                 let Ok(Some(proof_type)) = timeout_at(deadline, verified_rx.recv()).await else {
-                    bail!("proofs {remaining:?} not verified in time");
+                    warn!(%block_hash, ?remaining, "proofs not verified in time");
+                    break;
                 };
                 remaining.remove(&proof_type);
             }
-            info!(%block_root, "all proofs verified");
-            Ok(())
-        }
-        .await;
-        self.pending.lock().unwrap().remove(&block_root);
-        result
+            mock_beacon_node.pending.lock().unwrap().remove(&block_hash);
+            if remaining.is_empty() {
+                info!(%block_hash, "all proofs verified");
+            }
+        });
+        Ok(())
     }
 
-    /// Registers an unknown parent header so forkchoice can trigger ordinary peer sync.
-    async fn prepare_parent(
-        &self,
-        beacon_parent: Hash256,
-        parent_hash: Hash256,
-    ) -> anyhow::Result<bool> {
-        if self
-            .engine_api_client
-            .forkchoice_updated(parent_hash, Hash256::ZERO, Hash256::ZERO)
-            .await?
-            == PayloadStatusEnum::Valid
-        {
-            return Ok(true);
-        }
-        let parent = self
-            .beacon_node_client
-            .parent_payload(beacon_parent, parent_hash)
-            .await?;
-        let status = self
-            .engine_api_client
-            .new_payload(&NewPayloadParams::try_from(&NewPayloadRequest::Gloas(
-                parent,
-            ))?)
-            .await?;
-        ensure!(
-            matches!(
-                status,
-                PayloadStatusEnum::Valid | PayloadStatusEnum::Syncing | PayloadStatusEnum::Accepted
-            ),
-            "parent payload status {status}"
-        );
-        Ok(self
-            .engine_api_client
-            .forkchoice_updated(parent_hash, Hash256::ZERO, Hash256::ZERO)
-            .await?
-            == PayloadStatusEnum::Valid)
+    /// Returns the pending payload of the bid of a beacon block.
+    async fn pending_payload(&self, block_root: Hash256) -> anyhow::Result<PendingPayload> {
+        let block = self.beacon_node_client.block(block_root).await?;
+        let BeaconBlockRef::Gloas(block) = block.message() else {
+            bail!("block {block_root} is not a gloas block")
+        };
+        let block_hash = block.body.signed_execution_payload_bid.message.block_hash.0;
+        self.pending
+            .lock()
+            .unwrap()
+            .get(&block_hash)
+            .cloned()
+            .with_context(|| format!("payload {block_hash} not pending"))
     }
 
     /// Verifies the envelope as the beacon node does, then the proof, and returns the proof type.
@@ -355,6 +315,31 @@ impl MockBeaconNode {
     }
 }
 
+/// Handler for `POST /` of the Engine API. It answers with the response of zkboost to the
+/// unchanged request. A valid `engine_newPayloadV5` payload then awaits its proofs. A request
+/// that cannot reach zkboost is answered with 502.
+async fn forward_engine_api_request(
+    State(mock_beacon_node): State<Arc<MockBeaconNode>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (status, response) = match mock_beacon_node
+        .engine_api_client
+        .forward(headers.get(AUTHORIZATION), body.clone())
+        .await
+    {
+        Ok(answer) => answer,
+        Err(error) => {
+            warn!(%error, "forward to zkboost failed");
+            return StatusCode::BAD_GATEWAY.into_response();
+        }
+    };
+    if let Err(error) = mock_beacon_node.new_payload(&body, &response).await {
+        warn!(error = %format!("{error:#}"), "new payload not awaited");
+    }
+    (status, [(CONTENT_TYPE, "application/json")], response).into_response()
+}
+
 /// Handler for `POST /eth/v1/beacon/execution_proofs` with an SSZ body. A rejected envelope fails
 /// the request with 400 and its index, as the beacon node answers.
 async fn post_execution_proofs(
@@ -367,25 +352,17 @@ async fn post_execution_proofs(
     let mut failures = Vec::new();
     for (index, envelope) in envelopes.iter().enumerate() {
         let block_root = Hash256::from(envelope.message.beacon_block_root);
-        let pending = mock_beacon_node
-            .pending
-            .lock()
-            .unwrap()
-            .get(&block_root)
-            .cloned();
-        let result = match pending {
-            Some(pending) => mock_beacon_node
-                .verify(&pending, envelope)
-                .await
-                .map(|proof_type| {
-                    info!(%block_root, %proof_type, "proof verified");
-                    let _ = pending.verified_tx.send(proof_type);
-                }),
-            None => Err(anyhow::anyhow!("unknown block")),
-        };
+        let result = async {
+            let pending = mock_beacon_node.pending_payload(block_root).await?;
+            let proof_type = mock_beacon_node.verify(&pending, envelope).await?;
+            info!(%block_root, %proof_type, "proof verified");
+            let _ = pending.verified_tx.send(proof_type);
+            anyhow::Ok(())
+        }
+        .await;
         if let Err(error) = result {
-            warn!(%block_root, %error, "proof rejected");
-            failures.push(json!({ "index": index, "message": error.to_string() }));
+            warn!(%block_root, error = %format!("{error:#}"), "proof rejected");
+            failures.push(json!({ "index": index, "message": format!("{error:#}") }));
         }
     }
     if failures.is_empty() {
@@ -397,7 +374,7 @@ async fn post_execution_proofs(
 }
 
 /// Handler for every other beacon API request, forwarded to the beacon node.
-async fn forward(
+async fn forward_beacon_api_request(
     State(mock_beacon_node): State<Arc<MockBeaconNode>>,
     request: Request,
 ) -> Response {
@@ -448,187 +425,41 @@ async fn download_vks_and_init(proof_types: &[ProofType]) -> anyhow::Result<Hash
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
+    use std::{fs, path::Path, sync::Arc};
 
-    use alloy_rpc_types_engine::PayloadStatusEnum;
     use url::Url;
     use zkboost_types::{MAX_PROOF_SIZE, ProofType};
 
-    use crate::mock_beacon_node::MockBeaconNode;
+    use crate::{
+        beacon_node_client::BeaconNodeClient, engine_api_client::EngineApiClient,
+        mock_beacon_node::MockBeaconNode,
+    };
 
-    /// Builds a node with a local Engine API stub and no proof verifiers.
-    async fn engine_stub(
-        results: Vec<serde_json::Value>,
-    ) -> (
-        MockBeaconNode,
-        tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
-        tokio::task::JoinHandle<()>,
-    ) {
-        use axum::{Json, Router, routing::post};
-        let results = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
-            results,
-        )));
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let router = Router::new().route(
-            "/",
-            post(move |Json(request): Json<serde_json::Value>| {
-                let tx = tx.clone();
-                let result = results
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .expect("unexpected Engine API request");
-                async move {
-                    let _ = tx.send(request);
-                    Json(result)
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
-        let server = tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
-        });
-        let node = MockBeaconNode {
-            beacon_node_client: crate::beacon_node_client::BeaconNodeClient::new(
-                Url::parse("x:").unwrap(),
-            ),
-            engine_api_client: crate::engine_api_client::EngineApiClient::new(endpoint).unwrap(),
+    /// Builds a node with no proof verifiers and endpoints where nothing listens.
+    fn mock_beacon_node() -> MockBeaconNode {
+        let endpoint = Url::parse("http://127.0.0.1:1").unwrap();
+        MockBeaconNode {
+            beacon_node_client: BeaconNodeClient::new(endpoint.clone()),
+            engine_api_client: EngineApiClient::new(endpoint),
             spec: Default::default(),
             genesis_validators_root: Default::default(),
             verifiers: Default::default(),
-            execution_update: Default::default(),
             pending: Default::default(),
-        };
-        (node, rx, server)
-    }
-
-    #[tokio::test]
-    async fn forkchoice_carries_checkpoints_without_building_a_payload() {
-        use lighthouse_types::Hash256;
-        use serde_json::json;
-        let (node, mut requests, server) = engine_stub(vec![
-            json!({"result": {"payloadStatus": {"status": "SYNCING"}}}),
-        ])
-        .await;
-        let head = Hash256::repeat_byte(3);
-        let safe = Hash256::repeat_byte(2);
-        let finalized = Hash256::repeat_byte(1);
-        assert_eq!(
-            node.engine_api_client
-                .forkchoice_updated(head, safe, finalized)
-                .await
-                .unwrap(),
-            PayloadStatusEnum::Syncing
-        );
-        let request = requests.recv().await.unwrap();
-        assert_eq!(request["method"], "engine_forkchoiceUpdatedV4");
-        let params = request["params"].as_array().unwrap();
-        assert_eq!(params.len(), 3);
-        assert_eq!(params[0]["headBlockHash"], json!(head));
-        assert_eq!(params[0]["safeBlockHash"], json!(safe));
-        assert_eq!(params[0]["finalizedBlockHash"], json!(finalized));
-        assert!(params[1].is_null());
-        assert!(params[2].is_null());
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn known_parent_does_not_need_a_payload_or_beacon_fetch() {
-        use lighthouse_types::Hash256;
-        use serde_json::json;
-        let (node, mut requests, server) = engine_stub(vec![
-            json!({"result": {"payloadStatus": {"status": "VALID"}}}),
-        ])
-        .await;
-        let parent = Hash256::repeat_byte(1);
-        assert!(
-            node.prepare_parent(Hash256::repeat_byte(2), parent)
-                .await
-                .unwrap()
-        );
-        let request = requests.recv().await.unwrap();
-        assert_eq!(request["params"][0]["headBlockHash"], json!(parent));
-        assert!(requests.try_recv().is_err());
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn invalid_forkchoice_is_not_treated_as_syncing() {
-        use lighthouse_types::Hash256;
-        use serde_json::json;
-        for response in [
-            json!({"result": {"payloadStatus": {"status": "INVALID", "validationError": "bad ancestor"}}}),
-            json!({"error": {"code": -38002, "message": "invalid forkchoice state"}}),
-            json!({"result": {}}),
-        ] {
-            let (node, _, server) = engine_stub(vec![response]).await;
-            assert!(
-                node.prepare_parent(Hash256::ZERO, Hash256::repeat_byte(1))
-                    .await
-                    .is_err()
-            );
-            server.abort();
         }
-    }
-
-    #[tokio::test]
-    async fn revisited_head_needs_valid_execution_state_but_no_new_payload() {
-        use lighthouse_types::Hash256;
-        use serde_json::json;
-        let head = Hash256::repeat_byte(3);
-        for status in ["VALID", "SYNCING"] {
-            let (node, mut requests, server) = engine_stub(vec![
-                json!({"result": {"hash": head}}),
-                json!({"result": {"payloadStatus": {"status": status}}}),
-            ])
-            .await;
-            assert_eq!(
-                node.engine_api_client
-                    .update_known_head(head, Hash256::ZERO, Hash256::ZERO)
-                    .await
-                    .unwrap(),
-                status == "VALID"
-            );
-            assert_eq!(
-                requests.recv().await.unwrap()["method"],
-                "eth_getBlockByHash"
-            );
-            assert_eq!(
-                requests.recv().await.unwrap()["method"],
-                "engine_forkchoiceUpdatedV4"
-            );
-            assert!(requests.try_recv().is_err());
-            server.abort();
-        }
-        let (node, mut requests, server) = engine_stub(vec![json!({"result": null})]).await;
-        assert!(
-            !node
-                .engine_api_client
-                .update_known_head(head, Hash256::ZERO, Hash256::ZERO)
-                .await
-                .unwrap()
-        );
-        assert_eq!(
-            requests.recv().await.unwrap()["method"],
-            "eth_getBlockByHash"
-        );
-        assert!(requests.try_recv().is_err());
-        server.abort();
     }
 
     /// A submission of the size of one maximum proof reaches the SSZ decoder, which rejects the
     /// zero bytes, instead of the body limit.
     #[tokio::test]
     async fn maximum_proof_size_submission_is_decoded() {
-        let (node, _, server) = engine_stub(vec![]).await;
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!(
             "http://{}/eth/v1/beacon/execution_proofs",
             listener.local_addr().unwrap()
         );
         let beacon_api = tokio::spawn(async move {
-            axum::serve(listener, std::sync::Arc::new(node).router())
+            Arc::new(mock_beacon_node())
+                .serve_beacon_api(listener)
                 .await
                 .unwrap();
         });
@@ -640,7 +471,6 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
         beacon_api.abort();
-        server.abort();
     }
 
     #[tokio::test]

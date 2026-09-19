@@ -206,18 +206,19 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 
 `mock-beacon-node` mocks a beacon node with the EIP-8025 behavior. It stands in for the beacon node in the examples.
 
-- It follows the block events of a CL. It sends every Gloas payload to zkboost as `engine_newPayloadV5`.
-- It receives the proofs at `POST /eth/v1/beacon/execution_proofs`. It verifies the validator signature as the beacon node does.
+- It serves the Engine API to a CL and forwards every request to zkboost with the JWT of the CL unchanged. zkboost therefore receives the Engine API traffic of a real CL.
+- It receives the proofs at `POST /eth/v1/beacon/execution_proofs`. It looks up the beacon block of every envelope at the CL and verifies the validator signature as the beacon node does.
 - It verifies each proof with `ere-verifier`. The check covers the request root, a successful validation, the `DEPOSIT_CHAIN_ID` of the CL, and the Amsterdam schema id.
 - The mock proof bytes `MOCK` pass as valid.
 - It forwards every other beacon API request to the CL. zkboost therefore uses the mock beacon node as its `cl_beacon_endpoint`.
 
 | Flag                       | Description                                 |
 | -------------------------- | ------------------------------------------- |
-| `--cl-endpoint <URL>`      | Beacon API endpoint of the CL to follow     |
+| `--cl-endpoint <URL>`      | Beacon API endpoint of the CL whose Engine API requests the mock forwards |
 | `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost              |
 | `--proof-types <a,b>`      | Proof types expected for every payload      |
 | `--port <u16>`             | Port serving the beacon API (default: 3001) |
+| `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551) |
 
 ## Observability
 

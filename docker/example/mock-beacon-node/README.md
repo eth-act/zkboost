@@ -2,13 +2,13 @@
 
 This example runs zkboost with two mock zkVM backends against a local Kurtosis testnet. `mock-beacon-node` takes the place of the beacon node.
 
-The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks. Docker Compose runs a separate Geth. Only zkboost uses its Engine API.
+The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks and a fourth Lighthouse without an execution client. Docker Compose runs a separate Geth. Only zkboost uses its Engine API.
 
 ## Proof flow
 
-- The mock beacon node follows the canonical head of the Lighthouse of the first participant. It sends the Gloas payloads to zkboost as `engine_newPayloadV5`.
-- zkboost forwards the payload to the dedicated Geth and proves it with the mocks.
-- zkboost submits the signed proofs to the mock beacon node, which verifies them.
+- The execution endpoint of the fourth Lighthouse is the mock beacon node. The mock forwards every Engine API request to zkboost with the JWT of the Lighthouse unchanged and answers with the response of zkboost.
+- zkboost forwards the request to the dedicated Geth. For a valid `engine_newPayloadV5` payload it obtains the witness and proves the payload with the mocks.
+- zkboost submits the signed proofs to the mock beacon node. The mock looks up the beacon block of every envelope at the fourth Lighthouse and verifies the signature and the proof. Every other beacon API request goes to that Lighthouse.
 
 ## Start
 
@@ -20,7 +20,7 @@ The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks.
 - The scripts need Docker, Kurtosis, and `yq`.
 - The enclave name defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before you run the scripts and Compose.
 - The genesis is saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.
-- Compose services share the project-scoped `zkboost` network. Geth and the mock beacon node also join the enclave network `kt-${ENCLAVE_NAME}`.
+- Compose services share the project-scoped `zkboost` network. Geth and the mock beacon node also join the enclave network `kt-${ENCLAVE_NAME}`, where the fourth Lighthouse reaches the Engine API of the mock at `mock-beacon-node:8551`.
 - After you recreate the testnet, also recreate the Compose Geth container. Its chain data lives in the container.
 
 ### Dedicated Geth
@@ -29,16 +29,6 @@ The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks.
 - `start_geth.sh` takes the peer RPC URL, fetches its enode, and writes the peer config and testnet JWT secret.
 - Needs no fixed node key. Its Engine API has no published host port.
 - All Kurtosis Lighthouse nodes keep running.
-
-### Head tracking and sync
-
-The mock beacon node refreshes the canonical head on every SSE head event and every two seconds. The periodic refresh also recovers missed events after a reconnect.
-
-1. It announces a missing parent with `engine_forkchoiceUpdatedV4`, so Geth syncs the history from the peer.
-2. It executes the new payload through zkboost, then advances forkchoice.
-3. It waits for the proofs of the block and processes the next heads meanwhile.
-
-If the parent is still syncing, the next refresh retries.
 
 ## Dashboards
 

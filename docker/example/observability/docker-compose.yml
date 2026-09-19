@@ -47,7 +47,7 @@ services:
     entrypoint: ["/usr/local/bin/mock-beacon-node"]
     command:
       - "--cl-endpoint"
-      - "http://cl-1-lighthouse-geth:4000"
+      - "http://cl-4-lighthouse:4000"
       - "--zkboost-endpoint"
       - "http://zkboost:3000"
       - "--proof-types"
