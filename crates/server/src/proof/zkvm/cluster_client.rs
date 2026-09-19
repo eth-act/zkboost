@@ -3,23 +3,28 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use ere_catalog::zkVMKind;
 use ere_cluster_client_zisk::{Error as ZiskError, Input, RemoteProverConfig, ZiskClusterClient};
-use ere_verifier::zkVMKind;
 use ere_verifier_zisk::codec::Encode;
 use tracing::{Span, info, warn};
 use zkboost_types::ProofType;
+
+use crate::proof::zkvm::cluster_client::openvm::{OpenVMClusterClient, OpenVMProveJob};
+
+mod openvm;
 
 /// A client for an external proving cluster, with one variant per supported zkVM.
 #[derive(Clone, Debug)]
 pub(crate) enum ClusterClient {
     /// A ZisK proving cluster.
     Zisk(Arc<ZiskClusterClient>),
+    /// An OpenVM proving cluster.
+    OpenVM(Arc<OpenVMClusterClient>),
 }
 
 impl ClusterClient {
-    /// Connects to the cluster at `endpoint` and registers the guest `elf`.
-    ///
-    /// Returns an error if `proof_type` has no cluster backend.
+    /// Connects to the cluster at `endpoint` with the guest `elf`. A ZisK cluster registers the
+    /// ELF, an OpenVM cluster must hold it in its loadout already.
     pub(crate) async fn new(
         proof_type: ProofType,
         endpoint: &str,
@@ -36,22 +41,21 @@ impl ClusterClient {
                     .with_context(|| format!("create zisk cluster client of {endpoint}"))?;
                 Ok(Self::Zisk(Arc::new(client)))
             }
-            _ => anyhow::bail!("cluster backend does not support {proof_type}"),
-        }
-    }
-
-    /// Returns the encoded program verifying key.
-    pub(crate) fn program_vk(&self) -> anyhow::Result<Vec<u8>> {
-        match self {
-            Self::Zisk(client) => Ok(client.program_vk().encode_to_vec()?),
+            zkVMKind::OpenVM => {
+                let client = OpenVMClusterClient::new(endpoint, &elf)
+                    .await
+                    .with_context(|| format!("create openvm cluster client of {endpoint}"))?;
+                Ok(Self::OpenVM(Arc::new(client)))
+            }
+            _ => unreachable!("config validation allows zisk and openvm proof types only"),
         }
     }
 
     /// Submits a prove job for `input`, returning a [`ClusterProveJob`] that
     /// drives it to completion.
     ///
-    /// `prove_span` is the worker's prove span, which declares an empty `job_id` field;
-    /// the id the cluster assigns is recorded there.
+    /// `prove_span` is the worker's prove span, which declares an empty `job_id` field. The
+    /// id of the job is recorded there.
     pub(crate) async fn create_prove_job(
         &self,
         input: &Input,
@@ -69,7 +73,7 @@ impl ClusterClient {
                             .await
                             .context("resubmit zisk prove job")?
                     }
-                    Err(err) => return Err(err).context("submit zisk prove job"),
+                    Err(error) => return Err(error).context("submit zisk prove job"),
                 };
                 // Recorded on the explicitly passed span rather than `Span::current()`, so the
                 // id cannot silently land elsewhere if an intermediate span is ever introduced.
@@ -80,6 +84,9 @@ impl ClusterClient {
                     job_id: Some(job_id),
                 })
             }
+            Self::OpenVM(client) => Ok(ClusterProveJob::OpenVM(
+                client.create_prove_job(input, prove_span).await?,
+            )),
         }
     }
 }
@@ -97,6 +104,8 @@ pub(crate) enum ClusterProveJob {
         /// The job identifier, taken once the job reaches a terminal state.
         job_id: Option<String>,
     },
+    /// An in-flight OpenVM prove job, which cancels itself when dropped.
+    OpenVM(OpenVMProveJob),
 }
 
 impl ClusterProveJob {
@@ -112,33 +121,33 @@ impl ClusterProveJob {
                         *job_id = None;
                         Ok(proof.encode_to_vec()?)
                     }
-                    Err(err @ (ZiskError::JobFailed { .. } | ZiskError::JobCancelled(_))) => {
+                    Err(error @ (ZiskError::JobFailed { .. } | ZiskError::JobCancelled(_))) => {
                         *job_id = None;
-                        Err(err)?
+                        Err(error)?
                     }
-                    Err(err) => Err(err)?,
+                    Err(error) => Err(error)?,
                 }
             }
+            Self::OpenVM(job) => job.wait().await,
         }
     }
 }
 
 impl Drop for ClusterProveJob {
     fn drop(&mut self) {
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            warn!("no runtime to cancel cluster prove job");
+        let Self::Zisk { client, job_id } = self else {
             return;
         };
-        match self {
-            Self::Zisk { client, job_id } => {
-                let Some(job_id) = job_id.take() else { return };
-                let client = client.clone();
-                handle.spawn(async move {
-                    if let Err(error) = client.cancel_prove_job(&job_id).await {
-                        warn!(%job_id, %error, "failed to cancel zisk cluster prove job");
-                    }
-                });
+        let Some(job_id) = job_id.take() else { return };
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            warn!(%job_id, "no runtime to cancel zisk cluster prove job");
+            return;
+        };
+        let client = client.clone();
+        handle.spawn(async move {
+            if let Err(error) = client.cancel_prove_job(&job_id).await {
+                warn!(%job_id, %error, "failed to cancel zisk cluster prove job");
             }
-        }
+        });
     }
 }

@@ -1,290 +1,576 @@
-//! Integration test for zkboost.
+//! Integration test for zkboost. A mock EL answers `engine_newPayloadWithWitnessV5` with the
+//! fixture witness on the first request of the payload, and like geth without a witness
+//! afterwards. A mock beacon node resolves the beacon block of the fixture payload. It collects
+//! every signed envelope of `POST /eth/v1/beacon/execution_proofs`.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
+    convert::Infallible,
     net::Ipv4Addr,
-    sync::{Arc, OnceLock},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
-use alloy_primitives::B256;
-use axum::{Json, extract::State};
-use bytes::Bytes;
-use futures::StreamExt;
+use alloy_primitives::{B256, Bytes, hex};
+use alloy_rlp::Header;
+use alloy_rpc_types_engine::{Claims, JwtSecret};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    response::sse::{Event as SseEvent, Sse},
+};
+use lighthouse_bls::{PublicKey, Signature};
+use lighthouse_eth2_keystore::Keystore;
+use lighthouse_types::{ChainSpec, Config as SpecConfig, Epoch, MainnetEthSpec};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use tokio::net::TcpListener;
-use zkboost_client::zkBoostClient;
+use serde_json::{Value, json};
+use tokio::{
+    net::TcpListener,
+    sync::{Notify, mpsc},
+};
+use tokio_stream::{Stream, StreamExt};
+use tracing_subscriber::EnvFilter;
+use url::Url;
 use zkboost_server::{
-    config::{Config, DashboardConfig, zkVMConfig},
+    config::{Config, DashboardConfig, MockProvingTime, zkVMConfig},
     server::zkBoostServer,
 };
 use zkboost_types::{
-    ChainConfig, FailureReason, Hash256, HashTreeRoot, NewPayloadRequest, ProofEvent,
-    ProofEventKind, ProofFailure, ProofStatus, ProofType, ProtocolFork, Sha2Hasher, SszDecode,
+    ExecutionWitness, Hash256, HashTreeRoot, MOCK_PROOF, NewPayloadParams, ProofType, ProtocolFork,
+    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode,
+    StatelessInput, StatelessValidationResult, execution_proof_domain,
 };
 
+/// The keystore of validator 256 of the ethereum-package mnemonic, a copy of the testnet example.
+const VOTING_KEYSTORE_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixture/voting-keystore.json"
+);
+const VOTING_KEYSTORE_PASSWORD_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixture/voting-keystore-password"
+);
+const VALIDATOR_INDEX: u64 = 256;
+/// The beacon block of the fixture payload, as the mock beacon node reports it.
+const BEACON_BLOCK_ROOT: B256 = B256::repeat_byte(0xbb);
+/// Another child of the parent beacon block, without the fixture payload.
+const OTHER_BLOCK_ROOT: B256 = B256::repeat_byte(0xcc);
+const GENESIS_VALIDATORS_ROOT: B256 = B256::repeat_byte(0x99);
+const FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x00, 0x38];
+
+/// The stateless input of block 93354 of glamsterdam-devnet-8.
+const AMSTERDAM_STATELESS_INPUT: &[u8] = include_bytes!("fixture/stateless_input_amsterdam.ssz");
+
 struct Fixture {
-    fork: ProtocolFork,
-    new_payload_request: NewPayloadRequest,
+    params: NewPayloadParams,
     new_payload_request_root: Hash256,
-    chain_config: ChainConfig,
-    witness: serde_json::Value,
+    block_hash: B256,
+    parent_beacon_block_root: B256,
+    slot: u64,
+    chain_id: u64,
+    witness: Bytes,
 }
 
 impl Fixture {
     fn load() -> Self {
-        const NEW_PAYLOAD_REQUEST: &[u8] = include_bytes!("fixture/new_payload_request.ssz");
-        const CHAIN_CONFIG: &[u8] = include_bytes!("fixture/chain_config.ssz");
-        const EXECUTION_WITNESS: &str = include_str!("fixture/execution_witness.json");
-        let new_payload_request = NewPayloadRequest::from_ssz_bytes(NEW_PAYLOAD_REQUEST).unwrap();
-        let new_payload_request_root =
-            Hash256::from(new_payload_request.hash_tree_root(&Sha2Hasher));
-        let chain_config = ChainConfig::from_ssz_bytes(CHAIN_CONFIG).unwrap();
-        let witness: serde_json::Value = serde_json::from_str(EXECUTION_WITNESS).unwrap();
-        Fixture {
-            // The fixture pins the fork its payload and chain config were produced for.
-            fork: ProtocolFork::BPO2,
+        let (_, input) =
+            StatelessInput::from_schema_prefixed_ssz(AMSTERDAM_STATELESS_INPUT).unwrap();
+        let StatelessInput {
             new_payload_request,
-            new_payload_request_root,
-            chain_config,
             witness,
+            chain_id,
+            ..
+        } = input;
+        let params = NewPayloadParams::try_from(&new_payload_request).unwrap();
+        Fixture {
+            block_hash: params.block_hash(),
+            parent_beacon_block_root: params.2,
+            slot: params.0.slot_number,
+            params,
+            new_payload_request_root: Hash256::from(
+                new_payload_request.hash_tree_root(&Sha2Hasher),
+            ),
+            chain_id,
+            witness: encode_engine_witness(&witness),
         }
     }
 }
 
-async fn start_mock_el(fixture: &Fixture, witness_timeout: bool, witness_delay: bool) -> url::Url {
-    struct MockElState {
-        witnesses: HashMap<B256, serde_json::Value>,
-        witness_timeout: bool,
-        witness_delay: bool,
-        first_query_time: OnceLock<Instant>,
+/// Encodes the witness as the EL returns it, an RLP list of the headers, codes, and state nodes.
+fn encode_engine_witness(witness: &ExecutionWitness) -> Bytes {
+    fn rlp_list(items: impl Iterator<Item = Vec<u8>>) -> Vec<u8> {
+        let payload: Vec<u8> = items.flatten().collect();
+        let mut out = Vec::new();
+        Header {
+            list: true,
+            payload_length: payload.len(),
+        }
+        .encode(&mut out);
+        out.extend(payload);
+        out
     }
+    fn rlp_strings(items: impl Iterator<Item = Vec<u8>>) -> Vec<u8> {
+        rlp_list(items.map(|item| alloy_rlp::encode(item.as_slice())))
+    }
+    let headers = rlp_list(witness.headers.iter().map(|header| header.to_vec()));
+    let codes = rlp_strings(witness.codes.iter().map(|code| code.to_vec()));
+    let state = rlp_strings(witness.state.iter().map(|node| node.to_vec()));
+    rlp_list([headers, codes, state].into_iter()).into()
+}
 
-    async fn mock_el_handler(
-        State(state): State<Arc<MockElState>>,
-        body: Bytes,
-    ) -> Json<serde_json::Value> {
-        let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        let method = request["method"].as_str().unwrap_or("");
+/// A JSON-RPC call seen by the mock EL.
+#[derive(Debug, Clone)]
+struct ElCall {
+    method: String,
+    authorization: Option<String>,
+}
 
-        let result = match method {
-            "debug_executionWitnessByBlockHash" => {
-                let hash_str = request["params"][0].as_str().unwrap();
-                let hash: B256 = hash_str.parse().unwrap();
+struct MockElState {
+    fixture: Fixture,
+    payload_status: &'static str,
+    witness_supported: bool,
+    calls: Mutex<Vec<ElCall>>,
+}
 
-                if state.witness_timeout {
-                    serde_json::Value::Null
-                } else if state.witness_delay {
-                    let first = state.first_query_time.get_or_init(Instant::now);
-                    if first.elapsed() < Duration::from_secs(3) {
-                        serde_json::Value::Null
-                    } else {
-                        state
-                            .witnesses
-                            .get(&hash)
-                            .map(|w| serde_json::to_value(w).unwrap())
-                            .unwrap_or(serde_json::Value::Null)
-                    }
-                } else {
-                    state
-                        .witnesses
-                        .get(&hash)
-                        .map(|w| serde_json::to_value(w).unwrap())
-                        .unwrap_or(serde_json::Value::Null)
-                }
-            }
-            _ => serde_json::Value::Null,
-        };
+async fn mock_el_handler(
+    State(state): State<Arc<MockElState>>,
+    headers: HeaderMap,
+    Json(request): Json<Value>,
+) -> Json<Value> {
+    let method = request["method"].as_str().unwrap_or_default().to_owned();
+    state.calls.lock().unwrap().push(ElCall {
+        method: method.clone(),
+        authorization: headers
+            .get(AUTHORIZATION)
+            .map(|value| value.to_str().unwrap().to_owned()),
+    });
 
-        Json(serde_json::json!({
+    if method == NewPayloadParams::WITH_WITNESS_METHOD && !state.witness_supported {
+        return Json(json!({
             "jsonrpc": "2.0",
-            "result": result,
+            "error": { "code": -32601, "message": "Method not found" },
             "id": request["id"],
-        }))
+        }));
     }
+    let result = match method.as_str() {
+        method if method == NewPayloadParams::WITH_WITNESS_METHOD => {
+            let mut status = json!({
+                "status": state.payload_status,
+                "latestValidHash": state.fixture.block_hash,
+                "validationError": null,
+            });
+            // Like geth, the witness comes with the first answer of the payload only.
+            let first_request = state
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call.method == method)
+                .count()
+                == 1;
+            if state.payload_status == "VALID" && first_request {
+                status["witness"] = json!(state.fixture.witness);
+            }
+            status
+        }
+        method if method == NewPayloadParams::METHOD => {
+            json!({ "status": "VALID", "latestValidHash": state.fixture.block_hash, "validationError": null })
+        }
+        "engine_forkchoiceUpdatedV4" => json!({
+            "payloadStatus": { "status": "VALID", "latestValidHash": null, "validationError": null },
+            "payloadId": null,
+        }),
+        _ => Value::Null,
+    };
 
-    let block_hash = fixture.new_payload_request.block_hash();
-    let witnesses = HashMap::from([(B256::from(block_hash), fixture.witness.clone())]);
+    Json(json!({ "jsonrpc": "2.0", "result": result, "id": request["id"] }))
+}
 
+async fn start_mock_el(
+    fixture: Fixture,
+    payload_status: &'static str,
+    witness_supported: bool,
+) -> (Url, Arc<MockElState>) {
     let state = Arc::new(MockElState {
-        witnesses,
-        witness_timeout,
-        witness_delay,
-        first_query_time: OnceLock::new(),
+        fixture,
+        payload_status,
+        witness_supported,
+        calls: Mutex::new(Vec::new()),
     });
     let app = axum::Router::new()
         .route("/", axum::routing::post(mock_el_handler))
-        .with_state(state);
+        .with_state(state.clone());
+    (serve(app).await, state)
+}
 
+struct MockBeaconNode {
+    fixture: Fixture,
+    ambiguous_block: bool,
+    mismatched_slot: bool,
+    block_from_event: bool,
+    /// Set while the next headers read answers 503.
+    headers_error: AtomicBool,
+    envelopes: mpsc::UnboundedSender<SignedExecutionProofEnvelope>,
+    /// Signals `GET /eth/v1/events`, which zkboost opens once the validator is ready.
+    events_opened: Notify,
+}
+
+async fn genesis_handler() -> Json<Value> {
+    Json(json!({ "data": { "genesis_validators_root": GENESIS_VALIDATORS_ROOT } }))
+}
+
+/// `GET /eth/v1/beacon/headers?parent_root=`, which lists the fixture block under its parent.
+/// Every header reports the fixture slot, or the next slot under `mismatched_slot`. A node that
+/// announces the block on the event stream lists no child. Under `beacon_node_error_once` the
+/// first read answers 503.
+async fn headers_handler(
+    State(node): State<Arc<MockBeaconNode>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, StatusCode> {
+    if node.headers_error.swap(false, Ordering::SeqCst) {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let parent_root = query
+        .get("parent_root")
+        .and_then(|root| root.parse::<B256>().ok());
+    let slot = (node.fixture.slot + u64::from(node.mismatched_slot)).to_string();
+    let headers = if parent_root == Some(node.fixture.parent_beacon_block_root)
+        && !node.block_from_event
+    {
+        json!([
+            { "root": OTHER_BLOCK_ROOT, "canonical": false, "header": { "message": { "slot": slot } } },
+            { "root": BEACON_BLOCK_ROOT, "canonical": true, "header": { "message": { "slot": slot } } },
+        ])
+    } else {
+        json!([])
+    };
+    Ok(Json(json!({ "data": headers })))
+}
+
+/// `GET /eth/v2/beacon/blocks/{root}`, with the fixture payload bid under the fixture block only.
+/// An ambiguous node answers that bid under both children of the parent.
+async fn block_handler(
+    State(node): State<Arc<MockBeaconNode>>,
+    Path(root): Path<B256>,
+) -> Result<Json<Value>, StatusCode> {
+    let block_hash = match root {
+        BEACON_BLOCK_ROOT => node.fixture.block_hash,
+        OTHER_BLOCK_ROOT if node.ambiguous_block => node.fixture.block_hash,
+        OTHER_BLOCK_ROOT => B256::ZERO,
+        _ => return Err(StatusCode::NOT_FOUND),
+    };
+    Ok(Json(json!({ "data": { "message": { "body": {
+        "signed_execution_payload_bid": { "message": { "block_hash": block_hash } }
+    } } } })))
+}
+
+/// `GET /eth/v1/events`, which announces the fixture block under `block_from_event`, and the
+/// other block as well under `ambiguous_block`. The stream stays open afterwards.
+async fn events_handler(
+    State(node): State<Arc<MockBeaconNode>>,
+) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    node.events_opened.notify_one();
+    let mut block_roots = Vec::new();
+    if node.block_from_event {
+        block_roots.push(BEACON_BLOCK_ROOT);
+        if node.ambiguous_block {
+            block_roots.push(OTHER_BLOCK_ROOT);
+        }
+    }
+    let events: Vec<_> = block_roots
+        .into_iter()
+        .map(|block_root| {
+            Ok(SseEvent::default()
+                .event("execution_payload")
+                .json_data(json!({
+                    "slot": node.fixture.slot.to_string(),
+                    "block_hash": node.fixture.block_hash,
+                    "block_root": block_root,
+                }))
+                .unwrap())
+        })
+        .collect();
+    Sse::new(tokio_stream::iter(events).chain(tokio_stream::pending()))
+}
+
+/// `GET /eth/v1/config/spec`, the mainnet spec with every fork at genesis.
+async fn spec_handler(State(node): State<Arc<MockBeaconNode>>) -> Json<Value> {
+    let spec = mock_spec(node.fixture.chain_id);
+    Json(json!({ "data": SpecConfig::from_chain_spec::<MainnetEthSpec>(&spec) }))
+}
+
+/// `GET /eth/v1/beacon/states/head/validators/{pubkey}`, known for the fixture validator only.
+async fn validator_handler(Path(pubkey): Path<String>) -> Result<Json<Value>, StatusCode> {
+    if pubkey != validator_pubkey().to_string() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(Json(
+        json!({ "data": { "index": VALIDATOR_INDEX.to_string() } }),
+    ))
+}
+
+async fn execution_proofs_handler(
+    State(node): State<Arc<MockBeaconNode>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> StatusCode {
+    assert_eq!(
+        headers.get("content-type").unwrap(),
+        "application/octet-stream"
+    );
+    for envelope in SignedExecutionProofEnvelopes::from_ssz_bytes(&body)
+        .unwrap()
+        .iter()
+    {
+        node.envelopes.send(envelope.clone()).unwrap();
+    }
+    StatusCode::OK
+}
+
+async fn start_mock_beacon_node(
+    fixture: Fixture,
+    ambiguous_block: bool,
+    mismatched_slot: bool,
+    block_from_event: bool,
+    beacon_node_error_once: bool,
+) -> (
+    Url,
+    Arc<MockBeaconNode>,
+    mpsc::UnboundedReceiver<SignedExecutionProofEnvelope>,
+) {
+    let (envelopes_tx, envelopes_rx) = mpsc::unbounded_channel();
+    let node = Arc::new(MockBeaconNode {
+        fixture,
+        ambiguous_block,
+        mismatched_slot,
+        block_from_event,
+        headers_error: AtomicBool::new(beacon_node_error_once),
+        envelopes: envelopes_tx,
+        events_opened: Notify::new(),
+    });
+    let app = axum::Router::new()
+        .route(
+            "/eth/v1/beacon/genesis",
+            axum::routing::get(genesis_handler),
+        )
+        .route(
+            "/eth/v1/beacon/headers",
+            axum::routing::get(headers_handler),
+        )
+        .route("/eth/v1/events", axum::routing::get(events_handler))
+        .route(
+            "/eth/v1/beacon/states/head/validators/{pubkey}",
+            axum::routing::get(validator_handler),
+        )
+        .route(
+            "/eth/v2/beacon/blocks/{root}",
+            axum::routing::get(block_handler),
+        )
+        .route("/eth/v1/config/spec", axum::routing::get(spec_handler))
+        .route(
+            "/eth/v1/beacon/execution_proofs",
+            axum::routing::post(execution_proofs_handler),
+        )
+        .with_state(node.clone());
+    (serve(app).await, node, envelopes_rx)
+}
+
+/// The chain spec of the mock beacon node. Every fork is at genesis, with the fixture fork
+/// version under Gloas and the fixture chain id.
+fn mock_spec(chain_id: u64) -> ChainSpec {
+    let mut spec = ChainSpec::mainnet();
+    spec.deposit_chain_id = chain_id;
+    spec.altair_fork_epoch = Some(Epoch::new(0));
+    spec.bellatrix_fork_epoch = Some(Epoch::new(0));
+    spec.capella_fork_epoch = Some(Epoch::new(0));
+    spec.deneb_fork_epoch = Some(Epoch::new(0));
+    spec.electra_fork_epoch = Some(Epoch::new(0));
+    spec.fulu_fork_epoch = Some(Epoch::new(0));
+    spec.gloas_fork_epoch = Some(Epoch::new(0));
+    spec.gloas_fork_version = FORK_VERSION;
+    spec
+}
+
+/// The public key of the validator that signs the proofs.
+fn validator_pubkey() -> PublicKey {
+    Keystore::from_json_file(VOTING_KEYSTORE_PATH)
+        .unwrap()
+        .public_key()
+        .unwrap()
+}
+
+async fn serve(app: axum::Router) -> Url {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move { axum::serve(listener, app).await });
-
     format!("http://127.0.0.1:{port}").parse().unwrap()
-}
-
-async fn start_zkboost_server(
-    el_endpoint: url::Url,
-    zkvm_configs: Vec<zkVMConfig>,
-    witness_timeout_secs: u64,
-) -> (url::Url, tokio_util::sync::CancellationToken) {
-    let config = Config {
-        port: 0,
-        el_endpoint,
-        el_headers: HashMap::new(),
-        witness_timeout_secs,
-        proof_cache_size: 128,
-        witness_cache_size: 128,
-        dashboard: DashboardConfig::default(),
-        zkvm: zkvm_configs,
-    };
-    let metrics = PrometheusBuilder::new().build_recorder().handle();
-    let shutdown = tokio_util::sync::CancellationToken::new();
-    let server = zkBoostServer::new(config, metrics).await.unwrap();
-    let (addr, _) = server.run(shutdown.clone()).await.unwrap();
-    let zkboost_endpoint = format!("http://127.0.0.1:{}", addr.port()).parse().unwrap();
-    (zkboost_endpoint, shutdown)
 }
 
 #[derive(Default)]
 struct Behavior {
-    witness_delay: bool,
-    witness_timeout: bool,
+    payload_invalid: bool,
+    witness_unsupported: bool,
     proof_timeout: bool,
     proof_failure: bool,
+    ambiguous_block: bool,
+    mismatched_slot: bool,
+    block_from_event: bool,
+    beacon_node_unreachable: bool,
+    beacon_node_error_once: bool,
 }
 
 struct TestHarness {
     fixture: Fixture,
-    client: zkBoostClient,
-    proof_type: ProofType,
+    zkboost_endpoint: Url,
+    el: Arc<MockElState>,
+    envelopes: mpsc::UnboundedReceiver<SignedExecutionProofEnvelope>,
+    jwt_secret: JwtSecret,
+    proof_types: Vec<ProofType>,
     shutdown: tokio_util::sync::CancellationToken,
 }
 
 impl TestHarness {
     async fn new(behavior: Behavior) -> Self {
-        let fixture = Fixture::load();
-        let el_endpoint =
-            start_mock_el(&fixture, behavior.witness_timeout, behavior.witness_delay).await;
-        let witness_timeout_secs = if behavior.witness_timeout { 1 } else { 12 };
-        let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
-        let proof_type = ProofType::EthrexZisk;
-        let zkvm_config = zkVMConfig::Mock {
-            proof_type,
-            proof_timeout_secs,
-            mock_proving_time: zkboost_server::config::MockProvingTime::Constant { ms: 6000 },
-            mock_proof_size: 128 << 10,
-            mock_failure: behavior.proof_failure,
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .try_init();
+        let payload_status = if behavior.payload_invalid {
+            "INVALID"
+        } else {
+            "VALID"
         };
-        let (zkboost_endpoint, shutdown) =
-            start_zkboost_server(el_endpoint, vec![zkvm_config], witness_timeout_secs).await;
-        let client = zkBoostClient::new(zkboost_endpoint);
+        let (el_endpoint, el) = start_mock_el(
+            Fixture::load(),
+            payload_status,
+            !behavior.witness_unsupported,
+        )
+        .await;
+        let (beacon_endpoint, beacon_node, envelopes) = start_mock_beacon_node(
+            Fixture::load(),
+            behavior.ambiguous_block,
+            behavior.mismatched_slot,
+            behavior.block_from_event,
+            behavior.beacon_node_error_once,
+        )
+        .await;
+        let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
+        let proof_types = vec![ProofType::RethOpenVM];
+        let config = Config {
+            port: 0,
+            el_engine_endpoint: el_endpoint,
+            cl_beacon_endpoint: if behavior.beacon_node_unreachable {
+                // Nothing listens on port 1, so every read of the beacon node fails.
+                "http://127.0.0.1:1/".parse().unwrap()
+            } else {
+                beacon_endpoint
+            },
+            validator_keystore_path: VOTING_KEYSTORE_PATH.into(),
+            validator_keystore_password_path: VOTING_KEYSTORE_PASSWORD_PATH.into(),
+            dashboard: DashboardConfig::default(),
+            zkvm: proof_types
+                .iter()
+                .map(|&proof_type| zkVMConfig::Mock {
+                    proof_type,
+                    proof_timeout_secs,
+                    mock_proving_time: MockProvingTime::Constant { ms: 3000 },
+                    mock_failure: behavior.proof_failure,
+                })
+                .collect(),
+        };
+        let metrics = PrometheusBuilder::new().build_recorder().handle();
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let server = zkBoostServer::new(config, metrics).await.unwrap();
+        let (addr, _) = server.run(shutdown.clone()).await.unwrap();
+        if !behavior.beacon_node_unreachable {
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                beacon_node.events_opened.notified(),
+            )
+            .await
+            .expect("validator should be ready");
+        }
         Self {
-            client,
-            fixture,
-            proof_type,
+            fixture: Fixture::load(),
+            zkboost_endpoint: format!("http://127.0.0.1:{}", addr.port()).parse().unwrap(),
+            el,
+            envelopes,
+            jwt_secret: JwtSecret::random(),
+            proof_types,
             shutdown,
         }
     }
 
-    async fn request_proof(&self) {
-        let new_payload_request_root = self
-            .client
-            .request_proof(
-                self.fixture.fork,
-                &self.fixture.new_payload_request,
-                &self.fixture.chain_config,
-                &[self.proof_type],
-            )
+    /// Sends a JSON-RPC request to zkboost with a JWT and returns the response body.
+    async fn engine_call(&self, method: &str, params: Value) -> Value {
+        let token = self
+            .jwt_secret
+            .encode(&Claims::with_current_timestamp())
+            .unwrap();
+        let response = reqwest::Client::new()
+            .post(self.zkboost_endpoint.clone())
+            .bearer_auth(token)
+            .json(&json!({ "jsonrpc": "2.0", "id": 7, "method": method, "params": params }))
+            .send()
             .await
-            .unwrap()
-            .new_payload_request_root;
-
-        assert_eq!(
-            new_payload_request_root,
-            self.fixture.new_payload_request_root
-        );
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        response.json().await.unwrap()
     }
 
-    async fn wait_for_event(&self) -> ProofEvent {
-        let mut stream = Box::pin(
-            self.client
-                .subscribe_proof_events(Some(self.fixture.new_payload_request_root)),
-        );
-        let proof_event = tokio::time::timeout(Duration::from_secs(30), async {
-            stream.next().await.unwrap().unwrap()
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(
-            proof_event.new_payload_request_root(),
-            self.fixture.new_payload_request_root
-        );
-
-        proof_event
+    async fn new_payload(&self) -> Value {
+        let params = serde_json::to_value(&self.fixture.params).unwrap();
+        self.engine_call(NewPayloadParams::METHOD, params).await
     }
 
-    async fn assert_proof_event(
-        &self,
-        proof_event_kind: ProofEventKind,
-        failure_reason: Option<FailureReason>,
-    ) {
-        let proof_event = self.wait_for_event().await;
-
-        assert_eq!(proof_event.kind(), proof_event_kind);
-        assert_eq!(proof_event.proof_type(), self.proof_type);
-        assert_eq!(
-            proof_event.new_payload_request_root(),
-            self.fixture.new_payload_request_root
-        );
-        if let Some(failure_reason) = failure_reason {
-            assert!(matches!(
-                proof_event,
-                ProofEvent::ProofFailure(ProofFailure { reason, .. }) if reason == failure_reason
-            ))
+    /// Waits for one signed envelope of every configured proof type, verifies the signature as
+    /// the beacon node does, and returns the envelopes.
+    async fn assert_proofs_submitted(&mut self) -> Vec<SignedExecutionProofEnvelope> {
+        let pubkey = validator_pubkey();
+        let domain = execution_proof_domain(FORK_VERSION, GENESIS_VALIDATORS_ROOT);
+        let mut remaining: HashSet<u8> = self
+            .proof_types
+            .iter()
+            .map(|proof_type| proof_type.execution_proof_type())
+            .collect();
+        let mut envelopes = Vec::new();
+        while !remaining.is_empty() {
+            let envelope = tokio::time::timeout(Duration::from_secs(60), self.envelopes.recv())
+                .await
+                .expect("proof should be submitted")
+                .unwrap();
+            assert_eq!(envelope.message.beacon_block_root, BEACON_BLOCK_ROOT.0);
+            assert!(
+                remaining.remove(&envelope.message.proof_type),
+                "{envelope:?}"
+            );
+            assert_eq!(&*envelope.message.proof_data, MOCK_PROOF);
+            assert_eq!(envelope.validator_index, VALIDATOR_INDEX);
+            let signing_root = envelope.message.signing_root(domain);
+            let signature = Signature::deserialize(&envelope.signature).unwrap();
+            assert!(signature.verify(
+                &pubkey,
+                lighthouse_bls::Hash256::from_slice(signing_root.as_slice())
+            ));
+            envelopes.push(envelope);
         }
+        envelopes
     }
 
-    async fn assert_proof_complete(&self) {
-        self.assert_proof_event(ProofEventKind::ProofComplete, None)
-            .await
+    async fn assert_no_proof_submitted(&mut self) {
+        assert!(
+            tokio::time::timeout(Duration::from_secs(6), self.envelopes.recv())
+                .await
+                .is_err(),
+            "no proof should be submitted"
+        );
     }
 
-    async fn assert_proof_failure(&self, failure_reason: FailureReason) {
-        self.assert_proof_event(ProofEventKind::ProofFailure, Some(failure_reason))
-            .await
-    }
-
-    async fn assert_get_proof_is_valid(&self) {
-        let proof = self
-            .client
-            .get_proof(self.fixture.new_payload_request_root, self.proof_type)
-            .await
-            .unwrap();
-
-        let verification = self
-            .client
-            .verify_proof(
-                self.fixture.fork,
-                self.fixture.new_payload_request_root,
-                &self.fixture.chain_config,
-                self.proof_type,
-                &proof,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(verification.status, ProofStatus::Valid);
-    }
-
-    async fn assert_get_proof_not_found(&self) {
-        assert!(matches!(
-            self.client
-                .get_proof(self.fixture.new_payload_request_root, self.proof_type)
-                .await,
-            Err(zkboost_client::Error::NotFound(_))
-        ));
+    fn el_calls(&self) -> Vec<ElCall> {
+        self.el.calls.lock().unwrap().clone()
     }
 }
 
@@ -294,81 +580,244 @@ impl Drop for TestHarness {
     }
 }
 
+/// The stateless input fixture matches the guest output fixture. A verifier therefore expects the
+/// public values from the request root, the chain id, and the Amsterdam schema id.
+#[test]
+fn test_fixture_expected_output() {
+    let fixture = Fixture::load();
+    let expected = StatelessValidationResult::from_ssz_bytes(&hex!(
+        "8c3a890206a189727e151767653f846ccddbd269eb29fb0a2f97371f23a481c6016ecca8a6010000000115"
+    ))
+    .unwrap();
+    assert_eq!(
+        expected.new_payload_request_root,
+        fixture.new_payload_request_root.0
+    );
+    assert!(expected.successful_validation);
+    assert_eq!(expected.chain_id, fixture.chain_id);
+    assert_eq!(expected.schema_id, ProtocolFork::Amsterdam.schema_id());
+}
+
 #[tokio::test]
-async fn test_proof_complete() {
+async fn test_new_payload_proof_submitted() {
+    {
+        let mut harness = TestHarness::new(Behavior::default()).await;
+
+        let response = harness.new_payload().await;
+        assert_eq!(response["id"], 7);
+        assert_eq!(
+            response["result"],
+            json!({
+                "status": "VALID",
+                "latestValidHash": harness.fixture.block_hash,
+                "validationError": null,
+            })
+        );
+
+        let calls = harness.el_calls();
+        let new_payload = calls
+            .iter()
+            .find(|call| call.method == NewPayloadParams::WITH_WITNESS_METHOD)
+            .expect("new payload forwarded with witness");
+        assert!(
+            new_payload
+                .authorization
+                .as_deref()
+                .is_some_and(|value| value.starts_with("Bearer ")),
+            "{new_payload:?}"
+        );
+
+        harness.assert_proofs_submitted().await;
+
+        // The same payload sent again is submitted from the cache, faster than a new proof.
+        let resubmitted = Instant::now();
+        harness.new_payload().await;
+        harness.assert_proofs_submitted().await;
+        assert!(resubmitted.elapsed() < Duration::from_millis(3000));
+    }
+}
+
+#[tokio::test]
+async fn test_other_methods_forwarded() {
     let harness = TestHarness::new(Behavior::default()).await;
 
-    harness.request_proof().await;
-    harness.assert_proof_complete().await;
-    harness.assert_get_proof_is_valid().await;
+    let response = harness
+        .engine_call("engine_forkchoiceUpdatedV4", json!([{}, null, null]))
+        .await;
+    assert_eq!(response["result"]["payloadStatus"]["status"], "VALID");
+    assert_eq!(response["result"]["payloadId"], Value::Null);
 
-    harness.assert_proof_complete().await;
+    let calls = harness.el_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].method, "engine_forkchoiceUpdatedV4");
+    assert!(calls[0].authorization.is_some());
 }
 
+/// An EL without the witness method answers the plain method, and nothing is proven.
 #[tokio::test]
-async fn test_proof_complete_with_witness_delay() {
-    let behavior = Behavior {
-        witness_delay: true,
+async fn test_witness_method_unsupported_forwarded() {
+    let mut harness = TestHarness::new(Behavior {
+        witness_unsupported: true,
         ..Default::default()
-    };
-    let harness = TestHarness::new(behavior).await;
+    })
+    .await;
 
-    harness.request_proof().await;
-    harness.assert_proof_complete().await;
-    harness.assert_get_proof_is_valid().await;
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    let methods: Vec<_> = harness
+        .el_calls()
+        .into_iter()
+        .map(|call| call.method)
+        .collect();
+    assert_eq!(
+        methods,
+        [
+            NewPayloadParams::WITH_WITNESS_METHOD,
+            NewPayloadParams::METHOD
+        ]
+    );
+
+    harness.assert_no_proof_submitted().await;
 }
 
 #[tokio::test]
-async fn test_proof_failure() {
-    let behavior = Behavior {
+async fn test_invalid_payload_not_proven() {
+    let mut harness = TestHarness::new(Behavior {
+        payload_invalid: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "INVALID");
+    assert!(response["result"].get("witness").is_none());
+
+    harness.assert_no_proof_submitted().await;
+}
+
+#[tokio::test]
+async fn test_proof_failure_not_submitted() {
+    let mut harness = TestHarness::new(Behavior {
         proof_failure: true,
         ..Default::default()
-    };
-    let harness = TestHarness::new(behavior).await;
+    })
+    .await;
 
-    harness.request_proof().await;
-    harness
-        .assert_proof_failure(FailureReason::ProvingError)
-        .await;
-    harness.assert_get_proof_not_found().await;
-
-    // Subscribing again after the failure receives it replayed from the failure cache.
-    harness
-        .assert_proof_failure(FailureReason::ProvingError)
-        .await;
+    harness.new_payload().await;
+    harness.assert_no_proof_submitted().await;
 }
 
 #[tokio::test]
-async fn test_witness_timeout() {
-    let behavior = Behavior {
-        witness_timeout: true,
-        ..Default::default()
-    };
-    let harness = TestHarness::new(behavior).await;
-
-    harness.request_proof().await;
-    harness
-        .assert_proof_failure(FailureReason::WitnessTimeout)
-        .await;
-    harness.assert_get_proof_not_found().await;
-}
-
-#[tokio::test]
-async fn test_proof_timeout() {
-    let behavior = Behavior {
+async fn test_proof_timeout_not_submitted() {
+    let mut harness = TestHarness::new(Behavior {
         proof_timeout: true,
         ..Default::default()
-    };
-    let harness = TestHarness::new(behavior).await;
+    })
+    .await;
 
-    harness.request_proof().await;
-    harness
-        .assert_proof_failure(FailureReason::ProvingTimeout)
-        .await;
-    harness.assert_get_proof_not_found().await;
+    harness.new_payload().await;
+    harness.assert_no_proof_submitted().await;
+}
 
-    // Subscribing again after the failure receives it replayed from the failure cache.
-    harness
-        .assert_proof_failure(FailureReason::ProvingTimeout)
-        .await;
+/// Two children of the parent block carry the payload, so the submission stops at the equivocation.
+#[tokio::test]
+async fn test_ambiguous_block_not_submitted() {
+    let mut harness = TestHarness::new(Behavior {
+        ambiguous_block: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_no_proof_submitted().await;
+}
+
+/// The beacon block header reports a different slot, so the submission stops at the slot check.
+#[tokio::test]
+async fn test_mismatched_slot_not_submitted() {
+    let mut harness = TestHarness::new(Behavior {
+        mismatched_slot: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_no_proof_submitted().await;
+}
+
+/// The first headers read of the beacon node fails, so the submission is retried.
+#[tokio::test]
+async fn test_proof_submitted_after_beacon_node_error() {
+    let mut harness = TestHarness::new(Behavior {
+        beacon_node_error_once: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_proofs_submitted().await;
+}
+
+/// The `execution_payload` event carries the beacon block root, so no child is listed.
+#[tokio::test]
+async fn test_proof_submitted_from_execution_payload_event() {
+    let mut harness = TestHarness::new(Behavior {
+        block_from_event: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    harness.assert_proofs_submitted().await;
+}
+
+/// Two `execution_payload` events carry the payload. The proof is submitted under the first
+/// announced beacon block root.
+#[tokio::test]
+async fn test_first_execution_payload_event_kept() {
+    let mut harness = TestHarness::new(Behavior {
+        block_from_event: true,
+        ambiguous_block: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    for envelope in harness.assert_proofs_submitted().await {
+        assert_eq!(envelope.message.beacon_block_root, BEACON_BLOCK_ROOT.0);
+    }
+}
+
+/// The beacon node is unreachable, so the validator is never ready. The payload is forwarded
+/// unchanged and nothing is proven.
+#[tokio::test]
+async fn test_payload_forwarded_before_validator_ready() {
+    let mut harness = TestHarness::new(Behavior {
+        beacon_node_unreachable: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    let methods: Vec<_> = harness
+        .el_calls()
+        .into_iter()
+        .map(|call| call.method)
+        .collect();
+    assert_eq!(methods, [NewPayloadParams::METHOD]);
+
+    harness.assert_no_proof_submitted().await;
 }

@@ -53,7 +53,7 @@ pub fn init() -> (Option<SdkTracerProvider>, Option<OtelLayer>) {
 
     let otel_layer = provider
         .as_ref()
-        .map(|p| OpenTelemetryLayer::new(p.tracer(service_name)));
+        .map(|provider| OpenTelemetryLayer::new(provider.tracer(service_name)));
 
     (provider, otel_layer)
 }

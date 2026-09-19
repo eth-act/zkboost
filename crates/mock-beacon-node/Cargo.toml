@@ -1,0 +1,35 @@
+[package]
+name = "mock-beacon-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap = { workspace = true, features = ["derive"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url.workspace = true
+
+# lighthouse
+lighthouse_bls.workspace = true
+ethereum_serde_utils.workspace = true
+lighthouse_types.workspace = true
+
+# ere
+ere-verifier.workspace = true
+
+# ere-guests
+stateless-validator-downloader.workspace = true
+
+# local
+zkboost-types.workspace = true
