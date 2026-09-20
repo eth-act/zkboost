@@ -30,6 +30,29 @@ The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks 
 - Needs no fixed node key. Its Engine API has no published host port.
 - All Kurtosis Lighthouse nodes keep running.
 
+## Proof observer with a GPU
+
+The commented lines of the Compose file, the zkboost config, and `network_params.yaml` turn the example into the proof flow of the testnet example on one GPU. An Ere server proves the mock OpenVM guest of `mock-guest`, which reveals its input unchanged, for both proof types. The fourth Lighthouse comes from eth-act and gossips the proofs to a fifth Lighthouse, the proof observer, which imports every payload after its proofs and has no execution client.
+
+1. In `docker-compose.yml`, uncomment the `openvm` service, the `openvm` dependency of zkboost, and the `kurtosis` network of zkboost.
+2. In `zkboost/config.toml`, uncomment the `endpoint` of both mocks, and replace the `cl_beacon_endpoint` of the mock beacon node with the commented one.
+3. In `network_params.yaml`, replace the image and the parameters of the fourth Lighthouse with the commented ones, and uncomment the proof observer, `genesis_delay`, and `extra_files`.
+4. Start the testnet as above. The start script builds the eth-act Lighthouse image, which takes several minutes. Run Compose as soon as the start script prints `Started!`.
+
+zkboost then posts the proofs to the fourth Lighthouse, and the mock beacon node only forwards the Engine API. The observer reports the head of the testnet at `/eth/v1/node/syncing` and lists both proof types at `/eth/v1/beacon/execution_proofs/{slot}`:
+
+```bash
+BEACON_API=$(kurtosis port print "${ENCLAVE_NAME:-local-testnet}" cl-5-lighthouse http)
+curl -fsS "$BEACON_API/eth/v1/node/syncing"
+curl -fsS "$BEACON_API/eth/v1/beacon/execution_proofs/head" | yq -p=json '[.data[].message.proof_type]'
+```
+
+`mock-guest` holds one guest per zkVM as an assembly source, a linker script, the linked ELF, and the verifying key. The build commands are in the header of each source. The `keygen` command of the ere-server of the zkVM writes the key:
+
+```
+docker run --rm -v $PWD/mock-guest:/mock-guest ghcr.io/eth-act/ere/ere-server-openvm:0.17.0 --elf-path /mock-guest/openvm.elf keygen --program-vk-path /mock-guest/openvm.vk
+```
+
 ## Dashboards
 
 The zkboost dashboard is at http://localhost:3000/dashboard.

@@ -16,7 +16,7 @@ use stateless_validator_common::{
     ProgressiveList, SszDecode, SszEncode, SszList,
     guest::input::new_payload_request::{
         ExecutionPayloadV4, ExecutionRequestsGloas, NewPayloadRequest, NewPayloadRequestGloas,
-        Withdrawal,
+        Transactions, Withdrawal,
     },
 };
 
@@ -255,6 +255,64 @@ fn encode_requests<T: SszEncode>(request_type: u8, requests: &ProgressiveList<T>
 fn decode_requests<T: SszDecode>(bytes: &[u8], label: &str) -> anyhow::Result<ProgressiveList<T>> {
     ProgressiveList::from_ssz_bytes(bytes)
         .map_err(|err| anyhow!("{label} are not decodable: {err:?}"))
+}
+
+/// Reads of a `NewPayloadRequest` for every fork. A field that only later forks have is `None`
+/// for an earlier fork.
+pub trait NewPayloadRequestExt {
+    /// Returns the block hash of the execution payload.
+    fn block_hash(&self) -> B256;
+    /// Returns the gas used by the execution payload.
+    fn gas_used(&self) -> u64;
+    /// Returns the transactions of the execution payload.
+    fn transactions(&self) -> &Transactions;
+    /// Returns the parent beacon block root, part of the request since Deneb.
+    fn parent_beacon_block_root(&self) -> Option<B256>;
+    /// Returns the slot of the execution payload, part of the payload since Gloas.
+    fn slot(&self) -> Option<u64>;
+}
+
+/// Reads a field that the execution payload of every fork has.
+macro_rules! execution_payload_field {
+    ($request:expr, $field:ident) => {
+        match $request {
+            NewPayloadRequest::Bellatrix(request) => &request.execution_payload.$field,
+            NewPayloadRequest::Capella(request) => &request.execution_payload.$field,
+            NewPayloadRequest::Deneb(request) => &request.execution_payload.$field,
+            NewPayloadRequest::ElectraFulu(request) => &request.execution_payload.$field,
+            NewPayloadRequest::Gloas(request) => &request.execution_payload.$field,
+        }
+    };
+}
+
+impl NewPayloadRequestExt for NewPayloadRequest {
+    fn block_hash(&self) -> B256 {
+        B256::from(*execution_payload_field!(self, block_hash))
+    }
+
+    fn gas_used(&self) -> u64 {
+        *execution_payload_field!(self, gas_used)
+    }
+
+    fn transactions(&self) -> &Transactions {
+        execution_payload_field!(self, transactions)
+    }
+
+    fn parent_beacon_block_root(&self) -> Option<B256> {
+        match self {
+            Self::Bellatrix(_) | Self::Capella(_) => None,
+            Self::Deneb(request) => Some(B256::from(request.parent_beacon_block_root)),
+            Self::ElectraFulu(request) => Some(B256::from(request.parent_beacon_block_root)),
+            Self::Gloas(request) => Some(B256::from(request.parent_beacon_block_root)),
+        }
+    }
+
+    fn slot(&self) -> Option<u64> {
+        match self {
+            Self::Bellatrix(_) | Self::Capella(_) | Self::Deneb(_) | Self::ElectraFulu(_) => None,
+            Self::Gloas(request) => Some(request.execution_payload.slot_number),
+        }
+    }
 }
 
 #[cfg(test)]

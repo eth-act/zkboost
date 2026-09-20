@@ -62,6 +62,7 @@ async fn test_request_span_joins_remote_trace_context() {
             proof_timeout_secs: 12,
             mock_proving_time: MockProvingTime::Constant { ms: 10 },
             mock_failure: false,
+            endpoint: None,
         }],
     };
     let metrics = PrometheusBuilder::new().build_recorder().handle();

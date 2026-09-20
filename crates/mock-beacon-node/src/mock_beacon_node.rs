@@ -1,7 +1,7 @@
 //! State of the mock beacon node. It forwards every Engine API request of the CL to zkboost and
 //! waits for the proof of every configured proof type of every valid `engine_newPayloadV5`
 //! payload. It verifies the signature of every envelope as the beacon node does, then the proof
-//! against the expected public values.
+//! against the public values of the fixture proofs.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -35,10 +35,9 @@ use tokio::{
 use tracing::{info, warn};
 use url::Url;
 use zkboost_types::{
-    HashTreeRoot, MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, MOCK_PROOF, NewPayloadParams,
-    NewPayloadRequest, ProofType, ProtocolFork, Sha2Hasher, SignedExecutionProofEnvelope,
-    SignedExecutionProofEnvelopes, SszDecode, SszEncode, StatelessValidationResult,
-    execution_proof_domain,
+    MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, NewPayloadParams, NewPayloadRequest,
+    NewPayloadRequestExt, ProofType, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes,
+    SszDecode, execution_proof_domain,
 };
 
 use crate::{beacon_node_client::BeaconNodeClient, engine_api_client::EngineApiClient};
@@ -54,11 +53,14 @@ const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_SUBMISSION_SIZE: usize =
     MAX_EXECUTION_PROOFS_PER_PAYLOAD * (4 + 4 + 4 + 1 + 32 + 96 + MAX_PROOF_SIZE);
 
-/// A valid payload of the CL, with what its proofs are verified against.
+/// The public values of the fixture proofs of the mock zkVM.
+const MOCK_PUBLIC_VALUES: &[u8] =
+    include_bytes!("../../server/src/proof/zkvm/mock/public_values.bin");
+
+/// A valid payload of the CL, whose proofs are awaited.
 #[derive(Clone)]
 pub(crate) struct PendingPayload {
     slot: Slot,
-    expected_public_values: Vec<u8>,
     /// Receives the proof type of every verified proof.
     verified_tx: mpsc::UnboundedSender<u8>,
 }
@@ -175,40 +177,20 @@ impl MockBeaconNode {
             info!(block_hash = %params.block_hash(), ?status, "payload not valid");
             return Ok(());
         }
-        let chain_id = self.spec().await?.deposit_chain_id;
-        self.await_proofs(params, chain_id)
+        self.await_proofs(params)
     }
 
     /// Registers a valid payload and waits in the background for the proof of every proof type.
-    fn await_proofs(
-        self: &Arc<Self>,
-        params: NewPayloadParams,
-        chain_id: u64,
-    ) -> anyhow::Result<()> {
+    fn await_proofs(self: &Arc<Self>, params: NewPayloadParams) -> anyhow::Result<()> {
         let block_hash = Hash256::from(params.block_hash().0);
         let request = NewPayloadRequest::try_from(params).context("decode payload")?;
-        let NewPayloadRequest::Gloas(gloas) = &request else {
-            unreachable!("engine_newPayloadV5 params convert to a gloas request")
-        };
-        let slot = Slot::new(gloas.execution_payload.slot_number);
-        let new_payload_request_root = Hash256::from(request.hash_tree_root(&Sha2Hasher));
-        let expected_public_values = StatelessValidationResult {
-            new_payload_request_root: new_payload_request_root.0,
-            successful_validation: true,
-            chain_id,
-            schema_id: ProtocolFork::Amsterdam.schema_id(),
-        }
-        .to_ssz();
+        let slot = Slot::new(request.slot().context("payload without slot")?);
         let (verified_tx, mut verified_rx) = mpsc::unbounded_channel();
-        self.pending.lock().unwrap().insert(
-            block_hash,
-            PendingPayload {
-                slot,
-                expected_public_values,
-                verified_tx,
-            },
-        );
-        info!(%block_hash, %new_payload_request_root, "valid payload forwarded");
+        self.pending
+            .lock()
+            .unwrap()
+            .insert(block_hash, PendingPayload { slot, verified_tx });
+        info!(%block_hash, "valid payload forwarded");
 
         let mock_beacon_node = self.clone();
         tokio::spawn(async move {
@@ -253,40 +235,25 @@ impl MockBeaconNode {
         let proof_type = envelope.message.proof_type;
         self.verify_execution_proofs_signature(pending.slot, envelope)
             .await?;
-        self.verify_execution_proof(
-            proof_type,
-            &envelope.message.proof_data,
-            &pending.expected_public_values,
-        )?;
+        self.verify_execution_proof(proof_type, &envelope.message.proof_data)?;
         Ok(proof_type)
     }
 
     /// Verifies the proof with the verifier of its type and checks its public values.
-    fn verify_execution_proof(
-        &self,
-        proof_type: u8,
-        proof_data: &[u8],
-        expected_public_values: &[u8],
-    ) -> anyhow::Result<()> {
+    fn verify_execution_proof(&self, proof_type: u8, proof_data: &[u8]) -> anyhow::Result<()> {
         let Some(verifier) = self.verifiers.get(&proof_type) else {
             bail!("unsupported proof type {}", proof_type)
         };
-
-        if proof_data == MOCK_PROOF {
-            return Ok(());
-        }
-
         let public_values = verifier.verify(proof_data)?;
 
         // A zkVM with fixed size public values pads the SSZ result with zeros.
-        let len = expected_public_values.len();
-        anyhow::ensure!(
+        let len = MOCK_PUBLIC_VALUES.len();
+        ensure!(
             public_values.len() >= len
-                && public_values[..len] == expected_public_values[..]
+                && public_values[..len] == MOCK_PUBLIC_VALUES[..]
                 && public_values[len..].iter().all(|byte| *byte == 0),
-            "unexpected public values, expected {expected_public_values:?}, got: {public_values:?}"
+            "unexpected public values, expected {MOCK_PUBLIC_VALUES:?}, got: {public_values:?}"
         );
-
         Ok(())
     }
 
@@ -475,8 +442,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fixture_proofs_verify() -> anyhow::Result<()> {
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fixture");
-        let public_values = fs::read(fixture.join("public_values.bin")).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../server/src/proof/zkvm/mock");
         // The zesu guest of ere-guests v0.17.0 cannot be proved yet, so it has no fixture proof.
         let proof_types = ProofType::iter()
             .filter(|proof_type| *proof_type != ProofType::ZesuZisk)
@@ -498,7 +464,7 @@ mod tests {
             MockBeaconNode::new(dummy_url.clone(), dummy_url, &proof_types).await?;
         for (proof_type, proof) in proof_types.into_iter().zip(&proofs) {
             let execution_proof_type = proof_type.execution_proof_type();
-            mock_beacon_node.verify_execution_proof(execution_proof_type, proof, &public_values)?;
+            mock_beacon_node.verify_execution_proof(execution_proof_type, proof)?;
         }
         Ok(())
     }

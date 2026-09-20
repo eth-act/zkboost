@@ -98,13 +98,19 @@ endpoint = "http://openvm-cluster:3000"
 elf_url = "https://example.com/stateless-validator-reth-openvm.elf"
 
 # Mock zkVMs (in-process, for testing without Docker/GPU).
-# The mock sleeps for the simulated proving time and returns the proof bytes `MOCK`.
+# The mock sleeps for the simulated proving time and returns the fixture proof of the proof type,
+# a valid proof with the public values of another block.
 
 # Fixed proving time (default)
 [[zkvm]]
 kind = "mock"
 proof_type = "reth-sp1"
 mock_proving_time = { kind = "constant", ms = 6000 }
+
+# Endpoint of an Ere server that runs the mock guest of docker/example/mock-beacon-node/mock-guest of the
+# zkVM, which reveals its input unchanged. The mock then requests the proof of the expected public
+# values there instead of the fixture proof.
+# endpoint = "http://ere-server:3000"
 
 # Random proving time uniformly sampled from [min_ms, max_ms]
 [[zkvm]]

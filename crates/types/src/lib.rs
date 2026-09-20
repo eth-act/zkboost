@@ -4,7 +4,7 @@
 #![warn(unused_crate_dependencies)]
 
 pub use execution_proof::*;
-pub use new_payload::NewPayloadParams;
+pub use new_payload::{NewPayloadParams, NewPayloadRequestExt};
 pub use proof_type::*;
 pub use stateless_validator_common::{
     HashTreeRoot, ProgressiveList, Sha2Hasher, SszDecode, SszEncode, SszList, SszVector,
@@ -20,6 +20,3 @@ mod proof_type;
 
 /// 32-byte hash.
 pub type Hash256 = alloy_primitives::B256;
-
-/// Proof bytes of the mock zkVM, accepted by the mock beacon node as valid without a verifier.
-pub const MOCK_PROOF: &[u8] = b"MOCK";

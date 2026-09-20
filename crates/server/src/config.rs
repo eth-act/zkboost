@@ -110,6 +110,17 @@ impl Config {
                     "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
                 );
             }
+            ensure!(
+                !matches!(
+                    zkvm,
+                    zkVMConfig::Mock {
+                        proof_type: ProofType::ZesuZisk,
+                        endpoint: None,
+                        ..
+                    }
+                ),
+                "no mock proof of zesu-zisk, set endpoint"
+            );
             if let zkVMConfig::Cluster {
                 proof_type,
                 elf_path,
@@ -187,6 +198,11 @@ pub enum zkVMConfig {
         /// Whether the mock should always fail proof generation.
         #[serde(default)]
         mock_failure: bool,
+        /// Endpoint of an ere-server with the mock guest of
+        /// `docker/example/mock-beacon-node/mock-guest`, which proves the expected public
+        /// values. Without it, the mock returns the fixture proof of the proof type.
+        #[serde(default)]
+        endpoint: Option<Url>,
     },
     /// Remote cluster backend.
     Cluster {
@@ -325,9 +341,39 @@ mod tests {
             zkVMConfig::Mock {
                 proof_timeout_secs: 12,
                 mock_proving_time: MockProvingTime::Constant { ms: 6000 },
+                endpoint: None,
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_parse_mock_endpoint() {
+        let toml = r#"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "ethrex-openvm"
+            endpoint = "http://ere-server:3000"
+        "#;
+        let config = parse(toml);
+        assert!(matches!(
+            config.zkvm[0],
+            zkVMConfig::Mock {
+                endpoint: Some(_),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_zesu_zisk_mock_without_endpoint_rejected() {
+        let toml = r#"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "zesu-zisk"
+        "#;
+        let config = parse(toml);
+        assert!(config.validate().is_err());
     }
 
     #[test]

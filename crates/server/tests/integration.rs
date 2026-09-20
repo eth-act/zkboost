@@ -37,12 +37,13 @@ use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_server::{
     config::{Config, DashboardConfig, MockProvingTime, zkVMConfig},
+    proof::zkvm::mock_proof,
     server::zkBoostServer,
 };
 use zkboost_types::{
-    ExecutionWitness, Hash256, HashTreeRoot, MOCK_PROOF, NewPayloadParams, ProofType, ProtocolFork,
-    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode,
-    StatelessInput, StatelessValidationResult, execution_proof_domain,
+    ExecutionWitness, Hash256, HashTreeRoot, NewPayloadParams, ProofType, ProtocolFork, Sha2Hasher,
+    SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode, StatelessInput,
+    StatelessValidationResult, execution_proof_domain,
 };
 
 /// The keystore of validator 256 of the ethereum-package mnemonic, a copy of the testnet example.
@@ -478,6 +479,7 @@ impl TestHarness {
                     proof_timeout_secs,
                     mock_proving_time: MockProvingTime::Constant { ms: 3000 },
                     mock_failure: behavior.proof_failure,
+                    endpoint: None,
                 })
                 .collect(),
         };
@@ -547,7 +549,12 @@ impl TestHarness {
                 remaining.remove(&envelope.message.proof_type),
                 "{envelope:?}"
             );
-            assert_eq!(&*envelope.message.proof_data, MOCK_PROOF);
+            let proof_type = self
+                .proof_types
+                .iter()
+                .find(|proof_type| proof_type.execution_proof_type() == envelope.message.proof_type)
+                .unwrap();
+            assert_eq!(&*envelope.message.proof_data, mock_proof(*proof_type));
             assert_eq!(envelope.validator_index, VALIDATOR_INDEX);
             let signing_root = envelope.message.signing_root(domain);
             let signature = Signature::deserialize(&envelope.signature).unwrap();

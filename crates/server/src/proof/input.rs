@@ -5,8 +5,8 @@ use alloy_eips::Decodable2718;
 use anyhow::Context;
 use stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
 use zkboost_types::{
-    ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, ProtocolFork, PublicKeys,
-    Sha2Hasher, Transactions,
+    ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, NewPayloadRequestExt, ProtocolFork,
+    PublicKeys, Sha2Hasher, SszEncode, StatelessValidationResult, Transactions,
 };
 
 /// The metadata of a `NewPayloadRequest`, known before the witness. The root identifies the
@@ -30,28 +30,28 @@ pub(crate) struct NewPayloadRequestMeta {
 }
 
 impl NewPayloadRequestMeta {
-    /// Reads the metadata of a Gloas payload request.
-    pub(crate) fn new(payload: &NewPayloadRequest) -> Self {
-        let NewPayloadRequest::Gloas(request) = payload else {
-            unreachable!("engine_newPayloadV5 params convert to a gloas request")
-        };
-        let execution_payload = &request.execution_payload;
-        Self {
+    /// Reads the metadata of a payload request.
+    pub(crate) fn new(payload: &NewPayloadRequest) -> anyhow::Result<Self> {
+        Ok(Self {
             new_payload_request_root: Hash256::from(payload.hash_tree_root(&Sha2Hasher)),
-            block_hash: Hash256::from(execution_payload.block_hash),
-            parent_beacon_block_root: Hash256::from(request.parent_beacon_block_root),
-            block_number: execution_payload.block_number,
-            slot: execution_payload.slot_number,
-            gas_used: execution_payload.gas_used,
-        }
+            block_hash: payload.block_hash(),
+            parent_beacon_block_root: payload
+                .parent_beacon_block_root()
+                .context("payload without parent beacon block root")?,
+            block_number: payload.block_number(),
+            slot: payload.slot().context("payload without slot")?,
+            gas_used: payload.gas_used(),
+        })
     }
 }
 
-/// A wrapper for `stateless_input_bytes` with the metadata of the request.
+/// A wrapper for `stateless_input_bytes` with the metadata of the request and its expected public
+/// values.
 #[derive(Debug)]
 pub(crate) struct StatelessInput {
     payload_meta: NewPayloadRequestMeta,
     stateless_input_bytes: Vec<u8>,
+    public_values: Vec<u8>,
 }
 
 impl StatelessInput {
@@ -62,12 +62,7 @@ impl StatelessInput {
         witness: ExecutionWitness,
         chain_id: u64,
     ) -> anyhow::Result<Self> {
-        let NewPayloadRequest::Gloas(request) = &payload else {
-            unreachable!("engine_newPayloadV5 params convert to a gloas request")
-        };
-        let public_keys = PublicKeys::from(recover_public_keys(
-            &request.execution_payload.transactions,
-        )?);
+        let public_keys = PublicKeys::from(recover_public_keys(payload.transactions())?);
 
         let stateless_input_bytes = stateless_validator_common::guest::StatelessInput {
             new_payload_request: payload,
@@ -76,10 +71,18 @@ impl StatelessInput {
             public_keys,
         }
         .to_schema_prefixed_ssz(ProtocolFork::Amsterdam);
+        let public_values = StatelessValidationResult {
+            new_payload_request_root: payload_meta.new_payload_request_root.0,
+            successful_validation: true,
+            chain_id,
+            schema_id: ProtocolFork::Amsterdam.schema_id(),
+        }
+        .to_ssz();
 
         Ok(Self {
             payload_meta,
             stateless_input_bytes,
+            public_values,
         })
     }
 
@@ -91,6 +94,11 @@ impl StatelessInput {
     /// Returns the schema-id-prefixed SSZ bytes used as zkVM stdin.
     pub(crate) fn stateless_input_bytes(&self) -> &[u8] {
         &self.stateless_input_bytes
+    }
+
+    /// Returns the SSZ public values of a successful validation, the stdin of a mock guest.
+    pub(crate) fn public_values(&self) -> &[u8] {
+        &self.public_values
     }
 }
 
@@ -114,13 +122,16 @@ fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; P
 
 #[cfg(test)]
 mod tests {
+    use zkboost_types::ProtocolFork;
+
     use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
 
     /// The stateless input of block 93354 of glamsterdam-devnet-8.
     const AMSTERDAM_STATELESS_INPUT: &[u8] =
         include_bytes!("../../tests/fixture/stateless_input_amsterdam.ssz");
 
-    /// The input built from the decoded fixture encodes to the fixture bytes the guest reads.
+    /// The input built from the decoded fixture encodes to the fixture bytes the guest reads, and
+    /// its public values follow the SSZ layout.
     #[test]
     fn test_stateless_input_matches_fixture() {
         let (_, fixture) =
@@ -129,12 +140,17 @@ mod tests {
             )
             .unwrap();
         let input = StatelessInput::new(
-            NewPayloadRequestMeta::new(&fixture.new_payload_request),
+            NewPayloadRequestMeta::new(&fixture.new_payload_request).unwrap(),
             fixture.new_payload_request,
             fixture.witness,
             fixture.chain_id,
         )
         .unwrap();
         assert_eq!(input.stateless_input_bytes(), AMSTERDAM_STATELESS_INPUT);
+        let mut public_values = input.payload_meta().new_payload_request_root.0.to_vec();
+        public_values.push(1);
+        public_values.extend(fixture.chain_id.to_le_bytes());
+        public_values.extend(ProtocolFork::Amsterdam.schema_id().to_le_bytes());
+        assert_eq!(input.public_values(), public_values);
     }
 }

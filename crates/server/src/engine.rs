@@ -381,7 +381,7 @@ impl EngineProxyState {
         let chain_id = self.validator()?.chain_id();
         let (payload_meta, payload) = tokio::task::spawn_blocking(move || {
             let payload = NewPayloadRequest::try_from(params)?;
-            anyhow::Ok((NewPayloadRequestMeta::new(&payload), payload))
+            anyhow::Ok((NewPayloadRequestMeta::new(&payload)?, payload))
         })
         .await
         .expect("new payload request conversion does not panic")?;

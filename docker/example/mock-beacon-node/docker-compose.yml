@@ -27,11 +27,14 @@ services:
     depends_on:
       geth:
         condition: service_healthy
+      # openvm:
+      #   condition: service_healthy
     volumes:
       - ./zkboost/config.toml:/app/config.toml:ro
       - ../testnet/validator-keys:/validator-keys:ro
     networks:
       - zkboost
+      # - kurtosis
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -49,7 +52,7 @@ services:
       - "--zkboost-endpoint"
       - "http://zkboost:3000"
       - "--proof-types"
-      - "reth-openvm,reth-zisk"
+      - "ethrex-openvm,reth-openvm"
       - "--port"
       - "3001"
     networks:
@@ -61,6 +64,30 @@ services:
     depends_on:
       zkboost:
         condition: service_healthy
+
+  # Optional Ere GPU prover of the mock OpenVM guest of ./mock-guest, for the proof observer of
+  # network_params.yaml. The mock zkVMs of zkboost send it the expected public values of a payload.
+  # openvm:
+  #   image: ghcr.io/eth-act/ere/ere-server-openvm:0.17.0-cuda
+  #   command: ["--port", "3000", "--elf-path", "/mock-guest/openvm.elf", "gpu"]
+  #   shm_size: 2G
+  #   volumes:
+  #     - ./mock-guest:/mock-guest:ro
+  #   networks:
+  #     - zkboost
+  #   environment:
+  #     - RUST_LOG=info
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
+  #     start_period: 300s
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: ['0']
+  #             capabilities: [gpu]
 
 networks:
   zkboost: {}
