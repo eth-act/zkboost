@@ -1,0 +1,64 @@
+participants:
+  - el_type: geth
+    el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
+    cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:unstable-afadb9a
+    count: 3
+  # The Lighthouse that executes through the mock beacon node. It has no execution client and
+  # no validators.
+  - el_type: None
+    cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:unstable-afadb9a
+    validator_count: 0
+    cl_extra_params:
+      - --execution-endpoint=http://mock-beacon-node:8551
+      - --execution-jwt-secret-key=0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b
+  # With the optional Ere GPU prover of the Compose file, this Lighthouse comes from eth-act
+  # instead, executes through zkboost, and gossips the proofs that zkboost posts to it.
+  #   cl_image: lighthouse:eth-act-optional-proofs-gloas
+  #   cl_extra_params:
+  #     - --execution-endpoint=http://zkboost:3000
+  #     - --execution-jwt-secret-key=0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b
+  #     - --proof-engine=/config/proof-engine.json
+  #   cl_extra_mounts:
+  #     /config: proof-engine.json
+  # Proof observer: no execution client, Engine API endpoint, or validators. It imports every
+  # payload after its proofs.
+  # - el_type: None
+  #   cl_type: lighthouse
+  #   cl_image: lighthouse:eth-act-optional-proofs-gloas
+  #   validator_count: 0
+  #   cl_extra_params:
+  #     - --proof-engine=/config/proof-engine.json
+  #   cl_extra_mounts:
+  #     /config: proof-engine.json
+network_params:
+  gloas_fork_epoch: 0
+  # Gives Compose the time to start zkboost before slot 0, so every payload gets its proofs.
+  # genesis_delay: 120
+# The verifying key of the mock OpenVM guest, mock-guest/openvm.vk, for both proof types.
+# extra_files:
+#   proof-engine.json: |
+#     {
+#       "execution_proofs": [
+#         { "proof_type": 1, "program_vk": "0x00656e2d5a000c1bfb4a009219da3b00aac9d538004e41b60b00d7b15a540021a5f05f009d924f5606030619068000a2c21b53000a2fee4f0036169c2800aaaa8d6c0087fbce5b00328dc26f009fe7de5a004686562400e77e894500a128f20f00674f7c2400b38df01800309c530900a487cf0400725bac510051af497500e4abff6e00a58ac939000775b41a001a76e84100c5e8944400c94e8e1600330e6b39001cacbc5a00ca47cd51001b418e02000fe02a480009a32070002554164500d7069403007d07bf3000290ccf21008726523b00e5fd1112003d03bd4c001c6831680016a3fe4200ad7ec6300028529e3c005710de1700349b6a77004b13962f00cff00054001483f65100ab05ce6b0034174b6000bc041c0900a9b5a11a00b26f160300615de46100935f922800d39e4a2700596ea87000ca5764770023df7b57000b1ee85e004c456d61000bdad13b003de28a5f008584cc2a00033ab1020025f59e4a00c3a9f64a00b8ef166500" },
+#         { "proof_type": 4, "program_vk": "0x00656e2d5a000c1bfb4a009219da3b00aac9d538004e41b60b00d7b15a540021a5f05f009d924f5606030619068000a2c21b53000a2fee4f0036169c2800aaaa8d6c0087fbce5b00328dc26f009fe7de5a004686562400e77e894500a128f20f00674f7c2400b38df01800309c530900a487cf0400725bac510051af497500e4abff6e00a58ac939000775b41a001a76e84100c5e8944400c94e8e1600330e6b39001cacbc5a00ca47cd51001b418e02000fe02a480009a32070002554164500d7069403007d07bf3000290ccf21008726523b00e5fd1112003d03bd4c001c6831680016a3fe4200ad7ec6300028529e3c005710de1700349b6a77004b13962f00cff00054001483f65100ab05ce6b0034174b6000bc041c0900a9b5a11a00b26f160300615de46100935f922800d39e4a2700596ea87000ca5764770023df7b57000b1ee85e004c456d61000bdad13b003de28a5f008584cc2a00033ab1020025f59e4a00c3a9f64a00b8ef166500" }
+#       ]
+#     }
+port_publisher:
+  el:
+    enabled: true
+    public_port_start: 32000
+  cl:
+    enabled: true
+    public_port_start: 33000
+additional_services:
+  - spamoor
+spamoor_params:
+  spammers:
+  - scenario: eoatx
+    config:
+      throughput: 1
+  - scenario: erctx
+    config:
+      throughput: 1

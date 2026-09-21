@@ -1,11 +1,54 @@
+# The guest ELFs come from the ere-guests release of the ere version of the images.
 services:
-  ethrex-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.14.0-cuda
+  geth:
+    image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
+    entrypoint: ["/bin/sh", "/start_geth.sh"]
+    command: ["http://el-1-geth-lighthouse:8545"]
+    volumes:
+      - ../../scripts/start_geth.sh:/start_geth.sh:ro
+      - ../../scripts/genesis-${ENCLAVE_NAME:-local-testnet}.json:/genesis.json:ro
+    networks:
+      - zkboost
+      - kurtosis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "geth", "--exec", "eth.blockNumber", "attach", "/data/geth.ipc"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  ethrex-openvm:
+    image: ghcr.io/eth-act/ere/ere-server-openvm:0.17.0-cuda
     command:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.14.0/stateless-validator-ethrex-zisk-v1.0.0-alpha.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-ethrex-openvm-v2.1.0-preview.elf"
+      - "gpu"
+    shm_size: 2G
+    networks:
+      - zkboost
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
+      start_period: 300s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities: [gpu]
+
+  reth-zisk:
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.17.0-cuda
+    command:
+      - "--port"
+      - "3000"
+      - "--elf-url"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.17.0/stateless-validator-reth-zisk-v1.1.0-alpha.elf"
       - "gpu"
     shm_size: 32G
     ulimits:
@@ -26,23 +69,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0', '1', '2', '3']
-              capabilities: [gpu]
-
-  reth-zisk:
-    extends: ethrex-zisk
-    command:
-      - "--port"
-      - "3000"
-      - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.14.0/stateless-validator-reth-zisk-v1.0.0-alpha.elf"
-      - "gpu"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['4', '5', '6', '7']
+              device_ids: ['1']
               capabilities: [gpu]
 
   zkboost:
@@ -54,16 +81,18 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      ethrex-zisk:
+      geth:
+        condition: service_healthy
+      ethrex-openvm:
         condition: service_healthy
       reth-zisk:
         condition: service_healthy
     volumes:
       - ./zkboost/config.toml:/app/config.toml:ro
+      - ./validator-keys:/validator-keys:ro
     networks:
       - zkboost
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - kurtosis
     environment:
       - RUST_LOG=info,zkboost=debug
     restart: unless-stopped
@@ -72,6 +101,9 @@ services:
       start_period: 1s
       start_interval: 1s
 
+# Only geth and zkboost join the enclave network to reach the testnet EL and CL.
 networks:
-  zkboost:
-    name: zkboost-local-testnet
+  zkboost: {}
+  kurtosis:
+    name: kt-${ENCLAVE_NAME:-local-testnet}
+    external: true

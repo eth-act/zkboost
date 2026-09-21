@@ -1,87 +1,110 @@
 # Local Testnet with zkboost
 
-This example runs a local Ethereum testnet (via Kurtosis) alongside the zkboost with 2 Ere GPU provers, configured for `ethrex-zisk` and `reth-zisk` proof types.
+This example runs a local Kurtosis testnet with geth and lighthouse. Gloas is active from genesis. zkboost runs beside it with two Ere GPU provers: Ethrex/OpenVM on GPU 0 and Reth/Zisk on GPU 1. A lighthouse built from the `optional-proofs-gloas` branch of [eth-act/lighthouse](https://github.com/eth-act/lighthouse) uses zkboost as its Engine API endpoint.
+
+zkboost forwards every request to a dedicated Geth started by Docker Compose. It obtains the execution witness of each valid payload and requests a proof.
 
 ```mermaid
 sequenceDiagram
-    participant CL as CL <br> (Kurtosis)
+    participant CL as lighthouse <br> (Kurtosis)
     participant zkboost as zkboost <br> server
-    participant EL as EL <br> (Kurtosis)
+    participant EL as geth <br> (Docker Compose)
     participant Ere as Ere <br> server(s)
-    CL->>zkboost: POST /v1/execution_proof_requests <br> (SSZ NewPayloadRequest)
-    zkboost->>CL:
-    CL->>zkboost: GET /v1/execution_proof_requests?new_payload_request_root=0x... <br> (SSE stream)
-    zkboost->>EL: Fetch ExecutionWitness
-    EL->>zkboost:
+    CL->>zkboost: engine_newPayloadV5 <br>
+    zkboost->>EL: engine_newPayloadWithWitnessV5
+    EL->>zkboost: payload status + witness
+    zkboost->>CL: payload status
     zkboost->>Ere: Request proof
     Ere->>zkboost:
-    zkboost->>CL: proof_complete or proof_failure SSE
-    CL->>zkboost: GET /v1/execution_proofs/{new_payload_request_root}/{type}
-    zkboost->>CL:
+    zkboost->>CL: GET headers and blocks
+    zkboost->>CL: POST /eth/v1/beacon/execution_proofs
 ```
+
+## Testnet layout
+
+| Participants | Role                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| First two    | Geth and Lighthouse block producers with two thirds of the stake.                         |
+| Third        | eth-act Lighthouse. It follows gossip and executes through zkboost and the Compose Geth.  |
+| Fourth       | eth-act Lighthouse with a proof engine, no EL or execution endpoint, and zero validators. |
+
+The third Lighthouse uses the proof-engine verifying keys in `network_params.yaml`. zkboost signs proofs as validator 256 with the keystore in `docker/example/testnet/validator-keys` and submits them to this Lighthouse.
+
+### Networking
+
+Compose services share the project-scoped `zkboost` network. Geth and zkboost also join the enclave network.
+
+| Connection            | Address                |
+| --------------------- | ---------------------- |
+| Lighthouse to zkboost | `zkboost:3000`         |
+| zkboost to Geth       | `geth:8551`            |
+| zkboost to Lighthouse | `cl-3-lighthouse:4000` |
+
+### Dedicated Geth
+
+- Uses the enclave genesis and syncs missing history from the first testnet Geth.
+- `start_geth.sh` takes the peer RPC URL, fetches its enode, and writes the peer config and testnet JWT secret.
+- Needs no fixed node key. Its Engine API has no published host port.
+- All Kurtosis Lighthouse nodes keep running.
 
 ## Installation
 
-1. Install [Docker](https://docs.docker.com/get-docker/). Verify that Docker has been successfully installed by running `sudo docker run hello-world`.
+1. Install [Docker](https://docs.docker.com/get-docker/). Run `sudo docker run hello-world` to check the installation.
 
-1. Install [Kurtosis](https://docs.kurtosis.com/install/). Verify that Kurtosis has been successfully installed by running `kurtosis version` which should display the version.
+1. Install [Kurtosis](https://docs.kurtosis.com/install/). Run `kurtosis version` to check the installation.
 
-1. Install [`yq`](https://github.com/mikefarah/yq). If you are on Ubuntu, you can install `yq` by running `snap install yq`.
-
-## (Optional) Build image locally with GPU acceleration
-
-The pre-built ZisK prover image (`ghcr.io/eth-act/ere/ere-server-zisk:0.14.0-cuda`) supports Blackwell GPUs only (ZisK only supports single architecture codegen). If you have a Blackwell GPU, e.g. RTX 50 series or RTX PRO 6000, skip this section.
-
-Build the image with the compute capability of local GPU:
-
-```bash
-git clone --depth 1 --branch v0.14.0 https://github.com/eth-act/ere
-cd ere
-CUDA_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.')
-echo "Building for CUDA architecture: $CUDA_ARCH"
-bash .github/scripts/build-image.sh \
-    --registry ghcr.io/eth-act/ere \
-    --zkvm zisk \
-    --tag 0.14.0-cuda \
-    --base \
-    --server \
-    --cuda \
-    --cuda-archs "$CUDA_ARCH"
-```
-
-This produces `ghcr.io/eth-act/ere/ere-server-zisk:0.14.0-cuda`, which is referenced by the `./docker/example/testnet/docker-compose.yml`.
+1. Install [`yq`](https://github.com/mikefarah/yq). On Ubuntu, `snap install yq` installs it.
 
 ## Start local testnet
 
-In `zkboost` repo:
+Run every command from the repository root.
+
+The start script builds `lighthouse:eth-act-optional-proofs-gloas` from the eth-act branch, starts the enclave, and saves the enclave genesis for the dedicated Geth. The image build takes several minutes. Pass `-b false` to reuse an existing image.
+
+- The enclave name defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before you run the scripts and Compose.
+- The genesis is saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.
 
 ```
-./docker/example/testnet/start_local_testnet.sh
+./docker/scripts/start_local_testnet.sh
 ```
 
-## Start zkboost and EWS
-
-Configure the GPU resoure in `./docker/example/testnet/docker-compose.yml`, by default it assumes 8 GPUs are available, and distributes 4 to each prover.
-
-In `zkboost` repo:
+## Start zkboost and provers
 
 ```
-docker compose -f ./docker/example/testnet/docker-compose.yml build
 docker compose -f ./docker/example/testnet/docker-compose.yml up -d
 ```
 
-## Stop local testnet
+| Prover          | GPU device | Proof type |
+| --------------- | ---------- | ---------- |
+| `ethrex-openvm` | `0`        | `1`        |
+| `reth-zisk`     | `1`        | `6`        |
 
-In `zkboost` repo:
+### Check progress
 
+- The dashboard is at http://localhost:3000/dashboard.
+- zkboost logs `received new payload` and then `proof dispatched` for each payload. The third Lighthouse reports `is_optimistic: false` and `el_offline: false` at `/eth/v1/node/syncing`. Its Gloas status log can show `exec_hash: "n/a"`. Use the two checks below for proof verification.
+- zkboost logs `proof submitted` with `proof_type=ethrex-openvm` and `proof_type=reth-zisk` after Lighthouse accepts the signed proofs. A `proof submission failed` log includes the Lighthouse reason.
+- Query `GET /eth/v1/beacon/execution_proofs/{block_id}` on the third Lighthouse with the root or slot of the proven block. Look for both proof types `"1"` and `"6"` for the same block to confirm Lighthouse cached both proofs. Query soon after the submission, because the cache is bounded. The `head` block can be newer than the proven block.
+
+For example (replace `3` with a proven slot in your run):
+
+```bash
+SLOT="3"
+BEACON_API=$(kurtosis port print "${ENCLAVE_NAME:-local-testnet}" cl-3-lighthouse http)
+curl -fsS "$BEACON_API/eth/v1/beacon/execution_proofs/$SLOT" \
+  | yq -p=json '.data[] | {"proof_type": .message.proof_type, "validator_index": .validator_index, "beacon_block_root": .message.beacon_block_root}'
 ```
-./docker/example/testnet/stop_local_testnet.sh
+
+Query the fourth node as well to check proof gossip:
+
+```bash
+BEACON_API=$(kurtosis port print "${ENCLAVE_NAME:-local-testnet}" cl-4-lighthouse http)
+curl -fsS "$BEACON_API/eth/v1/node/syncing"
+curl -fsS "$BEACON_API/eth/v1/beacon/execution_proofs/$SLOT" \
+  | yq -p=json '.data[] | {"proof_type": .message.proof_type, "validator_index": .validator_index, "beacon_block_root": .message.beacon_block_root}'
 ```
 
-## Stop zkboost
+## Stop
 
-In `zkboost` repo:
-
-```
-docker compose -f ./docker/example/testnet/docker-compose.yml down
-```
+1. Run `docker compose -f ./docker/example/testnet/docker-compose.yml down`.
+2. Run `./docker/scripts/stop_local_testnet.sh`.

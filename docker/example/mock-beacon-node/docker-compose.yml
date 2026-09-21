@@ -1,0 +1,96 @@
+services:
+  geth:
+    image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
+    entrypoint: ["/bin/sh", "/start_geth.sh"]
+    command: ["http://el-1-geth-lighthouse:8545"]
+    volumes:
+      - ../../scripts/start_geth.sh:/start_geth.sh:ro
+      - ../../scripts/genesis-${ENCLAVE_NAME:-local-testnet}.json:/genesis.json:ro
+    networks:
+      - zkboost
+      - kurtosis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "geth", "--exec", "eth.blockNumber", "attach", "/data/geth.ipc"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  zkboost:
+    image: zkboost:local
+    build:
+      context: ../../..
+      dockerfile: ./docker/Dockerfile
+    command: ["--config", "/app/config.toml"]
+    ports:
+      - "3000:3000"
+    depends_on:
+      geth:
+        condition: service_healthy
+      # openvm:
+      #   condition: service_healthy
+    volumes:
+      - ./zkboost/config.toml:/app/config.toml:ro
+      - ../testnet/validator-keys:/validator-keys:ro
+    networks:
+      - zkboost
+      # - kurtosis
+    environment:
+      - RUST_LOG=info,zkboost=debug
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      start_period: 1s
+      start_interval: 1s
+
+  mock-beacon-node:
+    image: zkboost:local
+    entrypoint: ["/usr/local/bin/mock-beacon-node"]
+    command:
+      - "--cl-endpoint"
+      - "http://cl-4-lighthouse:4000"
+      - "--zkboost-endpoint"
+      - "http://zkboost:3000"
+      - "--proof-types"
+      - "ethrex-openvm,reth-openvm"
+      - "--port"
+      - "3001"
+    networks:
+      - zkboost
+      - kurtosis
+    environment:
+      - RUST_LOG=info,zkboost=debug
+    restart: unless-stopped
+    depends_on:
+      zkboost:
+        condition: service_healthy
+
+  # Optional Ere GPU prover of the mock OpenVM guest of ./mock-guest, for the proof observer of
+  # network_params.yaml. The mock zkVMs of zkboost send it the expected public values of a payload.
+  # openvm:
+  #   image: ghcr.io/eth-act/ere/ere-server-openvm:0.17.0-cuda
+  #   command: ["--port", "3000", "--elf-path", "/mock-guest/openvm.elf", "gpu"]
+  #   shm_size: 2G
+  #   volumes:
+  #     - ./mock-guest:/mock-guest:ro
+  #   networks:
+  #     - zkboost
+  #   environment:
+  #     - RUST_LOG=info
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
+  #     start_period: 300s
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: ['0']
+  #             capabilities: [gpu]
+
+networks:
+  zkboost: {}
+  kurtosis:
+    name: kt-${ENCLAVE_NAME:-local-testnet}
+    external: true

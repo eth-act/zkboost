@@ -1,7 +1,20 @@
 participants:
-  - el_type: reth
+  - el_type: geth
+    el_image: ethpandaops/geth:glamsterdam-devnet-8-aa1f2fc
     cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:unstable-afadb9a
     count: 3
+  # The Lighthouse that executes through the mock beacon node. It has no execution client and
+  # no validators.
+  - el_type: None
+    cl_type: lighthouse
+    cl_image: ethpandaops/lighthouse:unstable-afadb9a
+    validator_count: 0
+    cl_extra_params:
+      - --execution-endpoint=http://mock-beacon-node:8551
+      - --execution-jwt-secret-key=0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b
+network_params:
+  gloas_fork_epoch: 0
 port_publisher:
   el:
     enabled: true
@@ -9,3 +22,13 @@ port_publisher:
   cl:
     enabled: true
     public_port_start: 33000
+additional_services:
+  - spamoor
+spamoor_params:
+  spammers:
+  - scenario: eoatx
+    config:
+      throughput: 1
+  - scenario: erctx
+    config:
+      throughput: 1

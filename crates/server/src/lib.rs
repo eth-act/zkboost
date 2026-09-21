@@ -5,11 +5,10 @@
 
 pub mod config;
 pub(crate) mod dashboard;
-pub mod el_client;
+pub(crate) mod engine;
 pub mod http;
 pub mod metrics;
 #[cfg(feature = "otel")]
 pub mod otel;
 pub mod proof;
 pub mod server;
-pub mod witness;
