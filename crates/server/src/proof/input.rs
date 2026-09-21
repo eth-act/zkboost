@@ -13,9 +13,7 @@ use zkboost_types::{
 /// request and its proofs.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NewPayloadRequestMeta {
-    /// The hash tree root of the `NewPayloadRequest`. It follows the request layout of ere-guests,
-    /// which the guests commit. lighthouse hashes the request differently, as a progressive
-    /// container.
+    /// The hash tree root of the `NewPayloadRequest`, as the guests commit it.
     pub(crate) new_payload_request_root: Hash256,
     /// Block hash of the payload.
     pub(crate) block_hash: Hash256,
@@ -122,7 +120,7 @@ fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; P
 
 #[cfg(test)]
 mod tests {
-    use zkboost_types::ProtocolFork;
+    use alloy_primitives::hex;
 
     use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
 
@@ -131,7 +129,7 @@ mod tests {
         include_bytes!("../../tests/fixture/stateless_input_amsterdam.ssz");
 
     /// The input built from the decoded fixture encodes to the fixture bytes the guest reads, and
-    /// its public values follow the SSZ layout.
+    /// its public values are the ones of the fixture proofs.
     #[test]
     fn test_stateless_input_matches_fixture() {
         let (_, fixture) =
@@ -147,10 +145,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(input.stateless_input_bytes(), AMSTERDAM_STATELESS_INPUT);
-        let mut public_values = input.payload_meta().new_payload_request_root.0.to_vec();
-        public_values.push(1);
-        public_values.extend(fixture.chain_id.to_le_bytes());
-        public_values.extend(ProtocolFork::Amsterdam.schema_id().to_le_bytes());
-        assert_eq!(input.public_values(), public_values);
+        assert_eq!(
+            input.public_values(),
+            hex!(
+                "8c3a890206a189727e151767653f846ccddbd269eb29fb0a2f97371f23a481c6016ecca8a6010000000115"
+            )
+        );
     }
 }

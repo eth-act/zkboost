@@ -97,19 +97,17 @@ proof_type = "reth-openvm"
 endpoint = "http://openvm-cluster:3000"
 elf_url = "https://example.com/stateless-validator-reth-openvm.elf"
 
-# Mock zkVMs (in-process, for testing without Docker/GPU).
-# The mock sleeps for the simulated proving time and returns the fixture proof of the proof type,
-# a valid proof with the public values of another block.
+# Mock zkVMs (in-process). The mock sleeps for the simulated proving time and returns the fixture
+# proof of the proof type, a valid proof of another block. A zesu-zisk mock needs endpoint, because
+# its guest has no fixture proof.
 
 # Fixed proving time (default)
 [[zkvm]]
 kind = "mock"
 proof_type = "reth-sp1"
 mock_proving_time = { kind = "constant", ms = 6000 }
-
-# Endpoint of an Ere server that runs the mock guest of docker/example/mock-beacon-node/mock-guest of the
-# zkVM, which reveals its input unchanged. The mock then requests the proof of the expected public
-# values there instead of the fixture proof.
+# An Ere server that runs the mock guest of the zkVM from docker/example/mock-beacon-node/mock-guest.
+# The mock then proves the expected public values there. mock_proving_time and mock_failure do not apply.
 # endpoint = "http://ere-server:3000"
 
 # Random proving time uniformly sampled from [min_ms, max_ms]
@@ -214,8 +212,7 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 
 - It serves the Engine API to a CL and forwards every request to zkboost with the JWT of the CL unchanged. zkboost therefore receives the Engine API traffic of a real CL.
 - It receives the proofs at `POST /eth/v1/beacon/execution_proofs`. It looks up the beacon block of every envelope at the CL and verifies the validator signature as the beacon node does.
-- It verifies each proof with `ere-verifier`. The check covers the request root, a successful validation, the `DEPOSIT_CHAIN_ID` of the CL, and the Amsterdam schema id.
-- The mock proof bytes `MOCK` pass as valid.
+- It verifies each proof with `ere-verifier` and checks its public values against `crates/server/src/proof/zkvm/mock/public_values.bin`, the ones of the fixture proofs, with zero padding allowed. A proof of the live payload is therefore rejected.
 - It forwards every other beacon API request to the CL. zkboost therefore uses the mock beacon node as its `cl_beacon_endpoint`.
 
 | Flag                       | Description                                 |

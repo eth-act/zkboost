@@ -223,8 +223,8 @@ impl MockzkVM {
     }
 }
 
-/// Returns the fixture proof of the proof type, a valid proof of another block. The zesu guest
-/// cannot be proved yet.
+/// Returns the fixture proof of the proof type, a valid proof of another block. Panics for
+/// zesu-zisk, whose guest cannot be proved yet.
 pub fn mock_proof(proof_type: ProofType) -> &'static [u8] {
     match proof_type {
         ProofType::EthrexOpenVM => {

@@ -199,8 +199,9 @@ pub enum zkVMConfig {
         #[serde(default)]
         mock_failure: bool,
         /// Endpoint of an ere-server with the mock guest of
-        /// `docker/example/mock-beacon-node/mock-guest`, which proves the expected public
-        /// values. Without it, the mock returns the fixture proof of the proof type.
+        /// `docker/example/mock-beacon-node/mock-guest`, which proves the expected public values.
+        /// `mock_proving_time` and `mock_failure` do not apply. Without it, the mock returns the
+        /// fixture proof of the proof type.
         #[serde(default)]
         endpoint: Option<Url>,
     },
