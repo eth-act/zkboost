@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0](https://github.com/eth-act/zkboost/compare/v0.9.0...v0.10.0) (2026-09-21)
+
+
+### Features
+
+* rework zkboost as middleware between CL and EL ([#75](https://github.com/eth-act/zkboost/issues/75)) ([3bd9f4b](https://github.com/eth-act/zkboost/commit/3bd9f4bcb965b19078782fc3c8be0dafb64e939f))
+* **server,types:** stage-timing observability — queue-wait metric, self-describing completions, identified spans ([#71](https://github.com/eth-act/zkboost/issues/71)) ([ce4390d](https://github.com/eth-act/zkboost/commit/ce4390d4e5ce0a6e64323c00229a67e31d7ade40))
+* update ere and ere-guests to v0.14.0 ([#73](https://github.com/eth-act/zkboost/issues/73)) ([4d02f8f](https://github.com/eth-act/zkboost/commit/4d02f8f1152b0e508e6e4bd19fb3f67fea205a47))
+
 ## [0.9.0](https://github.com/eth-act/zkboost/compare/v0.8.0...v0.9.0) (2026-07-08)
 
 
