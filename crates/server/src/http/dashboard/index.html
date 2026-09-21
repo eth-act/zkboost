@@ -564,8 +564,6 @@
             parseInt(hex.slice(5, 7), 16),
         ];
 
-        const GAS_LIMIT = 60_000_000;
-
         const PROOF_TYPE_KEYS = [
             'ethrex-openvm',
             'ethrex-sp1',
@@ -622,14 +620,14 @@
             return formatted.padStart(9);
         };
 
-        const formatGas = (gas) => {
+        const formatGas = (gas, gasLimit) => {
             if (gas == null) return '-';
-            const percentage = ((gas / GAS_LIMIT) * 100).toFixed(2);
             let formatted;
             if (gas >= 1e6) formatted = `${(gas / 1e6).toFixed(2)} M`;
             else if (gas >= 1e3) formatted = `${(gas / 1e3).toFixed(2)} K`;
             else formatted = String(gas);
-            return `${formatted.padStart(7)} (${percentage}%)`;
+            formatted = formatted.padStart(7);
+            return gasLimit ? `${formatted} (${((gas / gasLimit) * 100).toFixed(2)}%)` : formatted;
         };
 
         const truncateHash = (hash) =>
@@ -643,7 +641,7 @@
 
         const proofCounts = (entries) => {
             const counts = { success: 0, timeout: 0, error: 0 };
-            for (const entry of entries) counts[entry.result]++;
+            for (const entry of entries) if (entry.result) counts[entry.result]++;
             return counts;
         };
 
@@ -745,6 +743,7 @@
                 blockNumberToProving[block.blockNumber] = block.proving;
                 if (block.gas != null) blockNumberToGas[block.blockNumber] = block.gas;
             }
+            const maxGasM = Math.max(0, ...Object.values(blockNumberToGas));
             const datasets = types.map((proofType) => ({
                 label: proofType,
                 data: sorted.map((blockNumber) => blockNumberToProving[blockNumber]?.[proofType] ?? null),
@@ -763,7 +762,7 @@
                 spanGaps: false,
                 yAxisID: 'yGas',
             });
-            return { labels: sorted.map(String), datasets };
+            return { labels: sorted.map(String), datasets, maxGasM };
         };
 
         const buildHistogramData = (blocks, types) => {
@@ -904,6 +903,7 @@
                     witnessSuccess: block.witnessSuccess ?? false,
                     witnessSize: block.witnessSize ?? null,
                     gasUsed: block.gasUsed ?? 0,
+                    gasLimit: block.gasLimit ?? 0,
                 };
             }
 
@@ -935,6 +935,7 @@
                     blockHash,
                     blockTimestamp: 0,
                     gasUsed: 0,
+                    gasLimit: 0,
                     witnessStartedS: null,
                     witnessEndedS: null,
                     witnessSize: null,
@@ -946,6 +947,7 @@
             }
             if (data.blockNumber != null) entry.blockNumber = data.blockNumber;
             if (data.gasUsed != null) entry.gasUsed = data.gasUsed;
+            if (data.gasLimit != null) entry.gasLimit = data.gasLimit;
             if (data.blockTimestamp != null) entry.blockTimestamp = data.blockTimestamp;
             if (data.witnessStartedS != null) entry.witnessStartedS = data.witnessStartedS;
             if (data.witnessEndedS != null) entry.witnessEndedS = data.witnessEndedS;
@@ -972,12 +974,18 @@
         // SSE Handlers
 
         const handleFetchWitnessStart = (event) => {
-            const { blockNumber, blockTimestamp, blockHash, gasUsed, startedS } = JSON.parse(event.data);
+            const { blockNumber, blockTimestamp, blockHash, gasUsed, gasLimit, startedS } = JSON.parse(event.data);
             if (blockTimestamp && blockTimestamp > latestBlockTimestamp.value) {
                 latestBlockNumber.value = blockNumber;
                 latestBlockTimestamp.value = blockTimestamp;
             }
-            updateHistoricalBlock(blockHash, { blockNumber, gasUsed, blockTimestamp, witnessStartedS: startedS });
+            updateHistoricalBlock(blockHash, {
+                blockNumber,
+                gasUsed,
+                gasLimit,
+                blockTimestamp,
+                witnessStartedS: startedS,
+            });
             updateLatestEvent(blockHash);
         };
 
@@ -1048,7 +1056,6 @@
                 retention.value = state.retention;
                 historicalBlocks.value = newHistoricalBlocks;
                 latestEvents.value = newLatestEvents;
-                connected.value = true;
             });
         };
 
@@ -1205,7 +1212,7 @@
                     : started != null && blockTimestamp
                     ? html`<${ElapsedTime} startMs=${(blockTimestamp + started) * 1000} />`
                     : '-';
-            const gasStr = formatGas(block.gasUsed);
+            const gasStr = formatGas(block.gasUsed, block.gasLimit);
             const witnessStr =
                 ended != null && !block.witnessSuccess
                     ? html`<span style="color:var(--yellow)">FAILED</span>`
@@ -1427,13 +1434,14 @@
             useEffect(() => {
                 const chart = chartRef.current;
                 if (!chart) return;
-                const { labels, datasets } = buildLineChartData(
+                const { labels, datasets, maxGasM } = buildLineChartData(
                     historicalBlocks.value,
                     proofTypes.value,
                     blockCount,
                     latestBlockNumber.value,
                 );
                 chart.data.labels = labels;
+                chart.options.scales.yGas.max = Math.max(60, Math.ceil(maxGasM / 5) * 5);
                 applyDatasetsToChart(chart, datasets, legend.states);
             }, [historicalBlocks.value, proofTypes.value, blockCount, legend.states]);
 
@@ -1631,7 +1639,7 @@
                 block.witnessStartedS != null && block.witnessEndedS != null
                     ? block.witnessEndedS - block.witnessStartedS
                     : null;
-            const counts = proofCounts(entries);
+            const counts = proofCounts(Object.values(block.proofs));
             return html`<${Fragment}>
                 <tr class="history-block-header${expanded ? ' expanded' : ''}" onClick=${onToggle}>
                     <td class="toggle-arrow-cell">
@@ -1641,7 +1649,7 @@
                         ${block.blockNumber ?? '-'}${' '}
                         <${HashWithCopy} hash=${blockHash} />
                     <//>
-                    <${MonoCell} right> ${formatGas(block.gasUsed)}<//>
+                    <${MonoCell} right> ${formatGas(block.gasUsed, block.gasLimit)}<//>
                     <${MonoCell} right> ${formatOffset(block.witnessStartedS)}<//>
                     <${MonoCell} right> ${formatOffset(block.witnessEndedS)}<//>
                     <${MonoCell} right> ${formatDuration(witnessDuration)}<//>
@@ -1684,7 +1692,7 @@
                         .filter(
                             (block) =>
                                 block.entries.length > 0 ||
-                                (allFiltersActive && Object.keys(block.proofs).length === 0),
+                                (allFiltersActive && Object.values(block.proofs).every((proof) => proof.result == null)),
                         ),
                 [historicalBlocks.value, filters, allFiltersActive],
             );
@@ -1837,6 +1845,7 @@
                 eventSourceRef.current = eventSource;
                 eventSource.onopen = () => {
                     connected.value = true;
+                    fetchInitialState();
                 };
                 eventSource.onerror = () => {
                     connected.value = false;
@@ -1851,7 +1860,6 @@
                         else sseBufferRef.current.push({ eventName, data: event.data });
                     });
                 }
-                fetchInitialState();
             }, [fetchInitialState]);
 
             useEffect(() => {

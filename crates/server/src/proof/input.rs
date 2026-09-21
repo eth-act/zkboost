@@ -1,5 +1,7 @@
 //! Assembles the `StatelessInput` of a payload and encodes it once to schema-id-prefixed SSZ.
 
+use std::time::Instant;
+
 use alloy_consensus::{EthereumTxEnvelope, TxEip4844};
 use alloy_eips::Decodable2718;
 use anyhow::Context;
@@ -25,11 +27,13 @@ pub(crate) struct NewPayloadRequestMeta {
     pub(crate) slot: u64,
     /// Gas used by the block, for mock proving-time simulation.
     pub(crate) gas_used: u64,
+    /// When the payload arrived, the start of its proof latency.
+    pub(crate) received_at: Instant,
 }
 
 impl NewPayloadRequestMeta {
-    /// Reads the metadata of a payload request.
-    pub(crate) fn new(payload: &NewPayloadRequest) -> anyhow::Result<Self> {
+    /// Reads the metadata of a payload request received at `received_at`.
+    pub(crate) fn new(payload: &NewPayloadRequest, received_at: Instant) -> anyhow::Result<Self> {
         Ok(Self {
             new_payload_request_root: Hash256::from(payload.hash_tree_root(&Sha2Hasher)),
             block_hash: payload.block_hash(),
@@ -39,6 +43,7 @@ impl NewPayloadRequestMeta {
             block_number: payload.block_number(),
             slot: payload.slot().context("payload without slot")?,
             gas_used: payload.gas_used(),
+            received_at,
         })
     }
 }
@@ -120,6 +125,8 @@ fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; P
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use alloy_primitives::hex;
 
     use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
@@ -138,7 +145,7 @@ mod tests {
             )
             .unwrap();
         let input = StatelessInput::new(
-            NewPayloadRequestMeta::new(&fixture.new_payload_request).unwrap(),
+            NewPayloadRequestMeta::new(&fixture.new_payload_request, Instant::now()).unwrap(),
             fixture.new_payload_request,
             fixture.witness,
             fixture.chain_id,

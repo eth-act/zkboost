@@ -24,6 +24,10 @@ const QUEUE_WAIT_DURATION_SECONDS: &str = "zkboost_queue_wait_duration_seconds";
 const PROVE_TOTAL: &str = "zkboost_prove_total";
 const PROVE_DURATION_SECONDS: &str = "zkboost_prove_duration_seconds";
 const PROVE_PROOF_BYTES: &str = "zkboost_prove_proof_bytes";
+const PROOF_REUSED_TOTAL: &str = "zkboost_proof_reused_total";
+const SUBMISSION_TOTAL: &str = "zkboost_submission_total";
+const SUBMISSION_DURATION_SECONDS: &str = "zkboost_submission_duration_seconds";
+const PROOF_LATENCY_SECONDS: &str = "zkboost_proof_latency_seconds";
 const PROGRAMS_LOADED: &str = "zkboost_programs_loaded";
 const BUILD_INFO: &str = "zkboost_build_info";
 
@@ -43,6 +47,8 @@ const QUEUE_WAIT_BUCKETS: &[f64] = &[
 /// Returns a handle that can be used to render metrics for the `/metrics` endpoint.
 pub fn init_metrics() -> PrometheusHandle {
     let slot_buckets = from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5);
+    // 16 KiB to 64 MiB, doubling. The default buckets end at 10.0 and put every size in +Inf.
+    let byte_buckets = from_fn::<_, 13, _>(|i| (16_384_u64 << i) as f64);
     let handle = PrometheusBuilder::new()
         .set_buckets(DEFAULT_BUCKETS)
         .unwrap()
@@ -63,6 +69,16 @@ pub fn init_metrics() -> PrometheusHandle {
             Matcher::Full(QUEUE_WAIT_DURATION_SECONDS.to_owned()),
             QUEUE_WAIT_BUCKETS,
         )
+        .unwrap()
+        // A proof later than the slot lands in +Inf, which is the miss the metric exists to show.
+        .set_buckets_for_metric(
+            Matcher::Full(PROOF_LATENCY_SECONDS.to_owned()),
+            &slot_buckets,
+        )
+        .unwrap()
+        .set_buckets_for_metric(Matcher::Full(WITNESS_BYTES.to_owned()), &byte_buckets)
+        .unwrap()
+        .set_buckets_for_metric(Matcher::Full(PROVE_PROOF_BYTES.to_owned()), &byte_buckets)
         .unwrap()
         .install_recorder()
         .expect("failed to install Prometheus recorder");
@@ -85,6 +101,24 @@ pub fn init_metrics() -> PrometheusHandle {
     describe_counter!(PROVE_TOTAL, "total prove operations");
     describe_histogram!(PROVE_DURATION_SECONDS, "proof generation duration");
     describe_histogram!(PROVE_PROOF_BYTES, "proof size");
+
+    // Submission metrics
+    describe_counter!(
+        PROOF_REUSED_TOTAL,
+        "cached proofs submitted again for a payload imported again"
+    );
+    describe_counter!(
+        SUBMISSION_TOTAL,
+        "total proof submissions to the beacon node"
+    );
+    describe_histogram!(
+        SUBMISSION_DURATION_SECONDS,
+        "proof submission duration, with the beacon block root lookup and the retries"
+    );
+    describe_histogram!(
+        PROOF_LATENCY_SECONDS,
+        "time from the payload receipt to the accepted proof"
+    );
 
     // Application metrics
     describe_gauge!(PROGRAMS_LOADED, "zkvm programs loaded");
@@ -168,6 +202,39 @@ pub fn record_prove(
             "proof_type" => proof_type.to_string(),
         )
         .record(proof_size as f64);
+    }
+}
+
+/// Records a cached proof submitted again for a payload imported again.
+pub fn record_proof_reused(proof_type: ProofType) {
+    counter!(PROOF_REUSED_TOTAL, "proof_type" => proof_type.to_string()).increment(1);
+}
+
+/// Records a proof submission result. The submission duration and the proof latency since the
+/// payload receipt are recorded for an accepted submission only.
+pub fn record_submission(
+    proof_type: ProofType,
+    status: &'static str,
+    duration: Duration,
+    latency: Duration,
+) {
+    counter!(
+        SUBMISSION_TOTAL,
+        "proof_type" => proof_type.to_string(),
+        "status" => status
+    )
+    .increment(1);
+    if status == "success" {
+        histogram!(
+            SUBMISSION_DURATION_SECONDS,
+            "proof_type" => proof_type.to_string(),
+        )
+        .record(duration.as_secs_f64());
+        histogram!(
+            PROOF_LATENCY_SECONDS,
+            "proof_type" => proof_type.to_string(),
+        )
+        .record(latency.as_secs_f64());
     }
 }
 

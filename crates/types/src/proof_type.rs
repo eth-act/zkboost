@@ -26,21 +26,22 @@ use strum::IntoEnumIterator;
     strum::EnumIter,
 )]
 #[serde(into = "String", try_from = "String")]
+#[repr(u8)]
 pub enum ProofType {
     /// Ethrex with OpenVM backend.
-    EthrexOpenVM,
+    EthrexOpenVM = 1,
     /// Ethrex with SP1 backend.
-    EthrexSP1,
+    EthrexSP1 = 2,
     /// Ethrex with Zisk backend.
-    EthrexZisk,
+    EthrexZisk = 3,
     /// Reth with OpenVM backend.
-    RethOpenVM,
+    RethOpenVM = 4,
     /// Reth with SP1 backend.
-    RethSP1,
+    RethSP1 = 5,
     /// Reth with Zisk backend.
-    RethZisk,
+    RethZisk = 6,
     /// Zesu with Zisk backend.
-    ZesuZisk,
+    ZesuZisk = 7,
 }
 
 impl ProofType {
@@ -71,15 +72,7 @@ impl ProofType {
 
     /// Returns the EIP-8025 execution proof type of the beacon chain.
     pub fn execution_proof_type(&self) -> u8 {
-        match self {
-            Self::EthrexOpenVM => 1,
-            Self::EthrexSP1 => 2,
-            Self::EthrexZisk => 3,
-            Self::RethOpenVM => 4,
-            Self::RethSP1 => 5,
-            Self::RethZisk => 6,
-            Self::ZesuZisk => 7,
-        }
+        *self as u8
     }
 
     /// Returns the string identifier of the proof type.

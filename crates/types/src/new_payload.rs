@@ -73,6 +73,11 @@ impl NewPayloadParams {
     pub fn gas_used(&self) -> u64 {
         self.0.payload_inner.payload_inner.payload_inner.gas_used
     }
+
+    /// Returns the gas limit of the payload.
+    pub fn gas_limit(&self) -> u64 {
+        self.0.payload_inner.payload_inner.payload_inner.gas_limit
+    }
 }
 
 impl TryFrom<NewPayloadParams> for NewPayloadRequest {

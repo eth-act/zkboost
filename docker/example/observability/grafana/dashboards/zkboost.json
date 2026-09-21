@@ -1,23 +1,11 @@
 {
   "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
+    "list": []
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": null,
   "links": [],
   "panels": [
     {
@@ -49,7 +37,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           }
@@ -68,7 +56,6 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -76,14 +63,12 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
+        "textMode": "auto"
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "zkboost_programs_loaded",
+          "expr": "zkboost_programs_loaded{service=~\"$service\"}",
           "legendFormat": "Programs",
           "refId": "A"
         }
@@ -107,7 +92,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           }
@@ -126,7 +111,6 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -134,14 +118,12 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
+        "textMode": "auto"
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(zkboost_http_requests_in_flight)",
+          "expr": "sum(zkboost_http_requests_in_flight{service=~\"$service\"})",
           "legendFormat": "In Flight",
           "refId": "A"
         }
@@ -165,7 +147,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -185,7 +167,6 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -193,14 +174,12 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
+        "textMode": "auto"
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_http_requests_total[$__rate_interval]))",
+          "expr": "sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval]))",
           "legendFormat": "RPS",
           "refId": "A"
         }
@@ -224,7 +203,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               },
               {
                 "color": "yellow",
@@ -252,7 +231,6 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -260,14 +238,12 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
+        "textMode": "auto"
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_http_requests_total{status=~\"5..\"}[$__rate_interval])) / sum(rate(zkboost_http_requests_total[$__rate_interval]))",
+          "expr": "(sum(rate(zkboost_http_requests_total{service=~\"$service\",status=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval]))",
           "legendFormat": "Error Rate",
           "refId": "A"
         }
@@ -291,7 +267,7 @@
             "steps": [
               {
                 "color": "blue",
-                "value": 0
+                "value": null
               }
             ]
           }
@@ -310,7 +286,6 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -318,14 +293,12 @@
           "fields": "/^version$/",
           "values": false
         },
-        "showPercentChange": false,
-        "textMode": "value",
-        "wideLayout": true
+        "textMode": "value"
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "zkboost_build_info",
+          "expr": "zkboost_build_info{service=~\"$service\"}",
           "format": "table",
           "instant": true,
           "legendFormat": "{{version}}",
@@ -365,7 +338,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -382,7 +354,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -398,7 +369,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -424,15 +395,14 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_http_requests_total[$__rate_interval])) by (endpoint)",
+          "expr": "sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval])) by (endpoint)",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -457,7 +427,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -474,7 +443,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -490,7 +458,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -516,25 +484,24 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_http_request_duration_seconds_bucket[$__rate_interval])) by (le, endpoint))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_http_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, endpoint))",
           "legendFormat": "{{endpoint}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_http_request_duration_seconds_bucket[$__rate_interval])) by (le, endpoint))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_http_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, endpoint))",
           "legendFormat": "{{endpoint}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_http_request_duration_seconds_bucket[$__rate_interval])) by (le, endpoint))",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_http_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, endpoint))",
           "legendFormat": "{{endpoint}} p99",
           "refId": "C"
         }
@@ -559,7 +526,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -576,7 +542,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -592,7 +557,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -618,15 +583,14 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_http_requests_total[$__rate_interval])) by (status)",
+          "expr": "sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval])) by (status)",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -651,7 +615,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -668,7 +631,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -684,7 +646,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -710,15 +672,14 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(zkboost_http_requests_in_flight) by (endpoint)",
+          "expr": "sum(zkboost_http_requests_in_flight{service=~\"$service\"}) by (endpoint)",
           "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
@@ -756,7 +717,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -773,7 +733,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -789,7 +748,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -807,22 +766,22 @@
       "options": {
         "legend": {
           "calcs": [
-            "sum"
+            "mean",
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_witness_fetch_total[$__rate_interval])) by (status)",
+          "expr": "sum(rate(zkboost_witness_fetch_total{service=~\"$service\"}[$__rate_interval])) by (status)",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -847,7 +806,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -864,7 +822,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -880,7 +837,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -906,25 +863,24 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_witness_fetch_duration_seconds_bucket[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_witness_fetch_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_witness_fetch_duration_seconds_bucket[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_witness_fetch_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_witness_fetch_duration_seconds_bucket[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_witness_fetch_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -949,7 +905,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -966,7 +921,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -982,7 +936,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -1008,20 +962,19 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_witness_bytes_bucket[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_witness_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_witness_bytes_bucket[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_witness_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         }
@@ -1059,7 +1012,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -1076,7 +1028,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1092,7 +1043,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -1110,22 +1061,22 @@
       "options": {
         "legend": {
           "calcs": [
-            "sum"
+            "mean",
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_prove_total[$__rate_interval])) by (proof_type, status)",
+          "expr": "sum(rate(zkboost_prove_total{service=~\"$service\"}[$__rate_interval])) by (proof_type, status)",
           "legendFormat": "{{proof_type}} ({{status}})",
           "refId": "A"
         }
@@ -1150,7 +1101,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -1167,14 +1117,13 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "mappings": [],
@@ -1183,7 +1132,11 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 9
               }
             ]
           },
@@ -1209,25 +1162,24 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p99",
           "refId": "C"
         }
@@ -1252,7 +1204,6 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
-            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -1269,7 +1220,6 @@
               "type": "linear"
             },
             "showPoints": "never",
-            "showValues": false,
             "spanNulls": false,
             "stacking": {
               "group": "A",
@@ -1285,7 +1235,7 @@
             "steps": [
               {
                 "color": "green",
-                "value": 0
+                "value": null
               }
             ]
           },
@@ -1311,20 +1261,19 @@
           "showLegend": true
         },
         "tooltip": {
-          "hideZeros": false,
           "mode": "multi",
           "sort": "desc"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_proof_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_proof_bytes_bucket[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_proof_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         }
@@ -1418,7 +1367,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"0.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"0.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1428,7 +1377,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"1.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"0.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"0.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -1438,7 +1387,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"1.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"1.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -1448,7 +1397,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"2.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"1.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "D"
@@ -1458,7 +1407,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"2.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"2.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "E"
@@ -1468,7 +1417,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"3.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"2.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "F"
@@ -1478,7 +1427,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"3.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"3.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "G"
@@ -1488,7 +1437,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"4.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"3.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "H"
@@ -1498,7 +1447,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"4.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"4.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "I"
@@ -1508,7 +1457,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"5.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"4.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "J"
@@ -1518,7 +1467,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"5.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"5.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "K"
@@ -1528,7 +1477,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"6.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"5.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "L"
@@ -1538,7 +1487,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"6.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"6.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "M"
@@ -1548,7 +1497,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"7.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"6.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "N"
@@ -1558,7 +1507,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"7.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"7.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "O"
@@ -1568,7 +1517,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"8.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"7.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "P"
@@ -1578,7 +1527,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"8.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"8.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "Q"
@@ -1588,7 +1537,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"9.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"8.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "R"
@@ -1598,7 +1547,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"9.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"9.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "S"
@@ -1608,7 +1557,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"10.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"9.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "T"
@@ -1618,7 +1567,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"10.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"10.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "U"
@@ -1628,7 +1577,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"11.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"10.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "V"
@@ -1638,7 +1587,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"11.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"11.0\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.0\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "W"
@@ -1648,7 +1597,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"12.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{le=\"11.5\"}[$__range]))",
+          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"12.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.5\"}[$__range]))",
           "format": "table",
           "instant": true,
           "refId": "X"
@@ -1735,12 +1684,503 @@
       "type": "barchart"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Queue Wait",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 56
+      },
+      "id": 106,
+      "panels": [],
+      "title": "Proof Submission",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 57
+      },
+      "id": 34,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(rate(zkboost_submission_total{service=~\"$service\"}[$__rate_interval])) by (proof_type, status)",
+          "legendFormat": "{{proof_type}} ({{status}})",
+          "refId": "A"
+        }
+      ],
+      "title": "Submission Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 57
+      },
+      "id": 35,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(rate(zkboost_proof_reused_total{service=~\"$service\"}[$__rate_interval])) by (proof_type)",
+          "legendFormat": "{{proof_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Proofs Reused",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 65
+      },
+      "id": 36,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Submission Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 12
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 65
+      },
+      "id": 37,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "legendFormat": "{{proof_type}} p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Proof Latency",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 73
       },
       "id": 103,
       "panels": [],
@@ -1872,7 +2312,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Request latency"
+              "options": "Payload delay"
             },
             "properties": [
               {
@@ -1899,7 +2339,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 74
       },
       "id": 25,
       "options": {
@@ -1921,7 +2361,7 @@
           },
           "limit": 500,
           "metricsQueryType": "range",
-          "query": "{resource.service.name=\"zkboost\" && name=~\"request_proof\"} | select(span.block_number, span.gas_used, span.timestamp)",
+          "query": "{resource.service.name=~\"$service\" && name=~\"request_proof\"} | select(span.block_number, span.gas_used, span.timestamp)",
           "queryType": "traceql",
           "refId": "A",
           "serviceMapUseNativeHistograms": false,
@@ -1993,7 +2433,7 @@
         {
           "id": "calculateField",
           "options": {
-            "alias": "Request latency",
+            "alias": "Payload delay",
             "binary": {
               "left": {
                 "matcher": {
@@ -2022,7 +2462,7 @@
                 "Duration",
                 "Trace ID",
                 "Start time",
-                "Request latency"
+                "Payload delay"
               ]
             }
           }
@@ -2034,7 +2474,7 @@
             "includeByName": {},
             "indexByName": {
               "Duration": 4,
-              "Request latency": 3,
+              "Payload delay": 3,
               "Start time": 5,
               "Trace ID": 0,
               "block_number": 1,
@@ -2064,7 +2504,7 @@
         "h": 16,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 82
       },
       "id": 23,
       "options": {
@@ -2092,9 +2532,8 @@
       "type": "traces"
     }
   ],
-  "preload": false,
   "refresh": "10s",
-  "schemaVersion": 42,
+  "schemaVersion": 38,
   "tags": [
     "zkboost",
     "zkvm"
@@ -2103,17 +2542,46 @@
     "list": [
       {
         "current": {
+          "selected": false,
           "text": "Prometheus",
           "value": "Prometheus"
         },
+        "hide": 0,
         "includeAll": false,
         "label": "Datasource",
+        "multi": false,
         "name": "datasource",
         "options": [],
         "query": "prometheus",
+        "queryValue": "",
         "refresh": 1,
         "regex": "",
+        "skipUrlSync": false,
         "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(zkboost_build_info, service)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "service",
+        "label": "Instance",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(zkboost_build_info, service)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query",
+        "allValue": ".*"
       },
       {
         "current": {
@@ -2154,6 +2622,6 @@
   "timezone": "browser",
   "title": "zkboost",
   "uid": "zkboost-dashboard",
-  "version": 6,
+  "version": 1,
   "weekStart": ""
 }

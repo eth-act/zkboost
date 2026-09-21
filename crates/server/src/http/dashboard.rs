@@ -40,7 +40,9 @@ pub(crate) async fn get_dashboard_events(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let dashboard_event_rx = state.dashboard_event_rx.resubscribe();
     let stream = BroadcastStream::new(dashboard_event_rx)
-        .filter_map(|result| result.ok())
+        // A lagging client has missed events, so its stream ends and it reconnects and reads a
+        // fresh snapshot.
+        .map_while(|result| result.ok())
         .map(|event| {
             let (name, data) = event.to_parts();
             Ok(Event::default().event(name).data(data))

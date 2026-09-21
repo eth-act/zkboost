@@ -42,7 +42,7 @@ use zkboost_types::{
 use crate::{
     config::Config,
     dashboard::DashboardMessage,
-    metrics::record_witness_fetch,
+    metrics::{record_proof_reused, record_submission, record_witness_fetch},
     proof::{
         input::{NewPayloadRequestMeta, StatelessInput},
         worker::{ProofResult, WorkerInput, WorkerOutput},
@@ -250,6 +250,7 @@ impl EngineProxyState {
         new_payload: NewPayload,
         body: Bytes,
     ) -> reqwest::Result<EngineResponse> {
+        let payload_received_at = Instant::now();
         let NewPayload { request, params } = new_payload;
         let block_hash = params.block_hash();
         info!(%block_hash, block_number = params.block_number(), "received new payload");
@@ -263,7 +264,11 @@ impl EngineProxyState {
             .await?;
         if let Some(result) = result {
             if result.status == "VALID" {
-                self.spawn_request_proofs(params, result.witness.map(|witness| witness.0));
+                self.spawn_request_proofs(
+                    params,
+                    result.witness.map(|witness| witness.0),
+                    payload_received_at,
+                );
             } else {
                 debug!(%block_hash, status = result.status, "payload not valid, skip proving");
             }
@@ -287,6 +292,7 @@ impl EngineProxyState {
             block_hash,
             params.timestamp(),
             params.gas_used(),
+            params.gas_limit(),
         ));
 
         let upstream_request = JsonRpcRequest {
@@ -350,7 +356,12 @@ impl EngineProxyState {
     }
 
     /// Requests the proofs of a valid payload in the background under the `request_proof` span.
-    fn spawn_request_proofs(self: &Arc<Self>, params: NewPayloadParams, witness: Option<Bytes>) {
+    fn spawn_request_proofs(
+        self: &Arc<Self>,
+        params: NewPayloadParams,
+        witness: Option<Bytes>,
+        payload_received_at: Instant,
+    ) {
         let block_hash = params.block_hash();
         let span = info_span!(
             "request_proof",
@@ -362,7 +373,10 @@ impl EngineProxyState {
         let state = self.clone();
         tokio::spawn(
             async move {
-                if let Err(error) = state.request_proofs(params, witness, Span::current()).await {
+                if let Err(error) = state
+                    .request_proofs(params, witness, payload_received_at, Span::current())
+                    .await
+                {
                     error!(%block_hash, %error, "proof request failed");
                 }
             }
@@ -376,12 +390,16 @@ impl EngineProxyState {
         self: &Arc<Self>,
         params: NewPayloadParams,
         witness: Option<Bytes>,
+        payload_received_at: Instant,
         span: Span,
     ) -> anyhow::Result<()> {
         let chain_id = self.validator()?.chain_id();
         let (payload_meta, payload) = tokio::task::spawn_blocking(move || {
             let payload = NewPayloadRequest::try_from(params)?;
-            anyhow::Ok((NewPayloadRequestMeta::new(&payload)?, payload))
+            anyhow::Ok((
+                NewPayloadRequestMeta::new(&payload, payload_received_at)?,
+                payload,
+            ))
         })
         .await
         .expect("new payload request conversion does not panic")?;
@@ -399,6 +417,7 @@ impl EngineProxyState {
                 continue;
             };
             info!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof reused");
+            record_proof_reused(proof_type);
             self.submit_proof(payload_meta, proof_type, proof);
         }
         if proving.is_empty() {
@@ -485,6 +504,15 @@ impl EngineProxyState {
         let state = self.clone();
         let slot = Slot::new(payload_meta.slot);
         tokio::spawn(async move {
+            let started = Instant::now();
+            let record = |status| {
+                record_submission(
+                    proof_type,
+                    status,
+                    started.elapsed(),
+                    payload_meta.received_at.elapsed(),
+                )
+            };
             for attempt in 1..=SUBMISSION_ATTEMPTS {
                 let submission = async {
                     let announced = state
@@ -520,6 +548,7 @@ impl EngineProxyState {
                 match submission.await {
                     Ok(()) => {
                         info!(block_hash = %payload_meta.block_hash, %proof_type, "proof submitted");
+                        record("success");
                         break;
                     }
                     Err(error) if attempt < SUBMISSION_ATTEMPTS => {
@@ -528,6 +557,7 @@ impl EngineProxyState {
                     }
                     Err(error) => {
                         error!(block_hash = %payload_meta.block_hash, %proof_type, error = %format!("{error:#}"), "proof submission failed");
+                        record("error");
                     }
                 }
             }

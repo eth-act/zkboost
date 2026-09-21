@@ -103,6 +103,8 @@ pub(crate) struct HistoricalBlock {
     pub(crate) block_timestamp: u64,
     /// Gas used by the block.
     pub(crate) gas_used: u64,
+    /// Gas limit of the block.
+    pub(crate) gas_limit: u64,
     /// Seconds since block timestamp when witness fetch started.
     pub(crate) witness_started_s: Option<f64>,
     /// Seconds since block timestamp when witness fetch ended.
@@ -150,6 +152,8 @@ pub(crate) enum DashboardMessage {
         block_timestamp: u64,
         /// Gas used by the block.
         gas_used: u64,
+        /// Gas limit of the block.
+        gas_limit: u64,
         /// Unix time of the fetch start in seconds.
         timestamp_secs: f64,
     },
@@ -197,12 +201,14 @@ impl DashboardMessage {
         block_hash: Hash256,
         block_timestamp: u64,
         gas_used: u64,
+        gas_limit: u64,
     ) -> Self {
         Self::FetchWitnessStart {
             block_number,
             block_hash,
             block_timestamp,
             gas_used,
+            gas_limit,
             timestamp_secs: now_secs(),
         }
     }
@@ -267,6 +273,8 @@ pub(crate) enum DashboardEvent {
         block_timestamp: u64,
         /// Gas used by the block.
         gas_used: u64,
+        /// Gas limit of the block.
+        gas_limit: u64,
         /// Seconds since block timestamp when the fetch started.
         started_s: f64,
     },
@@ -370,10 +378,20 @@ impl DashboardService {
                 block_hash,
                 block_timestamp,
                 gas_used,
+                gas_limit,
                 timestamp_secs,
             } => {
                 let started_s = timestamp_secs - block_timestamp as f64;
                 let mut state = self.state.write().await;
+                // A payload imported again is answered without a witness. The record of its
+                // first import stays.
+                if state
+                    .historical_blocks
+                    .peek(&block_hash)
+                    .is_some_and(|block| block.witness_success)
+                {
+                    return;
+                }
                 let block = state.insert_block(
                     block_hash,
                     HistoricalBlock {
@@ -381,6 +399,7 @@ impl DashboardService {
                         block_hash,
                         block_timestamp,
                         gas_used,
+                        gas_limit,
                         ..Default::default()
                     },
                 );
@@ -392,6 +411,7 @@ impl DashboardService {
                     block_hash,
                     block_timestamp,
                     gas_used,
+                    gas_limit,
                     started_s,
                 });
             }
@@ -402,7 +422,11 @@ impl DashboardService {
                 timestamp_secs,
             } => {
                 let mut state = self.state.write().await;
-                let Some(block) = state.historical_blocks.peek_mut(&block_hash) else {
+                let Some(block) = state
+                    .historical_blocks
+                    .peek_mut(&block_hash)
+                    .filter(|block| !block.witness_success)
+                else {
                     return;
                 };
                 let ended_s = timestamp_secs - block.block_timestamp as f64;
