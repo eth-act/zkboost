@@ -1,6 +1,6 @@
 # Local Testnet with zkboost
 
-This example runs a local Kurtosis testnet with geth and lighthouse. Gloas is active from genesis. zkboost runs beside it with two Ere GPU provers: Ethrex/OpenVM on GPU 0 and Reth/Zisk on GPU 1. A lighthouse built from the `optional-proofs-gloas` branch of [eth-act/lighthouse](https://github.com/eth-act/lighthouse) uses zkboost as its Engine API endpoint.
+This example runs a local Kurtosis testnet with geth and lighthouse. Gloas is active from genesis. zkboost runs beside it with two Ere GPU provers: Ethrex/OpenVM on GPU 0 and Reth/Zisk on GPU 1. A lighthouse image of the `optional-proofs` branch of [eth-act/lighthouse](https://github.com/eth-act/lighthouse) uses zkboost as its Engine API endpoint.
 
 zkboost forwards every request to a dedicated Geth started by Docker Compose. It obtains the execution witness of each valid payload and requests a proof.
 
@@ -59,7 +59,9 @@ Compose services share the project-scoped `zkboost` network. Geth and zkboost al
 
 Run every command from the repository root.
 
-The start script builds `lighthouse:eth-act-optional-proofs-gloas` from the eth-act branch, starts the enclave, and saves the enclave genesis for the dedicated Geth. The image build takes several minutes. Pass `-b false` to reuse an existing image.
+The start script starts the enclave and saves the enclave genesis for the dedicated Geth. Kurtosis pulls `ethpandaops/lighthouse:eth-act-optional-proofs`, the published image of the eth-act branch.
+
+To build Lighthouse from source instead, set `cl_image` to `lighthouse:eth-act-<branch>` in the network params. Then pass `-r <branch>` to the start script. The build takes several minutes. Pass `-b false` to reuse an image that you built before.
 
 - The enclave name defaults to `local-testnet`. To change it, export `ENCLAVE_NAME` before you run the scripts and Compose.
 - The genesis is saved to `docker/scripts/genesis-${ENCLAVE_NAME}.json` and mounted automatically.

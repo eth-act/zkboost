@@ -37,7 +37,7 @@ The commented lines of the Compose file, the zkboost config, and `network_params
 1. In `docker-compose.yml`, uncomment the `openvm` service, the `openvm` dependency of zkboost, and the `kurtosis` network of zkboost.
 2. In `zkboost/config.toml`, uncomment the `endpoint` of both mocks, and replace the `cl_beacon_endpoint` of the mock beacon node with the commented one.
 3. In `network_params.yaml`, replace the image and the parameters of the fourth Lighthouse with the commented ones, and uncomment the proof observer, `genesis_delay`, and `extra_files`.
-4. Start the testnet as above. The start script builds the eth-act Lighthouse image, which takes several minutes. Run Compose as soon as the start script prints `Started!`.
+4. Start the testnet as above. Run Compose as soon as the start script prints `Started!`.
 
 zkboost then posts the proofs to the fourth Lighthouse, and the mock beacon node stays idle. The observer reports the head of the testnet at `/eth/v1/node/syncing` and lists both proof types at `/eth/v1/beacon/execution_proofs/{slot}`:
 
