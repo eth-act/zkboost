@@ -71,6 +71,8 @@ validator_keystore_password_path = "/validator-keys/secrets/<pubkey>"
 # enabled = false
 # retention = 256
 
+# zkVM backends. Without a [[zkvm]] entry, zkboost forwards every request unchanged and proves nothing.
+
 # External Ere server (calls a remote ere-server via HTTP)
 [[zkvm]]
 kind = "ere"

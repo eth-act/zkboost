@@ -55,7 +55,8 @@ pub struct Config {
     /// Dashboard feature configuration.
     #[serde(default)]
     pub dashboard: DashboardConfig,
-    /// zkVM backend configurations.
+    /// zkVM backend configurations. Without an entry, every request is forwarded unchanged.
+    #[serde(default)]
     pub zkvm: Vec<zkVMConfig>,
 }
 
@@ -69,10 +70,6 @@ impl Config {
     }
 
     fn validate(&self) -> anyhow::Result<()> {
-        ensure!(
-            !self.zkvm.is_empty(),
-            "at least one [[zkvm]] entry is required"
-        );
         ensure!(
             self.dashboard.retention > 0,
             "dashboard.retention must be > 0"
@@ -378,12 +375,10 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_zkvm_rejected() {
-        let toml = r#"
-            zkvm = []
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
+    fn test_no_zkvm_accepted() {
+        let config = parse("");
+        assert!(config.zkvm.is_empty());
+        assert!(config.validate().is_ok());
     }
 
     #[test]

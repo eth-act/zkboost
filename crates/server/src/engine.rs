@@ -1,6 +1,7 @@
 //! Engine API proxy state. Every request is forwarded to the EL with the caller's `Authorization`
 //! header unchanged. `engine_newPayloadV5` goes upstream as `engine_newPayloadWithWitnessV5`, and
-//! the witness is removed from the status. A `VALID` payload is proven and submitted.
+//! the witness is removed from the status. A `VALID` payload is proven and submitted. Without a
+//! zkVM, every request is forwarded unchanged.
 //! The witness is the RLP list `[headers, codes, state]` and an optional, ignored `keys` list.
 
 pub(crate) mod beacon_node_client;
@@ -150,15 +151,13 @@ impl EngineProxyState {
         )?;
         info!(pubkey = %keypair.pk, "validator keystore decrypted");
         let proofs_capacity = NonZeroUsize::new(PROOF_CACHE_SLOTS * worker_input_txs.len())
-            .expect("config validation requires a zkvm");
+            .unwrap_or(NonZeroUsize::MIN);
         Ok(Self {
             engine_api_client: EngineApiClient::new(config.el_engine_endpoint.clone()),
             beacon_node_client: BeaconNodeClient::new(config.cl_beacon_endpoint.clone())?,
             keypair,
             validator: OnceLock::new(),
-            blocks: Mutex::new(LruCache::new(
-                NonZeroUsize::new(BLOCK_CACHE_SLOTS).expect("BLOCK_CACHE_SLOTS is not zero"),
-            )),
+            blocks: Mutex::new(LruCache::new(NonZeroUsize::new(BLOCK_CACHE_SLOTS).unwrap())),
             proofs: Mutex::new(LruCache::new(proofs_capacity)),
             requested: Mutex::new(HashSet::new()),
             worker_input_txs,
@@ -167,12 +166,17 @@ impl EngineProxyState {
     }
 
     /// Waits until the beacon node answers the startup reads. It then keeps the block cache from
-    /// the events and records every proof attempt of the workers until the shutdown.
+    /// the events and records every proof attempt of the workers until the shutdown. Without a
+    /// zkVM, nothing is proven, so it returns at once.
     pub(crate) async fn run(
         self: Arc<Self>,
         shutdown: CancellationToken,
         mut worker_output_rx: mpsc::Receiver<WorkerOutput>,
     ) {
+        if self.worker_input_txs.is_empty() {
+            return;
+        }
+
         let (spec, genesis_validators_root, validator_index) = tokio::select! {
             () = shutdown.cancelled() => return,
             values = async {
@@ -243,7 +247,8 @@ impl EngineProxyState {
     }
 
     /// Forwards a new payload as `engine_newPayloadWithWitnessV5` and answers without the witness.
-    /// Without the method or before the validator is ready, the payload is forwarded unchanged.
+    /// Without a zkVM, without the method, or before the validator is ready, the payload is
+    /// forwarded unchanged.
     pub(crate) async fn new_payload(
         self: Arc<Self>,
         authorization: Option<&HeaderValue>,
@@ -254,8 +259,13 @@ impl EngineProxyState {
         let NewPayload { request, params } = new_payload;
         let block_hash = params.block_hash();
         info!(%block_hash, block_number = params.block_number(), "received new payload");
-        if let Err(error) = self.validator() {
-            warn!(%block_hash, %error, "payload not proven");
+
+        if self.worker_input_txs.is_empty() {
+            warn!(%block_hash, "no worker configured, skip proving");
+            return self.engine_api_client.forward(authorization, body).await;
+        }
+        if self.validator().is_err() {
+            warn!(%block_hash, "validator not ready, skip proving");
             return self.engine_api_client.forward(authorization, body).await;
         }
 
