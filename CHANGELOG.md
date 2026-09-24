@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.1](https://github.com/eth-act/zkboost/compare/v0.10.0...v0.10.1) (2026-09-24)
+
+
+### Features
+
+* add zkvm_versions to proof-engine.json ([#78](https://github.com/eth-act/zkboost/issues/78)) ([eff3a46](https://github.com/eth-act/zkboost/commit/eff3a46f28bb425e1ad30fe341ccc1947afcebe9))
+* allow no zkvm configured ([#79](https://github.com/eth-act/zkboost/issues/79)) ([ab828f0](https://github.com/eth-act/zkboost/commit/ab828f0d1230c678e0f011c24f5fbb23bad6318e))
+* make mock-guests with standard guest io ([#80](https://github.com/eth-act/zkboost/issues/80)) ([63e508f](https://github.com/eth-act/zkboost/commit/63e508f42d85cb1393b7666772936bf1b2ba94ec))
+* update docker example to use ethpandaops images ([#76](https://github.com/eth-act/zkboost/issues/76)) ([aa7a2b4](https://github.com/eth-act/zkboost/commit/aa7a2b4e34e0865a00a3507869b025af1b3ee58b))
+
 ## [0.10.0](https://github.com/eth-act/zkboost/compare/v0.9.0...v0.10.0) (2026-09-21)
 
 
