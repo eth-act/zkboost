@@ -112,11 +112,10 @@ impl Config {
                     zkvm,
                     zkVMConfig::Mock {
                         proof_type: ProofType::ZesuZisk,
-                        endpoint: None,
                         ..
                     }
                 ),
-                "no mock proof of zesu-zisk, set endpoint"
+                "no mock proof of zesu-zisk"
             );
             if let zkVMConfig::Cluster {
                 proof_type,
@@ -195,12 +194,6 @@ pub enum zkVMConfig {
         /// Whether the mock should always fail proof generation.
         #[serde(default)]
         mock_failure: bool,
-        /// Endpoint of an ere-server with the mock guest of
-        /// `docker/example/mock-beacon-node/mock-guest`, which proves the expected public values.
-        /// `mock_proving_time` and `mock_failure` do not apply. Without it, the mock returns the
-        /// fixture proof of the proof type.
-        #[serde(default)]
-        endpoint: Option<Url>,
     },
     /// Remote cluster backend.
     Cluster {
@@ -339,32 +332,13 @@ mod tests {
             zkVMConfig::Mock {
                 proof_timeout_secs: 12,
                 mock_proving_time: MockProvingTime::Constant { ms: 6000 },
-                endpoint: None,
                 ..
             }
         ));
     }
 
     #[test]
-    fn test_parse_mock_endpoint() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "ethrex-openvm"
-            endpoint = "http://ere-server:3000"
-        "#;
-        let config = parse(toml);
-        assert!(matches!(
-            config.zkvm[0],
-            zkVMConfig::Mock {
-                endpoint: Some(_),
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn test_zesu_zisk_mock_without_endpoint_rejected() {
+    fn test_zesu_zisk_mock_rejected() {
         let toml = r#"
             [[zkvm]]
             kind = "mock"

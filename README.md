@@ -100,7 +100,7 @@ endpoint = "http://openvm-cluster:3000"
 elf_url = "https://example.com/stateless-validator-reth-openvm.elf"
 
 # Mock zkVMs (in-process). The mock sleeps for the simulated proving time and returns the fixture
-# proof of the proof type, a valid proof of another block. A zesu-zisk mock needs endpoint, because
+# proof of the proof type, a valid proof of another block. A zesu-zisk mock is rejected, because
 # its guest has no fixture proof.
 
 # Fixed proving time (default)
@@ -108,9 +108,6 @@ elf_url = "https://example.com/stateless-validator-reth-openvm.elf"
 kind = "mock"
 proof_type = "reth-sp1"
 mock_proving_time = { kind = "constant", ms = 6000 }
-# An Ere server that runs the mock guest of the zkVM from docker/example/mock-beacon-node/mock-guest.
-# The mock then proves the expected public values there. mock_proving_time and mock_failure do not apply.
-# endpoint = "http://ere-server:3000"
 
 # Random proving time uniformly sampled from [min_ms, max_ms]
 [[zkvm]]

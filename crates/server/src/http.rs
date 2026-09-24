@@ -140,7 +140,6 @@ pub(crate) mod tests {
                 proof_timeout_secs: 12,
                 mock_proving_time: MockProvingTime::Constant { ms: 10 },
                 mock_failure: false,
-                endpoint: None,
             }],
         };
         let (worker_input_tx, _) = mpsc::channel(16);

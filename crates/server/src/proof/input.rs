@@ -8,7 +8,7 @@ use anyhow::Context;
 use stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
 use zkboost_types::{
     ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, NewPayloadRequestExt, ProtocolFork,
-    PublicKeys, Sha2Hasher, SszEncode, StatelessValidationResult, Transactions,
+    PublicKeys, Sha2Hasher, Transactions,
 };
 
 /// The metadata of a `NewPayloadRequest`, known before the witness. The root identifies the
@@ -48,13 +48,11 @@ impl NewPayloadRequestMeta {
     }
 }
 
-/// A wrapper for `stateless_input_bytes` with the metadata of the request and its expected public
-/// values.
+/// A wrapper for `stateless_input_bytes` with the metadata of the request.
 #[derive(Debug)]
 pub(crate) struct StatelessInput {
     payload_meta: NewPayloadRequestMeta,
     stateless_input_bytes: Vec<u8>,
-    public_values: Vec<u8>,
 }
 
 impl StatelessInput {
@@ -74,18 +72,10 @@ impl StatelessInput {
             public_keys,
         }
         .to_schema_prefixed_ssz(ProtocolFork::Amsterdam);
-        let public_values = StatelessValidationResult {
-            new_payload_request_root: payload_meta.new_payload_request_root.0,
-            successful_validation: true,
-            chain_id,
-            schema_id: ProtocolFork::Amsterdam.schema_id(),
-        }
-        .to_ssz();
 
         Ok(Self {
             payload_meta,
             stateless_input_bytes,
-            public_values,
         })
     }
 
@@ -97,11 +87,6 @@ impl StatelessInput {
     /// Returns the schema-id-prefixed SSZ bytes used as zkVM stdin.
     pub(crate) fn stateless_input_bytes(&self) -> &[u8] {
         &self.stateless_input_bytes
-    }
-
-    /// Returns the SSZ public values of a successful validation, the stdin of a mock guest.
-    pub(crate) fn public_values(&self) -> &[u8] {
-        &self.public_values
     }
 }
 
@@ -127,16 +112,13 @@ fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; P
 mod tests {
     use std::time::Instant;
 
-    use alloy_primitives::hex;
-
     use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
 
     /// The stateless input of block 93354 of glamsterdam-devnet-8.
     const AMSTERDAM_STATELESS_INPUT: &[u8] =
         include_bytes!("../../tests/fixture/stateless_input_amsterdam.ssz");
 
-    /// The input built from the decoded fixture encodes to the fixture bytes the guest reads, and
-    /// its public values are the ones of the fixture proofs.
+    /// The input built from the decoded fixture encodes to the fixture bytes the guest reads.
     #[test]
     fn test_stateless_input_matches_fixture() {
         let (_, fixture) =
@@ -152,11 +134,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(input.stateless_input_bytes(), AMSTERDAM_STATELESS_INPUT);
-        assert_eq!(
-            input.public_values(),
-            hex!(
-                "8c3a890206a189727e151767653f846ccddbd269eb29fb0a2f97371f23a481c6016ecca8a6010000000115"
-            )
-        );
     }
 }

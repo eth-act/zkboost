@@ -484,7 +484,6 @@ impl TestHarness {
                     proof_timeout_secs,
                     mock_proving_time: MockProvingTime::Constant { ms: 3000 },
                     mock_failure: behavior.proof_failure,
-                    endpoint: None,
                 })
                 .collect(),
         };
