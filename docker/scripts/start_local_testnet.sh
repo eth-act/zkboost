@@ -13,12 +13,14 @@ ETHEREUM_PKG_VERSION=main
 
 BUILD_IMAGE=true
 KEEP_ENCLAVE=false
+LH_BRANCH=optional-proofs
 
 # Get options
-while getopts "b:n:kh" flag; do
+while getopts "b:n:r:kh" flag; do
   case "${flag}" in
     b) BUILD_IMAGE=${OPTARG};;
     n) NETWORK_PARAMS_FILE=${OPTARG};;
+    r) LH_BRANCH=${OPTARG};;
     k) KEEP_ENCLAVE=true;;
     h)
         echo "Start a local testnet with kurtosis."
@@ -28,6 +30,7 @@ while getopts "b:n:kh" flag; do
         echo "Options:"
         echo "   -b: whether to build the custom Lighthouse image when used    default: $BUILD_IMAGE"
         echo "   -n: example network params file path                       default: $NETWORK_PARAMS_FILE"
+        echo "   -r: eth-act/lighthouse branch to build from                default: $LH_BRANCH"
         echo "   -k: keeping enclave to allow starting the testnet without destroying the existing one"
         echo "   -h: this help"
         exit
@@ -50,19 +53,19 @@ if ! command -v yq &> /dev/null; then
     exit 1
 fi
 
-LH_BRANCH=optional-proofs-gloas
-LH_IMAGE_NAME=lighthouse:eth-act-optional-proofs-gloas
+LH_IMAGE_NAME=lighthouse:eth-act-$LH_BRANCH
 
+# The examples name the published ethpandaops image. A participant that names the local
+# tag instead gets that branch built from source here.
 if [ "$BUILD_IMAGE" = true ] &&
   LH_IMAGE_NAME="$LH_IMAGE_NAME" yq -e '[.participants[].cl_image == strenv(LH_IMAGE_NAME)] | any' "$NETWORK_PARAMS_FILE" > /dev/null; then
-  # eth-act/lighthouse publishes no image of this branch.
   echo "Building Lighthouse docker image ($LH_IMAGE_NAME) from eth-act/lighthouse@$LH_BRANCH."
   LH_SRC=$(mktemp -d)
   git clone --depth 1 --branch $LH_BRANCH https://github.com/eth-act/lighthouse "$LH_SRC"
-  # The prebuilt ERE verifier library carries its own Rust standard library.
-  sed -i 's|^ENV CARGO_INCREMENTAL=1$|&\nENV RUSTFLAGS="-C link-arg=-Wl,--allow-multiple-definition"|' "$LH_SRC/Dockerfile"
   docker build --build-arg FEATURES=portable,ere-verifier -t "$LH_IMAGE_NAME" "$LH_SRC"
   rm -rf "$LH_SRC"
+else
+  echo "Using the Lighthouse images of $NETWORK_PARAMS_FILE."
 fi
 
 if [ "$KEEP_ENCLAVE" = false ]; then

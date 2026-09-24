@@ -15,7 +15,7 @@ participants:
       - --execution-jwt-secret-key=0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b
   # With the optional Ere GPU prover of the Compose file, this Lighthouse comes from eth-act
   # instead, executes through zkboost, and gossips the proofs that zkboost posts to it.
-  #   cl_image: lighthouse:eth-act-optional-proofs-gloas
+  #   cl_image: ethpandaops/lighthouse:eth-act-optional-proofs
   #   cl_extra_params:
   #     - --execution-endpoint=http://zkboost:3000
   #     - --execution-jwt-secret-key=0xdc49981516e8e72b401a63e6405495a32dafc3939b5d6d83cc319ac0388bca1b
@@ -26,7 +26,7 @@ participants:
   # payload after its proofs.
   # - el_type: None
   #   cl_type: lighthouse
-  #   cl_image: lighthouse:eth-act-optional-proofs-gloas
+  #   cl_image: ethpandaops/lighthouse:eth-act-optional-proofs
   #   validator_count: 0
   #   cl_extra_params:
   #     - --proof-engine=/config/proof-engine.json

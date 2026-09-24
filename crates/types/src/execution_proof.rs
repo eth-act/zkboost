@@ -16,7 +16,7 @@ pub const MAX_PROOF_SIZE: usize = 4_194_304;
 /// `MAX_EXECUTION_PROOFS_PER_PAYLOAD` of the consensus specs, the bound of one submission.
 pub const MAX_EXECUTION_PROOFS_PER_PAYLOAD: usize = 4;
 
-/// `ExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs-gloas`.
+/// `ExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs`.
 /// It diverges from the specs with `beacon_block_root` in place of `public_input`.
 #[derive(Debug, Clone, PartialEq, Eq, HashTreeRoot, SszEncode, SszDecode)]
 pub struct ExecutionProofEnvelope {
@@ -35,7 +35,7 @@ impl ExecutionProofEnvelope {
     }
 }
 
-/// `SignedExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs-gloas`.
+/// `SignedExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs`.
 #[derive(Debug, Clone, PartialEq, Eq, HashTreeRoot, SszEncode, SszDecode)]
 pub struct SignedExecutionProofEnvelope {
     /// The signed envelope.
