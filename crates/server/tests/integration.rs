@@ -422,6 +422,7 @@ struct Behavior {
     block_from_event: bool,
     beacon_node_unreachable: bool,
     beacon_node_error_once: bool,
+    no_zkvm: bool,
 }
 
 struct TestHarness {
@@ -459,7 +460,11 @@ impl TestHarness {
         )
         .await;
         let proof_timeout_secs = if behavior.proof_timeout { 1 } else { 12 };
-        let proof_types = vec![ProofType::RethOpenVM];
+        let proof_types = if behavior.no_zkvm {
+            Vec::new()
+        } else {
+            vec![ProofType::RethOpenVM]
+        };
         let config = Config {
             port: 0,
             el_engine_endpoint: el_endpoint,
@@ -487,7 +492,7 @@ impl TestHarness {
         let shutdown = tokio_util::sync::CancellationToken::new();
         let server = zkBoostServer::new(config, metrics).await.unwrap();
         let (addr, _) = server.run(shutdown.clone()).await.unwrap();
-        if !behavior.beacon_node_unreachable {
+        if !behavior.beacon_node_unreachable && !behavior.no_zkvm {
             tokio::time::timeout(
                 Duration::from_secs(10),
                 beacon_node.events_opened.notified(),
@@ -812,6 +817,29 @@ async fn test_first_execution_payload_event_kept() {
 async fn test_payload_forwarded_before_validator_ready() {
     let mut harness = TestHarness::new(Behavior {
         beacon_node_unreachable: true,
+        ..Default::default()
+    })
+    .await;
+
+    let response = harness.new_payload().await;
+    assert_eq!(response["result"]["status"], "VALID");
+
+    let methods: Vec<_> = harness
+        .el_calls()
+        .into_iter()
+        .map(|call| call.method)
+        .collect();
+    assert_eq!(methods, [NewPayloadParams::METHOD]);
+
+    harness.assert_no_proof_submitted().await;
+}
+
+/// Without a zkVM, zkboost is a plain Engine API proxy. The payload is forwarded unchanged and
+/// nothing is proven.
+#[tokio::test]
+async fn test_payload_forwarded_without_zkvm() {
+    let mut harness = TestHarness::new(Behavior {
+        no_zkvm: true,
         ..Default::default()
     })
     .await;
