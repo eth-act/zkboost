@@ -28,5 +28,10 @@
       "proof_type": 7,
       "program_vk": "0x0e85a61f8d928667d8a771506348809f054360b27b97595eeaba611fa5760ba7"
     }
-  ]
+  ],
+  "zkvm_versions": {
+    "openvm": "v2.1.0-preview",
+    "sp1": "v6.4.0",
+    "zisk": "v1.1.0-alpha"
+  }
 }
