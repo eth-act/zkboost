@@ -68,16 +68,10 @@ impl zkVMInstance {
                 proof_timeout_secs,
                 mock_proving_time,
                 mock_failure,
-                endpoint,
             } => Ok(Self::Mock {
                 proof_type: *proof_type,
                 proof_timeout: Duration::from_secs(*proof_timeout_secs),
-                vm: MockzkVM::new(
-                    *proof_type,
-                    endpoint.as_ref().map(zkvm_client).transpose()?,
-                    mock_proving_time.clone(),
-                    *mock_failure,
-                ),
+                vm: MockzkVM::new(*proof_type, mock_proving_time.clone(), *mock_failure),
             }),
             zkVMConfig::Cluster {
                 proof_type,
@@ -163,12 +157,10 @@ fn zkvm_client(endpoint: &Url) -> anyhow::Result<zkVMClient> {
         .with_context(|| format!("failed to create zkVM client for endpoint: {endpoint}"))
 }
 
-/// Mock zkVM for testing. It proves the expected public values on an ere-server of the mock guest,
-/// or sleeps and returns the fixture proof.
+/// Mock zkVM for testing. It sleeps and returns the fixture proof.
 #[derive(Debug, Clone)]
 pub(crate) struct MockzkVM {
     proof_type: ProofType,
-    client: Option<Arc<zkVMClient>>,
     mock_proving_time: MockProvingTime,
     failure: bool,
 }
@@ -177,7 +169,6 @@ impl MockzkVM {
     /// Constructs a `MockzkVM`.
     pub(crate) fn new(
         proof_type: ProofType,
-        client: Option<zkVMClient>,
         mock_proving_time: MockProvingTime,
         failure: bool,
     ) -> Self {
@@ -186,20 +177,13 @@ impl MockzkVM {
         }
         Self {
             proof_type,
-            client: client.map(Arc::new),
             mock_proving_time,
             failure,
         }
     }
 
-    /// Returns the proof of the payload from the ere-server or the fixture.
+    /// Returns the fixture proof of the proof type after the simulated proving time.
     pub(crate) async fn prove(&self, input: &StatelessInput) -> anyhow::Result<Vec<u8>> {
-        if let Some(client) = &self.client {
-            let input = Input::new().with_stdin(input.public_values().to_vec());
-            let (_, proof, _) = client.prove(input).await?;
-            return Ok(proof.0);
-        }
-
         let start = Instant::now();
         let gas_used = input.payload_meta().gas_used;
 

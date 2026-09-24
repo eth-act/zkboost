@@ -12,16 +12,24 @@ validator_keystore_password_path = "/validator-keys/secrets/0xb756817e69f8ae3692
 [dashboard]
 enabled = true
 
-# With the optional Ere GPU prover of the Compose file, both mocks prove the expected public values
-# there.
 [[zkvm]]
 kind = "mock"
 proof_type = "ethrex-openvm"
 mock_proving_time = { kind = "random", min_ms = 2000, max_ms = 8000 }
-# endpoint = "http://openvm:3000"
 
 [[zkvm]]
 kind = "mock"
 proof_type = "reth-openvm"
 mock_proving_time = { kind = "random", min_ms = 3000, max_ms = 9000 }
+
+# With the optional Ere GPU prover of the Compose file, these Ere zkVMs of the mock guest replace
+# both mocks.
+# [[zkvm]]
+# kind = "ere"
+# proof_type = "ethrex-openvm"
+# endpoint = "http://openvm:3000"
+#
+# [[zkvm]]
+# kind = "ere"
+# proof_type = "reth-openvm"
 # endpoint = "http://openvm:3000"

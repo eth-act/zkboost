@@ -32,10 +32,10 @@ The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks 
 
 ## Proof observer with a GPU
 
-The commented lines of the Compose file, the zkboost config, and `network_params.yaml` turn the example into the proof flow of the testnet example on one GPU. An Ere server proves the mock OpenVM guest of `mock-guest`, which reveals its input unchanged, for both proof types. The fourth Lighthouse comes from eth-act and gossips the proofs to a fifth Lighthouse, the proof observer, which imports every payload after its proofs and has no execution client.
+The commented lines of the Compose file, the zkboost config, and `network_params.yaml` turn the example into the proof flow of the testnet example on one GPU. An Ere server proves the mock OpenVM guest of `mock-guest` for both proof types. The guest reads the stateless input as the guests of ere-guests do, and reveals a successful validation without the execution of the payload. The fourth Lighthouse comes from eth-act and gossips the proofs to a fifth Lighthouse, the proof observer, which imports every payload after its proofs and has no execution client.
 
 1. In `docker-compose.yml`, uncomment the `openvm` service, the `openvm` dependency of zkboost, and the `kurtosis` network of zkboost.
-2. In `zkboost/config.toml`, uncomment the `endpoint` of both mocks, and replace the `cl_beacon_endpoint` of the mock beacon node with the commented one.
+2. In `zkboost/config.toml`, replace both mocks with the commented Ere zkVMs, and replace the `cl_beacon_endpoint` of the mock beacon node with the commented one.
 3. In `network_params.yaml`, replace the image and the parameters of the fourth Lighthouse with the commented ones, and uncomment the proof observer, `genesis_delay`, and `extra_files`.
 4. Start the testnet as above. Run Compose as soon as the start script prints `Started!`.
 
@@ -47,10 +47,10 @@ curl -fsS "$BEACON_API/eth/v1/node/syncing"
 curl -fsS "$BEACON_API/eth/v1/beacon/execution_proofs/head" | yq -p=json '[.data[].message.proof_type]'
 ```
 
-`mock-guest` holds one guest per zkVM as an assembly source, a linker script, the linked ELF, and the verifying key. This example uses the OpenVM guest. The build commands are in the header of each source. The `keygen` command of the ere-server of the zkVM writes the key:
+`mock-guest` holds the guest crate, with one feature per zkVM, and the ELF and the verifying key of every zkVM. This example uses the OpenVM guest. `build.sh` compiles the guest with the Ere compiler and writes every key with the `keygen` command of the Ere server:
 
 ```bash
-docker run --rm -v $PWD/docker/example/mock-beacon-node/mock-guest:/mock-guest ghcr.io/eth-act/ere/ere-server-openvm:0.17.0 --elf-path /mock-guest/openvm.elf keygen --program-vk-path /mock-guest/openvm.vk
+./docker/example/mock-beacon-node/mock-guest/build.sh
 ```
 
 ## Dashboards

@@ -66,9 +66,9 @@ services:
         condition: service_healthy
 
   # Optional Ere GPU prover of the mock OpenVM guest of ./mock-guest, for the proof observer of
-  # network_params.yaml. The mock zkVMs of zkboost send it the expected public values of a payload.
+  # network_params.yaml. The Ere zkVMs of zkboost send it the stateless input of a payload.
   # openvm:
-  #   image: ghcr.io/eth-act/ere/ere-server-openvm:0.17.0-cuda
+  #   image: ghcr.io/eth-act/ere/ere-server-openvm:0.17.1-cuda
   #   command: ["--port", "3000", "--elf-path", "/mock-guest/openvm.elf", "gpu"]
   #   shm_size: 2G
   #   volumes:
