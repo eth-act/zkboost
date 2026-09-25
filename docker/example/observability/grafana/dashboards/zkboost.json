@@ -870,19 +870,9 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_witness_fetch_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50",
+          "expr": "sum(rate(zkboost_witness_fetch_duration_seconds_sum{service=~\"$service\"}[$__rate_interval])) / sum(rate(zkboost_witness_fetch_duration_seconds_count{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "avg",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_witness_fetch_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_witness_fetch_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
         }
       ],
       "title": "Witness Fetch Duration",
@@ -969,14 +959,9 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_witness_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50",
+          "expr": "sum(rate(zkboost_witness_bytes_sum{service=~\"$service\"}[$__rate_interval])) / sum(rate(zkboost_witness_bytes_count{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "avg",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_witness_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
         }
       ],
       "title": "Witness Size",
@@ -1268,14 +1253,9 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_proof_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p50",
+          "expr": "sum(rate(zkboost_prove_proof_bytes_sum{service=~\"$service\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_prove_proof_bytes_count{service=~\"$service\"}[$__rate_interval])) by (proof_type)",
+          "legendFormat": "{{proof_type}} avg",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_proof_bytes_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p95",
-          "refId": "B"
         }
       ],
       "title": "Proof Size",
@@ -1764,19 +1744,9 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p50",
+          "expr": "sum(rate(zkboost_queue_wait_duration_seconds_sum{service=~\"$service\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_queue_wait_duration_seconds_count{service=~\"$service\"}[$__rate_interval])) by (proof_type)",
+          "legendFormat": "{{proof_type}} avg",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p99",
-          "refId": "C"
         }
       ],
       "title": "Queue Wait",
