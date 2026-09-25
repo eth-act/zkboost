@@ -142,18 +142,15 @@ Available proof types:
 
 ## Engine API
 
-zkboost serves the Engine API as JSON-RPC at `POST /`. The CL uses zkboost as its Engine API endpoint in place of the EL.
+The CL uses zkboost as its Engine API endpoint at `POST /`.
 
-- Every request is forwarded byte-for-byte to `el_engine_endpoint`. The EL response is returned to the CL.
-- The `Authorization` JWT header of the CL is passed through unchanged. The EL validates the JWT. zkboost does not validate it.
-- zkboost takes the chain id from `DEPOSIT_CHAIN_ID` of the beacon node spec.
-- `engine_newPayloadV5` is intercepted. zkboost sends it to the EL as `engine_newPayloadWithWitnessV5`, which returns the execution witness in the payload status.
-- zkboost removes the `witness` field from the payload status before it answers the CL.
-- When the payload status is `VALID`, zkboost builds the stateless input from the payload, the witness, and the chain id. It then dispatches proving to every configured zkVM backend in the background.
-- Every payload is proven under the Amsterdam rules. `engine_newPayloadV1` to `engine_newPayloadV4` are forwarded without proving.
-- A payload imported again after a reorg is submitted with the cached proof, not proven twice. zkboost keeps the proofs of the last 64 payloads per proof type, two epochs.
+- zkboost forwards every request to `el_engine_endpoint` with the JWT of the CL. The EL validates the JWT.
+- zkboost sends `engine_newPayloadV5` to the EL as `engine_newPayloadWithWitnessV5` and removes the `witness` from the answer.
+- For a `VALID` payload, every configured zkVM proves the stateless execution in the background.
+- zkboost takes the protocol fork of a payload from its slot. The max blob count of the blob schedule selects the BPO fork, Amsterdam for the BPO2 max of 21.
+- A payload imported again after a reorg gets its cached proof.
 
-The following endpoints are also available:
+zkboost also serves these endpoints.
 
 | Method | Endpoint            | Purpose                             |
 | ------ | ------------------- | ----------------------------------- |
@@ -165,9 +162,7 @@ The following endpoints are also available:
 
 ## Proof Submission
 
-zkboost delivers every generated proof to the beacon node at `cl_beacon_endpoint` as an EIP-8025 `SignedExecutionProofEnvelope`.
-
-zkboost reads these routes of the beacon API.
+zkboost signs every proof as the configured validator and posts it to `cl_beacon_endpoint` as an EIP-8025 `SignedExecutionProofEnvelope`. It reads these routes of the beacon API.
 
 | Route                                                | Reads                                           | How often                  |
 | ---------------------------------------------------- | ----------------------------------------------- | -------------------------- |
@@ -178,20 +173,7 @@ zkboost reads these routes of the beacon API.
 | `GET /eth/v1/beacon/headers?parent_root=`            | The children of the parent beacon block root    | Per proof without an event |
 | `GET /eth/v2/beacon/blocks/{root}`                   | The payload bid of a listed child               | Per listed child           |
 
-zkboost forwards payloads without proving until the beacon node answers the three startup routes, and logs one warning per attempt.
-
-Every proof follows these steps.
-
-1. zkboost takes the beacon block root from the `execution_payload` event of the block hash and the slot of the payload. The beacon node sends that event when it imports the payload envelope.
-2. Without such an event, zkboost lists the children of the parent beacon block root. It reads the payload bid of every listed child and takes the child whose bid carries the block hash.
-3. zkboost compares the slot of the header of that child with the slot of the payload.
-4. zkboost signs the envelope under `DOMAIN_EXECUTION_PROOF` with the fork version at the slot of the block. It takes that fork version from the chain spec, as a validator client does.
-5. zkboost sends the envelope with `POST /eth/v1/beacon/execution_proofs`. The body is the SSZ encoding of a list of at most 4 envelopes and has the header `Content-Type: application/octet-stream`.
-
-zkboost submits no proof in these cases.
-
-- Two children carry the payload in their bid, which shows a proposer equivocation. A Gloas payload bid commits to the slot and the parent, therefore one child only is valid.
-- The slot of the child header differs from the slot of the payload. The execution header does not commit to the slot, therefore zkboost compares the two sources.
+zkboost forwards payloads without proving until the beacon node answers the startup routes. zkboost submits no proof if two child blocks carry the payload, or if the child block has another slot.
 
 The table gives the EIP-8025 proof type of every zkboost proof type.
 
@@ -207,12 +189,10 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 
 ## Mock Beacon Node
 
-`mock-beacon-node` mocks a beacon node with the EIP-8025 behavior. It stands in for the beacon node in the examples.
+`mock-beacon-node` stands in for an EIP-8025 beacon node in the examples.
 
-- It serves the Engine API to a CL and forwards every request to zkboost with the JWT of the CL unchanged. zkboost therefore receives the Engine API traffic of a real CL.
-- It receives the proofs at `POST /eth/v1/beacon/execution_proofs`. It looks up the beacon block of every envelope at the CL and verifies the validator signature as the beacon node does.
-- It verifies each proof with `ere-verifier` and checks its public values against `crates/server/src/proof/zkvm/mock/public_values.bin`, the ones of the fixture proofs, with zero padding allowed. A proof of the live payload is therefore rejected.
-- It forwards every other beacon API request to the CL. zkboost therefore uses the mock beacon node as its `cl_beacon_endpoint`.
+- It forwards the Engine API of a CL to zkboost, and every other beacon API request to the CL.
+- It verifies the signature and the proof of every submitted envelope. The public values must be the ones of the fixture proofs, so a proof of a live payload fails.
 
 | Flag                       | Description                                 |
 | -------------------------- | ------------------------------------------- |

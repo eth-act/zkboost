@@ -25,7 +25,9 @@ use axum::{
 };
 use lighthouse_bls::{PublicKey, Signature};
 use lighthouse_eth2_keystore::Keystore;
-use lighthouse_types::{ChainSpec, Config as SpecConfig, Epoch, MainnetEthSpec};
+use lighthouse_types::{
+    BlobParameters, BlobSchedule, ChainSpec, Config as SpecConfig, Epoch, MainnetEthSpec,
+};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde_json::{Value, json};
 use tokio::{
@@ -298,10 +300,16 @@ async fn events_handler(
     Sse::new(tokio_stream::iter(events).chain(tokio_stream::pending()))
 }
 
-/// `GET /eth/v1/config/spec`, the mainnet spec with every fork at genesis.
+/// `GET /eth/v1/config/spec`, the mainnet spec with every fork at genesis. BPO1 and BPO2 are at
+/// genesis too, in one blob schedule entry, as the beacon node merges them.
 async fn spec_handler(State(node): State<Arc<MockBeaconNode>>) -> Json<Value> {
     let spec = mock_spec(node.fixture.chain_id);
-    Json(json!({ "data": SpecConfig::from_chain_spec::<MainnetEthSpec>(&spec) }))
+    let mut config = SpecConfig::from_chain_spec::<MainnetEthSpec>(&spec);
+    config.blob_schedule = BlobSchedule::new(vec![BlobParameters {
+        epoch: Epoch::new(0),
+        max_blobs_per_block: 21,
+    }]);
+    Json(json!({ "data": config }))
 }
 
 /// `GET /eth/v1/beacon/states/head/validators/{pubkey}`, known for the fixture validator only.

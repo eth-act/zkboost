@@ -1,13 +1,16 @@
 //! The validator that signs every proof as an EIP-8025 envelope under the beacon block that
-//! carries the payload. The envelope is signed under the fork at the slot of that block.
+//! carries the payload. The envelope is signed under the fork at the slot of that block. The
+//! protocol fork of the stateless input of a payload comes from the fork epochs and the blob
+//! schedule of the spec.
 
+use alloy_eips::eip7892::BPO2_MAX_BLOBS_PER_BLOCK;
 use alloy_primitives::B256;
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use lighthouse_bls::Keypair;
 use lighthouse_types::{ChainSpec, EthSpec, MainnetEthSpec, Slot};
 use zkboost_types::{
-    ExecutionProofEnvelope, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszList,
-    SszVector, execution_proof_domain,
+    ExecutionProofEnvelope, ProtocolFork, SignedExecutionProofEnvelope,
+    SignedExecutionProofEnvelopes, SszList, SszVector, execution_proof_domain,
 };
 
 /// Signs every generated proof as a validator.
@@ -38,6 +41,25 @@ impl Validator {
     /// Returns the chain id of the EL, the deposit chain id of the spec.
     pub(crate) fn chain_id(&self) -> u64 {
         self.spec.deposit_chain_id
+    }
+
+    /// Returns the protocol fork of the stateless input of a payload at a slot. It checks the forks
+    /// from the latest supported one, and matches the BPO fork inside it by the max blob count.
+    pub(crate) fn protocol_fork(&self, slot: Slot) -> anyhow::Result<ProtocolFork> {
+        let epoch = slot.epoch(MainnetEthSpec::slots_per_epoch());
+        if self
+            .spec
+            .gloas_fork_epoch
+            .is_some_and(|gloas_fork_epoch| gloas_fork_epoch <= epoch)
+        {
+            return match self.spec.max_blobs_per_block(epoch) {
+                BPO2_MAX_BLOBS_PER_BLOCK => Ok(ProtocolFork::Amsterdam),
+                max_blobs_per_block => bail!(
+                    "slot {slot} is under Gloas with the max blob count {max_blobs_per_block} of no BPO fork"
+                ),
+            };
+        }
+        bail!("slot {slot} is before the Gloas fork")
     }
 
     /// Signs a proof under a beacon block and returns the list with the one signed envelope.
