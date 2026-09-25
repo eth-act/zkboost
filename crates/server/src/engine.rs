@@ -395,7 +395,7 @@ impl EngineProxyState {
     }
 
     /// Submits the cached proofs of a payload, then builds the stateless input from the witness
-    /// and queues the rest at the zkVM workers.
+    /// under the protocol fork of the payload and queues the rest at the zkVM workers.
     async fn request_proofs(
         self: &Arc<Self>,
         params: NewPayloadParams,
@@ -437,9 +437,12 @@ impl EngineProxyState {
         let Some(witness) = witness else {
             bail!("valid payload without witness");
         };
+        let protocol_fork = self
+            .validator()?
+            .protocol_fork(Slot::new(payload_meta.slot))?;
         let stateless_input = tokio::task::spawn_blocking(move || {
             let witness = decode_engine_witness(&witness)?;
-            StatelessInput::new(payload_meta, payload, witness, chain_id)
+            StatelessInput::new(protocol_fork, payload_meta, payload, witness, chain_id)
         })
         .await
         .expect("stateless input construction does not panic")

@@ -56,8 +56,10 @@ pub(crate) struct StatelessInput {
 }
 
 impl StatelessInput {
-    /// Builds the `StatelessInput` of a Gloas payload request, proven under the Amsterdam rules.
+    /// Builds the `StatelessInput` of a payload request, proven under the rules of the protocol
+    /// fork.
     pub(crate) fn new(
+        protocol_fork: ProtocolFork,
         payload_meta: NewPayloadRequestMeta,
         payload: NewPayloadRequest,
         witness: ExecutionWitness,
@@ -71,7 +73,7 @@ impl StatelessInput {
             chain_id,
             public_keys,
         }
-        .to_schema_prefixed_ssz(ProtocolFork::Amsterdam);
+        .to_schema_prefixed_ssz(protocol_fork);
 
         Ok(Self {
             payload_meta,
@@ -121,12 +123,13 @@ mod tests {
     /// The input built from the decoded fixture encodes to the fixture bytes the guest reads.
     #[test]
     fn test_stateless_input_matches_fixture() {
-        let (_, fixture) =
+        let (protocol_fork, fixture) =
             stateless_validator_common::guest::StatelessInput::from_schema_prefixed_ssz(
                 AMSTERDAM_STATELESS_INPUT,
             )
             .unwrap();
         let input = StatelessInput::new(
+            protocol_fork,
             NewPayloadRequestMeta::new(&fixture.new_payload_request, Instant::now()).unwrap(),
             fixture.new_payload_request,
             fixture.witness,
