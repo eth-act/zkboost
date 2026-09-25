@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/eth-act/zkboost/compare/v0.10.1...v0.10.2) (2026-09-25)
+
+
+### Continuous Integration
+
+* tag zkboost image with full sha as well ([#81](https://github.com/eth-act/zkboost/issues/81)) ([0e212b3](https://github.com/eth-act/zkboost/commit/0e212b3a3a283a057e0ba45f122a42fc84784e54))
+
 ## [0.10.1](https://github.com/eth-act/zkboost/compare/v0.10.0...v0.10.1) (2026-09-24)
 
 
