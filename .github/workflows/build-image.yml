@@ -97,6 +97,7 @@ jobs:
         run: |
           docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }} \
+            -t ghcr.io/${{ github.repository }}/zkboost:${{ github.sha }} \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-amd64 \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-arm64
 
