@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/eth-act/zkboost/compare/v0.10.2...v0.11.0) (2026-09-25)
+
+
+### Features
+
+* refactor ([#83](https://github.com/eth-act/zkboost/issues/83)) ([9d20c2a](https://github.com/eth-act/zkboost/commit/9d20c2a42bca61891b6b26065d64fc4f7a156268))
+
 ## [0.10.2](https://github.com/eth-act/zkboost/compare/v0.10.1...v0.10.2) (2026-09-25)
 
 
