@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/eth-act/zkboost/compare/v0.11.0...v0.11.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* dashboard ([#85](https://github.com/eth-act/zkboost/issues/85)) ([9bbbb0a](https://github.com/eth-act/zkboost/commit/9bbbb0a6c9ab6c761ee501b833d792437fdaa3a0))
+
 ## [0.11.0](https://github.com/eth-act/zkboost/compare/v0.10.2...v0.11.0) (2026-09-25)
 
 
