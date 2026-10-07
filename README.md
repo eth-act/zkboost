@@ -99,9 +99,10 @@ proof_type = "reth-openvm"
 endpoint = "http://openvm-cluster:3000"
 elf_url = "https://example.com/stateless-validator-reth-openvm.elf"
 
-# Mock zkVMs (in-process). The mock sleeps for the simulated proving time and returns the fixture
-# proof of the proof type, a valid proof of another block. A zesu-zisk mock is rejected, because
-# its guest has no fixture proof.
+# Mock zkVMs (in-process). The mock sleeps for the simulated proving time and returns a mock proof,
+# the SSZ `MockProof { public_values: List[byte], proof: List[byte] }`. The public values are the
+# SSZ `StatelessValidationResult` of a valid payload, and the proof holds random bytes. The encoded
+# `MockProof` is `mock_proof_size` bytes (default 262144, minimum 128).
 
 # Fixed proving time (default)
 [[zkvm]]
@@ -192,13 +193,13 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 `mock-beacon-node` stands in for an EIP-8025 beacon node in the examples.
 
 - It forwards the Engine API of a CL to zkboost, and every other beacon API request to the CL.
-- It verifies the signature and the proof of every submitted envelope. The public values must be the ones of the fixture proofs, so a proof of a live payload fails.
+- It verifies the signature and the proof of every submitted envelope. The public values must be the ones of a valid payload.
+- A proof that decodes as a `MockProof` passes without a proof verification for any proof type. Every other proof goes to the verifier of its proof type.
 
 | Flag                       | Description                                 |
 | -------------------------- | ------------------------------------------- |
 | `--cl-endpoint <URL>`      | Beacon API endpoint of the CL whose Engine API requests the mock forwards |
 | `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost              |
-| `--proof-types <a,b>`      | Proof types expected for every payload      |
 | `--port <u16>`             | Port serving the beacon API (default: 3001) |
 | `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551) |
 

@@ -61,6 +61,7 @@ async fn test_request_span_joins_remote_trace_context() {
             proof_type: ProofType::RethZisk,
             proof_timeout_secs: 12,
             mock_proving_time: MockProvingTime::Constant { ms: 10 },
+            mock_proof_size: 256 << 10,
             mock_failure: false,
         }],
     };

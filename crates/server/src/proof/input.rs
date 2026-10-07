@@ -8,7 +8,7 @@ use anyhow::Context;
 use stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
 use zkboost_types::{
     ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, NewPayloadRequestExt, ProtocolFork,
-    PublicKeys, Sha2Hasher, Transactions,
+    PublicKeys, Sha2Hasher, SszEncode, StatelessValidationResult, Transactions,
 };
 
 /// The metadata of a `NewPayloadRequest`, known before the witness. The root identifies the
@@ -53,6 +53,7 @@ impl NewPayloadRequestMeta {
 pub(crate) struct StatelessInput {
     payload_meta: NewPayloadRequestMeta,
     stateless_input_bytes: Vec<u8>,
+    stateless_output_bytes: Vec<u8>,
 }
 
 impl StatelessInput {
@@ -75,9 +76,18 @@ impl StatelessInput {
         }
         .to_schema_prefixed_ssz(protocol_fork);
 
+        let stateless_output_bytes = StatelessValidationResult {
+            new_payload_request_root: payload_meta.new_payload_request_root.0,
+            successful_validation: true,
+            chain_id,
+            schema_id: protocol_fork.schema_id(),
+        }
+        .to_ssz();
+
         Ok(Self {
             payload_meta,
             stateless_input_bytes,
+            stateless_output_bytes,
         })
     }
 
@@ -89,6 +99,11 @@ impl StatelessInput {
     /// Returns the schema-id-prefixed SSZ bytes used as zkVM stdin.
     pub(crate) fn stateless_input_bytes(&self) -> &[u8] {
         &self.stateless_input_bytes
+    }
+
+    /// Returns the SSZ `StatelessValidationResult` that the guest commits for a valid payload.
+    pub(crate) fn stateless_output_bytes(&self) -> &[u8] {
+        &self.stateless_output_bytes
     }
 }
 

@@ -11,10 +11,13 @@ use anyhow::{Context, ensure};
 use ere_catalog::zkVMKind;
 use serde::{Deserialize, Serialize};
 use url::Url;
-use zkboost_types::ProofType;
+use zkboost_types::{MAX_PROOF_SIZE, ProofType};
 
 const DEFAULT_PORT: u16 = 3000;
 const DEFAULT_PROOF_TIMEOUT_SECS: u64 = 12;
+const DEFAULT_MOCK_PROOF_SIZE: usize = 256 << 10;
+/// Leaves room for the SSZ overhead and the public values in the proof data of a mock proof.
+const MIN_MOCK_PROOF_SIZE: usize = 128;
 const DEFAULT_DASHBOARD_ENABLED: bool = false;
 const DEFAULT_DASHBOARD_RETENTION: usize = 256;
 
@@ -28,6 +31,10 @@ fn default_proof_timeout_secs() -> u64 {
 
 fn default_mock_proving_time() -> MockProvingTime {
     MockProvingTime::Constant { ms: 6000 }
+}
+
+fn default_mock_proof_size() -> usize {
+    DEFAULT_MOCK_PROOF_SIZE
 }
 
 fn default_dashboard_enabled() -> bool {
@@ -107,16 +114,15 @@ impl Config {
                     "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
                 );
             }
-            ensure!(
-                !matches!(
-                    zkvm,
-                    zkVMConfig::Mock {
-                        proof_type: ProofType::ZesuZisk,
-                        ..
-                    }
-                ),
-                "no mock proof of zesu-zisk"
-            );
+            if let zkVMConfig::Mock {
+                mock_proof_size, ..
+            } = zkvm
+            {
+                ensure!(
+                    (MIN_MOCK_PROOF_SIZE..=MAX_PROOF_SIZE).contains(mock_proof_size),
+                    "mock_proof_size must be in [{MIN_MOCK_PROOF_SIZE}, {MAX_PROOF_SIZE}] for {proof_type}"
+                );
+            }
             if let zkVMConfig::Cluster {
                 proof_type,
                 elf_path,
@@ -191,6 +197,9 @@ pub enum zkVMConfig {
         /// Simulated proving time configuration.
         #[serde(default = "default_mock_proving_time")]
         mock_proving_time: MockProvingTime,
+        /// Size in bytes of the proof data of the mock proof.
+        #[serde(default = "default_mock_proof_size")]
+        mock_proof_size: usize,
         /// Whether the mock should always fail proof generation.
         #[serde(default)]
         mock_failure: bool,
@@ -332,17 +341,31 @@ mod tests {
             zkVMConfig::Mock {
                 proof_timeout_secs: 12,
                 mock_proving_time: MockProvingTime::Constant { ms: 6000 },
+                mock_proof_size: 262144,
                 ..
             }
         ));
     }
 
     #[test]
-    fn test_zesu_zisk_mock_rejected() {
+    fn test_oversized_mock_proof_rejected() {
         let toml = r#"
             [[zkvm]]
             kind = "mock"
-            proof_type = "zesu-zisk"
+            proof_type = "reth-sp1"
+            mock_proof_size = 4194305
+        "#;
+        let config = parse(toml);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_undersized_mock_proof_rejected() {
+        let toml = r#"
+            [[zkvm]]
+            kind = "mock"
+            proof_type = "reth-sp1"
+            mock_proof_size = 127
         "#;
         let config = parse(toml);
         assert!(config.validate().is_err());

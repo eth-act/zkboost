@@ -39,5 +39,8 @@ jobs:
       - name: clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # The verifying key download of the mock beacon node tests calls the GitHub API
       - name: cargo test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo test --release --workspace --all-features --no-fail-fast
