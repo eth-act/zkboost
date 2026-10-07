@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/eth-act/zkboost/compare/v0.11.1...v0.12.0) (2026-10-07)
+
+
+### Features
+
+* add mock proof support with MockProof ssz container ([#87](https://github.com/eth-act/zkboost/issues/87)) ([6b6022c](https://github.com/eth-act/zkboost/commit/6b6022c9c5a658d80dd2b074a0c11c255db1333e))
+
 ## [0.11.1](https://github.com/eth-act/zkboost/compare/v0.11.0...v0.11.1) (2026-09-25)
 
 
