@@ -10,7 +10,7 @@ The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks 
 - zkboost forwards the request to the dedicated Geth. For a valid `engine_newPayloadV5` payload it obtains the witness, proves the payload with the mocks, and exports its spans to Tempo.
 - zkboost submits the signed proofs to the mock beacon node. The mock looks up the beacon block of every envelope at the fourth Lighthouse and verifies the signature and the proof. Every other beacon API request goes to that Lighthouse.
 
-The `reth-sp1` mock has `mock_failure = true`. Its proof always fails, so the mock beacon node waits the full proof timeout for every block.
+The `reth-sp1` mock has `mock_failure = true`, so its proof always fails. The `reth-openvm` mock sometimes takes longer than the proof timeout. When only one proof of a block arrives, the mock beacon node logs `proofs not verified in time`.
 
 ## Start
 

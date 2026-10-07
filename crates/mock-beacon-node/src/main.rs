@@ -12,7 +12,6 @@ use mock_beacon_node::MockBeaconNode;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use url::Url;
-use zkboost_types::ProofType;
 
 mod beacon_node_client;
 mod engine_api_client;
@@ -26,9 +25,6 @@ struct Cli {
     /// Engine API endpoint of zkboost.
     #[arg(long)]
     zkboost_endpoint: Url,
-    /// Proof types expected for every payload.
-    #[arg(long, value_delimiter = ',')]
-    proof_types: Vec<ProofType>,
     /// Port serving the beacon API.
     #[arg(long, default_value_t = 3001)]
     port: u16,
@@ -45,9 +41,8 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let mock_beacon_node = Arc::new(
-        MockBeaconNode::new(cli.cl_endpoint, cli.zkboost_endpoint, &cli.proof_types).await?,
-    );
+    let mock_beacon_node =
+        Arc::new(MockBeaconNode::new(cli.cl_endpoint, cli.zkboost_endpoint).await?);
     let beacon_api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, cli.port)).await?;
     let engine_api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, cli.engine_port)).await?;
     tokio::try_join!(

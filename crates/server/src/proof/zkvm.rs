@@ -8,7 +8,7 @@ use ere_server_client::{Input, zkVMClient};
 use rand::{Rng, rng};
 use tokio::time::{Instant, sleep_until};
 use url::Url;
-use zkboost_types::ProofType;
+use zkboost_types::{MockProof, ProofType, SszEncode};
 
 use crate::{
     config::{MockProvingTime, load, zkVMConfig},
@@ -67,11 +67,12 @@ impl zkVMInstance {
                 proof_type,
                 proof_timeout_secs,
                 mock_proving_time,
+                mock_proof_size,
                 mock_failure,
             } => Ok(Self::Mock {
                 proof_type: *proof_type,
                 proof_timeout: Duration::from_secs(*proof_timeout_secs),
-                vm: MockzkVM::new(*proof_type, mock_proving_time.clone(), *mock_failure),
+                vm: MockzkVM::new(mock_proving_time.clone(), *mock_proof_size, *mock_failure),
             }),
             zkVMConfig::Cluster {
                 proof_type,
@@ -157,32 +158,33 @@ fn zkvm_client(endpoint: &Url) -> anyhow::Result<zkVMClient> {
         .with_context(|| format!("failed to create zkVM client for endpoint: {endpoint}"))
 }
 
-/// Mock zkVM for testing. It sleeps and returns the fixture proof.
+/// Mock zkVM for testing. It sleeps and returns a mock proof.
 #[derive(Debug, Clone)]
 pub(crate) struct MockzkVM {
-    proof_type: ProofType,
     mock_proving_time: MockProvingTime,
+    proof_size: usize,
     failure: bool,
 }
 
 impl MockzkVM {
     /// Constructs a `MockzkVM`.
     pub(crate) fn new(
-        proof_type: ProofType,
         mock_proving_time: MockProvingTime,
+        proof_size: usize,
         failure: bool,
     ) -> Self {
         if let MockProvingTime::Random { min_ms, max_ms, .. } = mock_proving_time {
             assert!(min_ms <= max_ms);
         }
         Self {
-            proof_type,
             mock_proving_time,
+            proof_size,
             failure,
         }
     }
 
-    /// Returns the fixture proof of the proof type after the simulated proving time.
+    /// Returns a `MockProof` of `proof_size` bytes with the public values of a valid payload and
+    /// random proof bytes after the simulated proving time.
     pub(crate) async fn prove(&self, input: &StatelessInput) -> anyhow::Result<Vec<u8>> {
         let start = Instant::now();
         let gas_used = input.payload_meta().gas_used;
@@ -203,30 +205,14 @@ impl MockzkVM {
             anyhow::bail!("mocking failure");
         }
 
-        Ok(mock_proof(self.proof_type).to_vec())
-    }
-}
-
-/// Returns the fixture proof of the proof type, a valid proof of another block. Panics for
-/// zesu-zisk, whose guest cannot be proved yet.
-pub fn mock_proof(proof_type: ProofType) -> &'static [u8] {
-    match proof_type {
-        ProofType::EthrexOpenVM => {
-            include_bytes!("zkvm/mock/stateless-validator-ethrex-openvm-v2.1.0-preview.proof")
+        let public_values = input.stateless_output_bytes();
+        // The proof data holds two list offsets and the public values beside the proof.
+        let mut proof = vec![0; self.proof_size - 4 - 4 - public_values.len()];
+        rng().fill(&mut proof[..]);
+        Ok(MockProof {
+            public_values: public_values.to_vec(),
+            proof,
         }
-        ProofType::EthrexSP1 => {
-            include_bytes!("zkvm/mock/stateless-validator-ethrex-sp1-v6.4.0.proof")
-        }
-        ProofType::EthrexZisk => {
-            include_bytes!("zkvm/mock/stateless-validator-ethrex-zisk-v1.1.0-alpha.proof")
-        }
-        ProofType::RethOpenVM => {
-            include_bytes!("zkvm/mock/stateless-validator-reth-openvm-v2.1.0-preview.proof")
-        }
-        ProofType::RethSP1 => include_bytes!("zkvm/mock/stateless-validator-reth-sp1-v6.4.0.proof"),
-        ProofType::RethZisk => {
-            include_bytes!("zkvm/mock/stateless-validator-reth-zisk-v1.1.0-alpha.proof")
-        }
-        ProofType::ZesuZisk => unreachable!("config validation rejects a zesu-zisk mock"),
+        .to_ssz())
     }
 }

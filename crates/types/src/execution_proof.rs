@@ -35,6 +35,17 @@ impl ExecutionProofEnvelope {
     }
 }
 
+/// The `proof_data` of a mock proof. A verifier of mock proofs returns `public_values` without a
+/// check of `proof`. The `proof_data` list bounds both lists, and the container has no hash tree
+/// root.
+#[derive(Debug, Clone, PartialEq, Eq, SszEncode, SszDecode)]
+pub struct MockProof {
+    /// The public values that the guest commits, as a verifier of a real proof returns them.
+    pub public_values: Vec<u8>,
+    /// Random bytes in place of a real proof.
+    pub proof: Vec<u8>,
+}
+
 /// `SignedExecutionProofEnvelope` of the eth-act lighthouse branch `optional-proofs`.
 #[derive(Debug, Clone, PartialEq, Eq, HashTreeRoot, SszEncode, SszDecode)]
 pub struct SignedExecutionProofEnvelope {
@@ -79,7 +90,7 @@ mod tests {
     use alloy_primitives::B256;
     use lighthouse_types::{ChainSpec, SignedRoot};
 
-    use crate::{compute_signing_root, execution_proof_domain};
+    use crate::{MockProof, SszDecode, SszEncode, compute_signing_root, execution_proof_domain};
 
     /// `DOMAIN_EXECUTION_PROOF` as the integer lighthouse encodes to four little-endian bytes.
     const EXECUTION_PROOF_DOMAIN_TYPE: u32 = 15;
@@ -104,5 +115,20 @@ mod tests {
             compute_signing_root(object_root, domain),
             object_root.signing_root(domain)
         );
+    }
+
+    /// A mock proof encodes as the offsets of both lists, then the public values and the proof.
+    #[test]
+    fn test_mock_proof_layout() {
+        let mock_proof = MockProof {
+            public_values: vec![0xaa; 3],
+            proof: vec![0xbb; 2],
+        };
+        let encoded = mock_proof.to_ssz();
+        assert_eq!(
+            encoded,
+            [8, 0, 0, 0, 11, 0, 0, 0, 0xaa, 0xaa, 0xaa, 0xbb, 0xbb]
+        );
+        assert_eq!(MockProof::from_ssz_bytes(&encoded).unwrap(), mock_proof);
     }
 }

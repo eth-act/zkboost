@@ -39,13 +39,12 @@ use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_server::{
     config::{Config, DashboardConfig, MockProvingTime, zkVMConfig},
-    proof::zkvm::mock_proof,
     server::zkBoostServer,
 };
 use zkboost_types::{
-    ExecutionWitness, Hash256, HashTreeRoot, NewPayloadParams, ProofType, ProtocolFork, Sha2Hasher,
-    SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode, StatelessInput,
-    StatelessValidationResult, execution_proof_domain,
+    ExecutionWitness, Hash256, HashTreeRoot, MockProof, NewPayloadParams, ProofType, ProtocolFork,
+    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode,
+    StatelessInput, StatelessValidationResult, execution_proof_domain,
 };
 
 /// The keystore of validator 256 of the ethereum-package mnemonic, a copy of the testnet example.
@@ -67,6 +66,11 @@ const FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x00, 0x38];
 
 /// The stateless input of block 93354 of glamsterdam-devnet-8.
 const AMSTERDAM_STATELESS_INPUT: &[u8] = include_bytes!("fixture/stateless_input_amsterdam.ssz");
+/// The SSZ `StatelessValidationResult` that the guest commits for the fixture.
+const EXPECTED_OUTPUT: [u8; 43] =
+    hex!("8c3a890206a189727e151767653f846ccddbd269eb29fb0a2f97371f23a481c6016ecca8a6010000000115");
+/// The size of the proof data of the mock zkVMs.
+const MOCK_PROOF_SIZE: usize = 256 << 10;
 
 struct Fixture {
     params: NewPayloadParams,
@@ -491,6 +495,7 @@ impl TestHarness {
                     proof_type,
                     proof_timeout_secs,
                     mock_proving_time: MockProvingTime::Constant { ms: 3000 },
+                    mock_proof_size: MOCK_PROOF_SIZE,
                     mock_failure: behavior.proof_failure,
                 })
                 .collect(),
@@ -561,12 +566,9 @@ impl TestHarness {
                 remaining.remove(&envelope.message.proof_type),
                 "{envelope:?}"
             );
-            let proof_type = self
-                .proof_types
-                .iter()
-                .find(|proof_type| proof_type.execution_proof_type() == envelope.message.proof_type)
-                .unwrap();
-            assert_eq!(&*envelope.message.proof_data, mock_proof(*proof_type));
+            assert_eq!(envelope.message.proof_data.len(), MOCK_PROOF_SIZE);
+            let mock_proof = MockProof::from_ssz_bytes(&envelope.message.proof_data).unwrap();
+            assert_eq!(&*mock_proof.public_values, EXPECTED_OUTPUT);
             assert_eq!(envelope.validator_index, VALIDATOR_INDEX);
             let signing_root = envelope.message.signing_root(domain);
             let signature = Signature::deserialize(&envelope.signature).unwrap();
@@ -604,10 +606,7 @@ impl Drop for TestHarness {
 #[test]
 fn test_fixture_expected_output() {
     let fixture = Fixture::load();
-    let expected = StatelessValidationResult::from_ssz_bytes(&hex!(
-        "8c3a890206a189727e151767653f846ccddbd269eb29fb0a2f97371f23a481c6016ecca8a6010000000115"
-    ))
-    .unwrap();
+    let expected = StatelessValidationResult::from_ssz_bytes(&EXPECTED_OUTPUT).unwrap();
     assert_eq!(
         expected.new_payload_request_root,
         fixture.new_payload_request_root.0

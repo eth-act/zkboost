@@ -50,8 +50,6 @@ services:
       - "http://cl-4-lighthouse:4000"
       - "--zkboost-endpoint"
       - "http://zkboost:3000"
-      - "--proof-types"
-      - "reth-zisk,reth-sp1,reth-openvm"
       - "--port"
       - "3001"
     networks:
