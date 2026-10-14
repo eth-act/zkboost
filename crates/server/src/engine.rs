@@ -36,8 +36,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span, debug, error, info, info_span, warn};
 use validator::Validator;
 use zkboost_types::{
-    ExecutionWitness, Hash256, NewPayloadParams, NewPayloadRequest, ProgressiveList, ProofType,
-    SszList,
+    BeaconStateWitness, ExecutionWitness, Hash256, NewPayloadParams, NewPayloadRequest,
+    ProgressiveList, ProofType, SszList,
 };
 
 use crate::{
@@ -59,6 +59,8 @@ const BLOCK_CACHE_SLOTS: usize = 64;
 /// Attempts to submit a proof, `BEACON_NODE_RETRY_DELAY` apart, which span less than the 12 second
 /// slot.
 const SUBMISSION_ATTEMPTS: u32 = 5;
+/// Attempts of the beacon state witness reads of a payload.
+const WITNESS_ATTEMPTS: u32 = 3;
 
 /// JSON-RPC request envelope.
 #[derive(Debug, Serialize, Deserialize)]
@@ -440,14 +442,29 @@ impl EngineProxyState {
         let protocol_fork = self
             .validator()?
             .protocol_fork(Slot::new(payload_meta.slot))?;
-        let stateless_input = tokio::task::spawn_blocking(move || {
-            let witness = decode_engine_witness(&witness)?;
-            StatelessInput::new(protocol_fork, payload_meta, payload, witness, chain_id)
-        })
-        .await
-        .expect("stateless input construction does not panic")
-        .context("stateless input construction")?;
-        let stateless_input = Arc::new(stateless_input);
+        let (execution_witness, beacon_state_witness) = tokio::try_join!(
+            async {
+                tokio::task::spawn_blocking(move || decode_engine_witness(&witness))
+                    .await
+                    .expect("engine witness decoding does not panic")
+            },
+            self.beacon_state_witness(payload_meta, Slot::new(payload_meta.slot)),
+        )?;
+        let stateless_input = Arc::new(
+            tokio::task::spawn_blocking(move || {
+                StatelessInput::new(
+                    protocol_fork,
+                    payload_meta,
+                    payload,
+                    execution_witness,
+                    beacon_state_witness,
+                    chain_id,
+                )
+            })
+            .await
+            .expect("stateless input construction does not panic")
+            .context("stateless input construction")?,
+        );
 
         for (proof_type, worker_input_tx) in proving {
             let request = (payload_meta.new_payload_request_root, proof_type);
@@ -506,6 +523,62 @@ impl EngineProxyState {
             .remove(&(payload_meta.new_payload_request_root, proof_type));
     }
 
+    /// Returns the beacon state witness of a payload, retried as the submission is.
+    async fn beacon_state_witness(
+        &self,
+        payload_meta: NewPayloadRequestMeta,
+        slot: Slot,
+    ) -> anyhow::Result<BeaconStateWitness> {
+        let mut attempt = 1;
+        loop {
+            let read = async {
+                let beacon_block_root = self.resolve_beacon_block_root(payload_meta, slot).await?;
+                let state_root = self
+                    .beacon_node_client
+                    .state_root(beacon_block_root)
+                    .await?;
+                self.beacon_node_client
+                    .beacon_state_witness(state_root, self.validator()?.spec())
+                    .await
+            };
+            match read.await {
+                Ok(witness) => return Ok(witness),
+                Err(error) if attempt == WITNESS_ATTEMPTS => return Err(error),
+                Err(error) => {
+                    warn!(block_hash = %payload_meta.block_hash, attempt, error = %format!("{error:#}"), "beacon state witness retried");
+                    attempt += 1;
+                    tokio::time::sleep(BEACON_NODE_RETRY_DELAY).await;
+                }
+            }
+        }
+    }
+
+    /// Returns the beacon block root of a payload, from the event cache or the beacon node.
+    async fn resolve_beacon_block_root(
+        &self,
+        payload_meta: NewPayloadRequestMeta,
+        slot: Slot,
+    ) -> anyhow::Result<B256> {
+        let announced = self
+            .blocks
+            .lock()
+            .unwrap()
+            .get(&(payload_meta.block_hash, slot))
+            .copied();
+        match announced {
+            Some(beacon_block_root) => Ok(beacon_block_root),
+            None => {
+                self.beacon_node_client
+                    .beacon_block_root(
+                        payload_meta.block_hash,
+                        payload_meta.parent_beacon_block_root,
+                        slot,
+                    )
+                    .await
+            }
+        }
+    }
+
     /// Submits a proof to the beacon node in the background, with `SUBMISSION_ATTEMPTS` attempts
     /// `BEACON_NODE_RETRY_DELAY` apart.
     fn submit_proof(
@@ -528,25 +601,8 @@ impl EngineProxyState {
             };
             for attempt in 1..=SUBMISSION_ATTEMPTS {
                 let submission = async {
-                    let announced = state
-                        .blocks
-                        .lock()
-                        .unwrap()
-                        .get(&(payload_meta.block_hash, slot))
-                        .copied();
-                    let beacon_block_root = match announced {
-                        Some(beacon_block_root) => beacon_block_root,
-                        None => {
-                            state
-                                .beacon_node_client
-                                .beacon_block_root(
-                                    payload_meta.block_hash,
-                                    payload_meta.parent_beacon_block_root,
-                                    slot,
-                                )
-                                .await?
-                        }
-                    };
+                    let beacon_block_root =
+                        state.resolve_beacon_block_root(payload_meta, slot).await?;
                     let envelopes = state.validator()?.sign_execution_proofs(
                         beacon_block_root,
                         slot,

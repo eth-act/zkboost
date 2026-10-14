@@ -7,8 +7,9 @@ use alloy_eips::Decodable2718;
 use anyhow::Context;
 use stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
 use zkboost_types::{
-    ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, NewPayloadRequestExt, ProtocolFork,
-    PublicKeys, Sha2Hasher, SszEncode, StatelessValidationResult, Transactions,
+    BeaconStateWitness, ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest,
+    NewPayloadRequestExt, ProtocolFork, PublicKeys, Sha2Hasher, SszEncode,
+    StatelessValidationResult, Transactions,
 };
 
 /// The metadata of a `NewPayloadRequest`, known before the witness. The root identifies the
@@ -54,6 +55,7 @@ pub(crate) struct StatelessInput {
     payload_meta: NewPayloadRequestMeta,
     stateless_input_bytes: Vec<u8>,
     stateless_output_bytes: Vec<u8>,
+    beacon_state_witness: BeaconStateWitness,
 }
 
 impl StatelessInput {
@@ -64,6 +66,7 @@ impl StatelessInput {
         payload_meta: NewPayloadRequestMeta,
         payload: NewPayloadRequest,
         witness: ExecutionWitness,
+        beacon_state_witness: BeaconStateWitness,
         chain_id: u64,
     ) -> anyhow::Result<Self> {
         let public_keys = PublicKeys::from(recover_public_keys(payload.transactions())?);
@@ -88,7 +91,13 @@ impl StatelessInput {
             payload_meta,
             stateless_input_bytes,
             stateless_output_bytes,
+            beacon_state_witness,
         })
+    }
+
+    /// Returns the beacon state witness, which is not in the zkVM stdin yet.
+    pub(crate) fn beacon_state_witness(&self) -> &BeaconStateWitness {
+        &self.beacon_state_witness
     }
 
     /// Returns the metadata of the request of the input.
@@ -129,6 +138,8 @@ fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; P
 mod tests {
     use std::time::Instant;
 
+    use zkboost_types::{BeaconStateWitness, STATE_FIELD_COUNT};
+
     use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
 
     /// The stateless input of block 93354 of glamsterdam-devnet-8.
@@ -148,6 +159,7 @@ mod tests {
             NewPayloadRequestMeta::new(&fixture.new_payload_request, Instant::now()).unwrap(),
             fixture.new_payload_request,
             fixture.witness,
+            BeaconStateWitness::new(vec![[0; 32]; STATE_FIELD_COUNT]).unwrap(),
             fixture.chain_id,
         )
         .unwrap();

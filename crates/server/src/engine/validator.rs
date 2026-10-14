@@ -38,6 +38,11 @@ impl Validator {
         }
     }
 
+    /// Returns the chain spec of the beacon node.
+    pub(crate) fn spec(&self) -> &ChainSpec {
+        &self.spec
+    }
+
     /// Returns the chain id of the EL, the deposit chain id of the spec.
     pub(crate) fn chain_id(&self) -> u64 {
         self.spec.deposit_chain_id

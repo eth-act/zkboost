@@ -6,16 +6,16 @@
 use std::time::Duration;
 
 use alloy_primitives::B256;
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, anyhow, bail, ensure};
 use lighthouse_bls::PublicKey;
-use lighthouse_types::{ChainSpec, MainnetEthSpec, Slot};
-use reqwest::header::CONTENT_TYPE;
+use lighthouse_types::{BeaconState, ChainSpec, ForkName, MainnetEthSpec, Slot};
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest_eventsource::{Event, EventSource, retry::Constant};
 use serde::{Deserialize, de::DeserializeOwned};
 use tokio_stream::{Stream, StreamExt};
 use tracing::warn;
 use url::Url;
-use zkboost_types::{SignedExecutionProofEnvelopes, SszEncode};
+use zkboost_types::{BeaconStateWitness, SignedExecutionProofEnvelopes, SszEncode};
 
 /// Timeout of a beacon node request, the slot time of mainnet.
 const BEACON_NODE_TIMEOUT: Duration = Duration::from_secs(12);
@@ -68,6 +68,7 @@ struct SignedBlock {
 
 #[derive(Deserialize)]
 struct Block {
+    state_root: B256,
     body: BlockBody,
 }
 
@@ -194,6 +195,49 @@ impl BeaconNodeClient {
             .with_context(|| format!("beacon block {root} not found"))
     }
 
+    /// Returns the state root of a beacon block.
+    pub(crate) async fn state_root(&self, block_root: B256) -> anyhow::Result<B256> {
+        Ok(self.block(block_root).await?.message.state_root)
+    }
+
+    /// Returns the leaves of a post-Gloas beacon state, which must merkleize to its root.
+    pub(crate) async fn beacon_state_witness(
+        &self,
+        state_root: B256,
+        spec: &ChainSpec,
+    ) -> anyhow::Result<BeaconStateWitness> {
+        let path = format!("eth/v2/debug/beacon/states/{state_root}");
+        let bytes = self
+            .get_ssz(&path)
+            .await?
+            .with_context(|| format!("beacon state {state_root} not found"))?;
+        let spec = spec.clone();
+        tokio::task::spawn_blocking(move || {
+            let state = BeaconState::<MainnetEthSpec>::from_ssz_bytes(&bytes, &spec)
+                .map_err(|error| anyhow!("beacon state {state_root} not decodable: {error:?}"))?;
+            let fork_name = state.fork_name_unchecked();
+            ensure!(
+                fork_name >= ForkName::Gloas,
+                "beacon state {state_root} is under {fork_name}, which has no payload bid"
+            );
+            let witness = BeaconStateWitness::new(
+                state
+                    .get_beacon_state_leaves()
+                    .into_iter()
+                    .map(|leaf| leaf.0)
+                    .collect(),
+            )?;
+            let merkleized = witness.state_root();
+            ensure!(
+                merkleized == state_root,
+                "beacon state leaves merkleize to {merkleized}, not to {state_root}"
+            );
+            anyhow::Ok(witness)
+        })
+        .await
+        .expect("beacon state decoding does not panic")
+    }
+
     /// Returns the chain spec of the beacon node.
     pub(crate) async fn spec(&self) -> anyhow::Result<ChainSpec> {
         let config = self
@@ -270,5 +314,26 @@ impl BeaconNodeClient {
             bail!("GET {url}: {status}: {body}");
         }
         Ok(Some(response.json::<Data<T>>().await?.data))
+    }
+
+    /// Fetches the SSZ body of a beacon API resource, or `None` when it does not exist.
+    async fn get_ssz(&self, path: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        let url = self.endpoint.join(path)?;
+        let response = self
+            .http_client
+            .get(url.clone())
+            .header(ACCEPT, "application/octet-stream")
+            .send()
+            .await
+            .with_context(|| format!("GET {url}"))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            bail!("GET {url}: {status}: {body}");
+        }
+        Ok(Some(response.bytes().await?.into()))
     }
 }

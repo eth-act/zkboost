@@ -76,6 +76,8 @@ zkboost-types.workspace = true
 
 [dev-dependencies]
 alloy-rpc-types-engine = { workspace = true, features = ["jwt"] }
+ethereum_ssz.workspace = true
+ssz_types.workspace = true
 jsonwebtoken.workspace = true
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 

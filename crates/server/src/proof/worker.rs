@@ -79,7 +79,12 @@ pub(crate) async fn run_worker(
         let queue_wait = input.queued_at.elapsed();
         metrics::record_queue_wait(proof_type, queue_wait);
 
-        info!(block_hash = %payload_meta.block_hash, %proof_type, "proving");
+        info!(
+            block_hash = %payload_meta.block_hash,
+            %proof_type,
+            beacon_state_leaves = input.stateless_input.beacon_state_witness().leaves.len(),
+            "proving"
+        );
 
         let span = info_span!(
             parent: &input.span,

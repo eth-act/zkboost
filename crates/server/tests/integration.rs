@@ -8,7 +8,7 @@ use std::{
     convert::Infallible,
     net::Ipv4Addr,
     sync::{
-        Arc, Mutex,
+        Arc, LazyLock, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -23,13 +23,16 @@ use axum::{
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     response::sse::{Event as SseEvent, Sse},
 };
-use lighthouse_bls::{PublicKey, Signature};
+use lighthouse_bls::{PublicKey, PublicKeyBytes, Signature};
 use lighthouse_eth2_keystore::Keystore;
 use lighthouse_types::{
-    BlobParameters, BlobSchedule, ChainSpec, Config as SpecConfig, Epoch, MainnetEthSpec,
+    BeaconBlockHeader, BeaconState, BeaconStateGloas, BlobParameters, BlobSchedule, ChainSpec,
+    Config as SpecConfig, Epoch, MainnetEthSpec, Slot, SyncCommittee,
 };
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde_json::{Value, json};
+use ssz::Encode;
+use ssz_types::FixedVector;
 use tokio::{
     net::TcpListener,
     sync::{Notify, mpsc},
@@ -42,9 +45,10 @@ use zkboost_server::{
     server::zkBoostServer,
 };
 use zkboost_types::{
-    ExecutionWitness, Hash256, HashTreeRoot, MockProof, NewPayloadParams, ProofType, ProtocolFork,
-    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode,
-    StatelessInput, StatelessValidationResult, execution_proof_domain,
+    BeaconStateWitness, ExecutionWitness, Hash256, HashTreeRoot, MockProof, NewPayloadParams,
+    ProofType, ProtocolFork, Sha2Hasher, SignedExecutionProofEnvelope,
+    SignedExecutionProofEnvelopes, SszDecode, StatelessInput, StatelessValidationResult,
+    execution_proof_domain,
 };
 
 /// The keystore of validator 256 of the ethereum-package mnemonic, a copy of the testnet example.
@@ -61,6 +65,83 @@ const VALIDATOR_INDEX: u64 = 256;
 const BEACON_BLOCK_ROOT: B256 = B256::repeat_byte(0xbb);
 /// Another child of the parent beacon block, without the fixture payload.
 const OTHER_BLOCK_ROOT: B256 = B256::repeat_byte(0xcc);
+/// The beacon state of every block of the mock, as SSZ beside the root of its leaves.
+static BEACON_STATE: LazyLock<(Vec<u8>, B256)> = LazyLock::new(|| {
+    let state = BeaconState::Gloas(BeaconStateGloas::<MainnetEthSpec> {
+        genesis_time: Default::default(),
+        genesis_validators_root: Default::default(),
+        slot: Default::default(),
+        fork: Default::default(),
+        latest_block_header: BeaconBlockHeader {
+            slot: Slot::new(0),
+            proposer_index: 0,
+            parent_root: Hash256::ZERO,
+            state_root: Hash256::ZERO,
+            body_root: Hash256::ZERO,
+        },
+        block_roots: Default::default(),
+        state_roots: Default::default(),
+        historical_roots: Default::default(),
+        eth1_data: Default::default(),
+        eth1_data_votes: Default::default(),
+        eth1_deposit_index: Default::default(),
+        validators: Default::default(),
+        balances: Default::default(),
+        randao_mixes: Default::default(),
+        slashings: Default::default(),
+        previous_epoch_participation: Default::default(),
+        current_epoch_participation: Default::default(),
+        justification_bits: Default::default(),
+        previous_justified_checkpoint: Default::default(),
+        current_justified_checkpoint: Default::default(),
+        finalized_checkpoint: Default::default(),
+        inactivity_scores: Default::default(),
+        current_sync_committee: Arc::new(SyncCommittee {
+            pubkeys: FixedVector::from_elem(PublicKeyBytes::empty()),
+            aggregate_pubkey: PublicKeyBytes::empty(),
+        }),
+        next_sync_committee: Arc::new(SyncCommittee {
+            pubkeys: FixedVector::from_elem(PublicKeyBytes::empty()),
+            aggregate_pubkey: PublicKeyBytes::empty(),
+        }),
+        latest_block_hash: Default::default(),
+        next_withdrawal_index: Default::default(),
+        next_withdrawal_validator_index: Default::default(),
+        historical_summaries: Default::default(),
+        deposit_requests_start_index: Default::default(),
+        deposit_balance_to_consume: Default::default(),
+        exit_balance_to_consume: Default::default(),
+        earliest_exit_epoch: Default::default(),
+        consolidation_balance_to_consume: Default::default(),
+        earliest_consolidation_epoch: Default::default(),
+        pending_deposits: Default::default(),
+        pending_consolidations: Default::default(),
+        pending_partial_withdrawals: Default::default(),
+        proposer_lookahead: Default::default(),
+        builders: Default::default(),
+        next_withdrawal_builder_index: Default::default(),
+        execution_payload_availability: Default::default(),
+        builder_pending_payments: Default::default(),
+        builder_pending_withdrawals: Default::default(),
+        latest_execution_payload_bid: Default::default(),
+        payload_expected_withdrawals: Default::default(),
+        ptc_window: Default::default(),
+        total_active_balance: Default::default(),
+        committee_caches: Default::default(),
+        progressive_balances_cache: Default::default(),
+        pubkey_cache: Default::default(),
+        exit_cache: Default::default(),
+        slashings_cache: Default::default(),
+        epoch_cache: Default::default(),
+    });
+    let leaves = state
+        .get_beacon_state_leaves()
+        .into_iter()
+        .map(|leaf| leaf.0)
+        .collect();
+    let state_root = BeaconStateWitness::new(leaves).unwrap().state_root();
+    (state.as_ssz_bytes(), state_root)
+});
 const GENESIS_VALIDATORS_ROOT: B256 = B256::repeat_byte(0x99);
 const FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x00, 0x38];
 
@@ -270,9 +351,10 @@ async fn block_handler(
         OTHER_BLOCK_ROOT => B256::ZERO,
         _ => return Err(StatusCode::NOT_FOUND),
     };
-    Ok(Json(json!({ "data": { "message": { "body": {
-        "signed_execution_payload_bid": { "message": { "block_hash": block_hash } }
-    } } } })))
+    Ok(Json(json!({ "data": { "message": {
+        "state_root": BEACON_STATE.1,
+        "body": { "signed_execution_payload_bid": { "message": { "block_hash": block_hash } } }
+    } } })))
 }
 
 /// `GET /eth/v1/events`, which announces the fixture block under `block_from_event`, and the
@@ -302,6 +384,14 @@ async fn events_handler(
         })
         .collect();
     Sse::new(tokio_stream::iter(events).chain(tokio_stream::pending()))
+}
+
+/// `GET /eth/v2/debug/beacon/states/{state_root}`, the SSZ beacon state of the fixture block.
+async fn state_handler(Path(state_root): Path<B256>) -> Result<Vec<u8>, StatusCode> {
+    if state_root != BEACON_STATE.1 {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    Ok(BEACON_STATE.0.clone())
 }
 
 /// `GET /eth/v1/config/spec`, the mainnet spec with every fork at genesis. BPO1 and BPO2 are at
@@ -382,6 +472,10 @@ async fn start_mock_beacon_node(
         .route(
             "/eth/v2/beacon/blocks/{root}",
             axum::routing::get(block_handler),
+        )
+        .route(
+            "/eth/v2/debug/beacon/states/{state_root}",
+            axum::routing::get(state_handler),
         )
         .route("/eth/v1/config/spec", axum::routing::get(spec_handler))
         .route(

@@ -3,6 +3,7 @@
 
 #![warn(unused_crate_dependencies)]
 
+pub use beacon_state_witness::*;
 pub use execution_proof::*;
 pub use new_payload::{NewPayloadParams, NewPayloadRequestExt};
 pub use proof_type::*;
@@ -14,6 +15,7 @@ pub use stateless_validator_common::{
     },
 };
 
+mod beacon_state_witness;
 mod execution_proof;
 mod new_payload;
 mod proof_type;

@@ -60,6 +60,8 @@ url = { version = "2.5.7", features = ["serde"] }
 
 # lighthouse
 ethereum_serde_utils = "0.8.0"
+ethereum_ssz = "0.10.4"
+ssz_types = "0.14.1"
 lighthouse_types = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "types" }
 lighthouse_bls = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "bls" }
 lighthouse_eth2_keystore = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "eth2_keystore" }
