@@ -10,7 +10,7 @@ pub use stateless_validator_common::{
     HashTreeRoot, ProgressiveList, Sha2Hasher, SszDecode, SszEncode, SszList, SszVector,
     guest::{
         StatelessInput, StatelessValidationResult,
-        input::{ExecutionWitness, ProtocolFork, PublicKeys, new_payload_request::*},
+        input::{ExecutionWitness, ProtocolFork, new_payload_request::*},
     },
 };
 

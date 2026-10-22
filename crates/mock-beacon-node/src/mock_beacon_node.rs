@@ -43,7 +43,7 @@ use zkboost_types::{
 
 use crate::{beacon_node_client::BeaconNodeClient, engine_api_client::EngineApiClient};
 
-const ERE_GUESTS_TAG: &str = "v0.17.0";
+const ERE_GUESTS_TAG: &str = "v0.18.1";
 
 /// Budget for the proofs of one payload to arrive.
 const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
@@ -533,7 +533,7 @@ mod tests {
         };
         let dummy_url = Url::parse("x:").unwrap();
         let mock_beacon_node = MockBeaconNode::new(dummy_url.clone(), dummy_url).await?;
-        // The zesu guest of ere-guests v0.17.0 cannot be proved yet, so it has no fixture proof.
+        // The zesu guest of ere-guests v0.18.1 cannot be proved yet, so it has no fixture proof.
         for proof_type in ProofType::iter().filter(|proof_type| *proof_type != ProofType::ZesuZisk)
         {
             let stateless_validator = proof_type.stateless_validator_kind();

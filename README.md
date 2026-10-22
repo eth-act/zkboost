@@ -88,7 +88,7 @@ endpoint = "http://ere-server:3000"
 [[zkvm]]
 kind = "cluster"
 proof_type = "reth-zisk"
-endpoint = "http://zisk-cluster:50051"
+endpoint = "http://zisk-cluster:7000"
 elf_url = "https://example.com/stateless-validator-reth-zisk.elf"
 # elf_path = "/path/to/program.elf"   # mutually exclusive with elf_url
 

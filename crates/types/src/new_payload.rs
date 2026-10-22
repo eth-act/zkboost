@@ -16,7 +16,7 @@ use stateless_validator_common::{
     ProgressiveList, SszDecode, SszEncode, SszList,
     guest::input::new_payload_request::{
         ExecutionPayloadV4, ExecutionRequestsGloas, NewPayloadRequest, NewPayloadRequestGloas,
-        Transactions, Withdrawal,
+        Withdrawal,
     },
 };
 
@@ -269,8 +269,6 @@ pub trait NewPayloadRequestExt {
     fn block_hash(&self) -> B256;
     /// Returns the gas used by the execution payload.
     fn gas_used(&self) -> u64;
-    /// Returns the transactions of the execution payload.
-    fn transactions(&self) -> &Transactions;
     /// Returns the parent beacon block root, part of the request since Deneb.
     fn parent_beacon_block_root(&self) -> Option<B256>;
     /// Returns the slot of the execution payload, part of the payload since Gloas.
@@ -297,10 +295,6 @@ impl NewPayloadRequestExt for NewPayloadRequest {
 
     fn gas_used(&self) -> u64 {
         *execution_payload_field!(self, gas_used)
-    }
-
-    fn transactions(&self) -> &Transactions {
-        execution_payload_field!(self, transactions)
     }
 
     fn parent_beacon_block_root(&self) -> Option<B256> {

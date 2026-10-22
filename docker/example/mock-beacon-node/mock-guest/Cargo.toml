@@ -7,12 +7,12 @@ edition = "2024"
 
 [dependencies]
 # ere
-ere-platform-openvm = { git = "https://github.com/eth-act/ere", tag = "v0.17.1", features = ["std"], optional = true }
-ere-platform-sp1 = { git = "https://github.com/eth-act/ere", tag = "v0.17.1", optional = true }
-ere-platform-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.17.1", default-features = false, features = ["inputcpy"], optional = true }
+ere-platform-openvm = { git = "https://github.com/eth-act/ere", tag = "v0.18.1", features = ["std"], optional = true }
+ere-platform-sp1 = { git = "https://github.com/eth-act/ere", tag = "v0.18.1", optional = true }
+ere-platform-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.18.1", default-features = false, features = ["inputcpy"], optional = true }
 
 # ere-guests
-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0" }
+stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.18.1" }
 
 [features]
 openvm = ["dep:ere-platform-openvm"]

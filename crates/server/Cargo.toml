@@ -57,7 +57,6 @@ lighthouse_eth2_keystore.workspace = true
 ethereum_serde_utils.workspace = true
 
 # alloy
-alloy-consensus.workspace = true
 alloy-eips = { workspace = true, features = ["serde"] }
 alloy-primitives.workspace = true
 alloy-rlp.workspace = true

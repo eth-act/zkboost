@@ -2,13 +2,10 @@
 
 use std::time::Instant;
 
-use alloy_consensus::{EthereumTxEnvelope, TxEip4844};
-use alloy_eips::Decodable2718;
 use anyhow::Context;
-use stateless_validator_common::guest::input::PUBLIC_KEY_BYTES;
 use zkboost_types::{
     ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, NewPayloadRequestExt, ProtocolFork,
-    PublicKeys, Sha2Hasher, SszEncode, StatelessValidationResult, Transactions,
+    Sha2Hasher, SszEncode, StatelessValidationResult,
 };
 
 /// The metadata of a `NewPayloadRequest`, known before the witness. The root identifies the
@@ -65,14 +62,11 @@ impl StatelessInput {
         payload: NewPayloadRequest,
         witness: ExecutionWitness,
         chain_id: u64,
-    ) -> anyhow::Result<Self> {
-        let public_keys = PublicKeys::from(recover_public_keys(payload.transactions())?);
-
+    ) -> Self {
         let stateless_input_bytes = stateless_validator_common::guest::StatelessInput {
             new_payload_request: payload,
             witness,
             chain_id,
-            public_keys,
         }
         .to_schema_prefixed_ssz(protocol_fork);
 
@@ -84,11 +78,11 @@ impl StatelessInput {
         }
         .to_ssz();
 
-        Ok(Self {
+        Self {
             payload_meta,
             stateless_input_bytes,
             stateless_output_bytes,
-        })
+        }
     }
 
     /// Returns the metadata of the request of the input.
@@ -105,24 +99,6 @@ impl StatelessInput {
     pub(crate) fn stateless_output_bytes(&self) -> &[u8] {
         &self.stateless_output_bytes
     }
-}
-
-/// Recovers public keys from transaction signatures in the payload.
-fn recover_public_keys(transactions: &Transactions) -> anyhow::Result<Vec<[u8; PUBLIC_KEY_BYTES]>> {
-    transactions
-        .iter()
-        .enumerate()
-        .map(|(index, transaction)| {
-            let transaction =
-                EthereumTxEnvelope::<TxEip4844>::decode_2718(&mut transaction.as_ref())
-                    .with_context(|| format!("failed to decode tx #{index}"))?;
-            transaction
-                .signature()
-                .recover_from_prehash(&transaction.signature_hash())
-                .map(|key| key.to_encoded_point(false).as_bytes().try_into().unwrap())
-                .with_context(|| format!("failed to recover signature for tx #{index}"))
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -149,8 +125,7 @@ mod tests {
             fixture.new_payload_request,
             fixture.witness,
             fixture.chain_id,
-        )
-        .unwrap();
+        );
         assert_eq!(input.stateless_input_bytes(), AMSTERDAM_STATELESS_INPUT);
     }
 }
