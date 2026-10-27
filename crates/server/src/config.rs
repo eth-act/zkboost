@@ -436,7 +436,7 @@ mod tests {
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:50051"
+            endpoint = "http://zisk-cluster:7000"
         "#;
         let config = parse(toml);
         assert_eq!(config.zkvm.len(), 1);
@@ -448,7 +448,7 @@ mod tests {
                 elf_url: None,
                 proof_timeout_secs: 12,
                 ..
-            } if endpoint == "http://zisk-cluster:50051"
+            } if endpoint == "http://zisk-cluster:7000"
         ));
         // The ELF is mandatory for the cluster backend, so a config that omits
         // both elf_path and elf_url parses but fails validation.
@@ -461,7 +461,7 @@ mod tests {
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-sp1"
-            endpoint = "http://zisk-cluster:50051"
+            endpoint = "http://zisk-cluster:7000"
         "#;
         let config = parse(toml);
         assert!(config.validate().is_err());
@@ -486,7 +486,7 @@ mod tests {
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:50051"
+            endpoint = "http://zisk-cluster:7000"
             proof_timeout_secs = 0
         "#;
         let config = parse(toml);
@@ -499,7 +499,7 @@ mod tests {
             [[zkvm]]
             kind = "cluster"
             proof_type = "ethrex-zisk"
-            endpoint = "http://zisk-cluster:50051"
+            endpoint = "http://zisk-cluster:7000"
             elf_path = "/tmp/stateless-validator-ethrex-zisk.elf"
         "#;
         let config = parse(toml);
@@ -520,7 +520,7 @@ mod tests {
             [[zkvm]]
             kind = "cluster"
             proof_type = "ethrex-zisk"
-            endpoint = "http://zisk-cluster:50051"
+            endpoint = "http://zisk-cluster:7000"
             elf_url = "https://example.com/stateless-validator-ethrex-zisk.elf"
         "#;
         let config = parse(toml);
@@ -541,7 +541,7 @@ mod tests {
             [[zkvm]]
             kind = "cluster"
             proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:50051"
+            endpoint = "http://zisk-cluster:7000"
             elf_path = "/tmp/x.elf"
             elf_url = "https://example.com/x.elf"
         "#;

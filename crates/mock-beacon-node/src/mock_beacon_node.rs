@@ -26,7 +26,6 @@ use lighthouse_bls::Signature;
 use lighthouse_types::{BeaconBlockRef, ChainSpec, EthSpec, Hash256, MainnetEthSpec, Slot};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use stateless_validator_downloader::Downloader;
 use tokio::{
     net::TcpListener,
     sync::{OnceCell, mpsc},
@@ -43,8 +42,6 @@ use zkboost_types::{
 
 use crate::{beacon_node_client::BeaconNodeClient, engine_api_client::EngineApiClient};
 
-const ERE_GUESTS_TAG: &str = "v0.17.0";
-
 /// Budget for the proofs of one payload to arrive.
 const PROOF_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -57,6 +54,11 @@ const MIN_VERIFIED_PROOFS: usize = 2;
 /// data.
 const MAX_SUBMISSION_SIZE: usize =
     MAX_EXECUTION_PROOFS_PER_PAYLOAD * (4 + 4 + 4 + 1 + 32 + 8 + 96 + MAX_PROOF_SIZE);
+
+/// The default `proof-engine.json`, with the verifying key of every proof type with a fixture
+/// proof.
+pub(crate) const DEFAULT_PROOF_ENGINE_JSON: &str =
+    include_str!("../tests/fixture/proof-engine.json");
 
 /// A valid payload of the CL, whose proofs are accepted.
 #[derive(Clone)]
@@ -98,17 +100,35 @@ struct PayloadStatus {
     status: String,
 }
 
+/// The `proof-engine.json` of the eth-act Lighthouse.
+#[derive(Deserialize)]
+struct ProofEngineConfig {
+    execution_proofs: Vec<ExecutionProofConfig>,
+}
+
+/// The verifying key of one proof type.
+#[derive(Deserialize)]
+struct ExecutionProofConfig {
+    proof_type: u8,
+    #[serde(with = "serde_utils::hex_vec")]
+    program_vk: Vec<u8>,
+}
+
 impl MockBeaconNode {
-    /// Builds the mock beacon node and downloads the verifier of every proof type. The chain
-    /// spec and genesis validators root are fetched on first access.
-    pub(crate) async fn new(cl_endpoint: Url, zkboost_endpoint: Url) -> anyhow::Result<Self> {
-        let verifiers = download_vks_and_init().await?;
+    /// Builds the mock beacon node with the verifier of every proof type of the
+    /// `proof-engine.json`. The chain spec and genesis validators root are fetched on first
+    /// access.
+    pub(crate) fn new(
+        cl_endpoint: Url,
+        zkboost_endpoint: Url,
+        proof_engine_json: &str,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
             beacon_node_client: BeaconNodeClient::new(cl_endpoint),
             engine_api_client: EngineApiClient::new(zkboost_endpoint),
             spec: OnceCell::new(),
             genesis_validators_root: OnceCell::new(),
-            verifiers,
+            verifiers: init_verifiers(proof_engine_json)?,
             pending: Default::default(),
         })
     }
@@ -395,32 +415,36 @@ async fn forward_beacon_api_request(
     }
 }
 
-/// Builds the verifier of every proof type from the verifying keys of the ere-guests release. A
-/// proof type without a guest in the release has no verifier.
-async fn download_vks_and_init() -> anyhow::Result<HashMap<u8, Verifier>> {
-    let downloader = Downloader::from_tag(ERE_GUESTS_TAG).await?;
-    let mut verifiers = HashMap::new();
-    for proof_type in ProofType::iter() {
-        let stateless_validator = proof_type.stateless_validator_kind();
-        let zkvm = proof_type.zkvm_kind().as_str().parse().unwrap();
-        let guest = match downloader.download(stateless_validator, zkvm).await {
-            Ok(guest) => guest,
-            Err(error) => {
-                warn!(%proof_type, error = %format!("{error:#}"), "verifier not loaded");
-                continue;
-            }
-        };
-        let verifier = Verifier::new(proof_type.zkvm_kind(), &guest.program_vk)?;
-        verifiers.insert(proof_type.execution_proof_type(), verifier);
-        info!(%proof_type, "verifier loaded");
-    }
-    Ok(verifiers)
+/// Builds the verifier of every proof type of the `proof-engine.json`. A proof type without an
+/// entry has no verifier.
+fn init_verifiers(proof_engine_json: &str) -> anyhow::Result<HashMap<u8, Verifier>> {
+    let config: ProofEngineConfig =
+        serde_json::from_str(proof_engine_json).context("decode proof-engine.json")?;
+    config.execution_proofs.into_iter().try_fold(
+        HashMap::new(),
+        |mut verifiers, execution_proof| {
+            let proof_type = ProofType::iter()
+                .find(|proof_type| proof_type.execution_proof_type() == execution_proof.proof_type)
+                .with_context(|| format!("unknown proof type {}", execution_proof.proof_type))?;
+            let verifier = Verifier::new(proof_type.zkvm_kind(), &execution_proof.program_vk)
+                .with_context(|| format!("decode verifying key of {proof_type}"))?;
+            ensure!(
+                verifiers
+                    .insert(execution_proof.proof_type, verifier)
+                    .is_none(),
+                "duplicate proof type {proof_type}"
+            );
+            info!(%proof_type, "verifier loaded");
+            Ok(verifiers)
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use std::{fs, path::Path, sync::Arc};
 
+    use serde_json::Value;
     use tokio::sync::mpsc;
     use url::Url;
     use zkboost_types::{
@@ -431,7 +455,10 @@ mod tests {
     use crate::{
         beacon_node_client::BeaconNodeClient,
         engine_api_client::EngineApiClient,
-        mock_beacon_node::{MAX_SUBMISSION_SIZE, MockBeaconNode, PendingPayload},
+        mock_beacon_node::{
+            DEFAULT_PROOF_ENGINE_JSON, MAX_SUBMISSION_SIZE, MockBeaconNode, PendingPayload,
+            init_verifiers,
+        },
     };
 
     /// Builds a node with no proof verifiers and endpoints where nothing listens.
@@ -532,8 +559,9 @@ mod tests {
             verified_tx: mpsc::unbounded_channel().0,
         };
         let dummy_url = Url::parse("x:").unwrap();
-        let mock_beacon_node = MockBeaconNode::new(dummy_url.clone(), dummy_url).await?;
-        // The zesu guest of ere-guests v0.17.0 cannot be proved yet, so it has no fixture proof.
+        let mock_beacon_node =
+            MockBeaconNode::new(dummy_url.clone(), dummy_url, DEFAULT_PROOF_ENGINE_JSON)?;
+        // ere-guests v0.19.0 registers no zesu guest, so it has no fixture proof.
         for proof_type in ProofType::iter().filter(|proof_type| *proof_type != ProofType::ZesuZisk)
         {
             let stateless_validator = proof_type.stateless_validator_kind();
@@ -549,5 +577,15 @@ mod tests {
             )?;
         }
         Ok(())
+    }
+
+    /// A proof-engine.json with two verifying keys of one proof type is rejected.
+    #[test]
+    fn test_duplicate_proof_type_rejected() {
+        let mut proof_engine_json: Value = serde_json::from_str(DEFAULT_PROOF_ENGINE_JSON).unwrap();
+        // The fourth entry is the OpenVM key of proof type 4, so its key decodes as proof type 1.
+        proof_engine_json["execution_proofs"][3]["proof_type"] = 1.into();
+        let error = init_verifiers(&proof_engine_json.to_string()).unwrap_err();
+        assert_eq!(error.to_string(), "duplicate proof type ethrex-openvm");
     }
 }

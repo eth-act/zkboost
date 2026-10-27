@@ -442,7 +442,13 @@ impl EngineProxyState {
             .protocol_fork(Slot::new(payload_meta.slot))?;
         let stateless_input = tokio::task::spawn_blocking(move || {
             let witness = decode_engine_witness(&witness)?;
-            StatelessInput::new(protocol_fork, payload_meta, payload, witness, chain_id)
+            anyhow::Ok(StatelessInput::new(
+                protocol_fork,
+                payload_meta,
+                payload,
+                witness,
+                chain_id,
+            ))
         })
         .await
         .expect("stateless input construction does not panic")

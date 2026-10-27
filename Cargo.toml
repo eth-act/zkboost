@@ -70,23 +70,21 @@ libssz-derive = "0.3.0"
 libssz-merkle = "0.3.0"
 
 # alloy
-alloy-consensus = "2"
 alloy-eips = "2"
-alloy-primitives = { version = "1.6", features = ["k256", "serde"] }
+alloy-primitives = { version = "1.6", features = ["serde"] }
 alloy-rlp = "0.3"
 alloy-rpc-types-engine = "2"
 
 # ere
-ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.17.1" }
-ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.17.1" }
-ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.17.1" }
-ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.17.1" }
-ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.17.1" }
+ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.19.5" }
+ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.19.5" }
+ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.19.5" }
+ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.19.5" }
+ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.19.5" }
 
 # ere-guests
-stateless-validator-catalog = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0" }
-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0", features = ["host"] }
-stateless-validator-downloader = { git = "https://github.com/eth-act/ere-guests", tag = "v0.17.0" }
+stateless-validator-catalog = { git = "https://github.com/eth-act/ere-guests", tag = "v0.19.0" }
+stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.19.0", features = ["host"] }
 
 # local
 zkboost-types = { path = "crates/types" }
