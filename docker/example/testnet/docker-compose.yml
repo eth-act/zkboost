@@ -18,7 +18,7 @@ services:
       retries: 30
 
   ethrex-openvm:
-    image: ghcr.io/eth-act/ere/ere-server-openvm:0.19.5-cuda
+    image: ghcr.io/eth-act/ere/ere-server-openvm:0.19.6-cuda
     command:
       - "--port"
       - "3000"
@@ -46,7 +46,7 @@ services:
   # Fills the ZisK proving key volume once, with the same archive and `.md5` marker as
   # crates/prover/zisk/src/sdk/proving_key.rs of the ere version of the image.
   zisk-proving-key:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.19.5-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.19.6-cuda
     entrypoint: bash
     working_dir: /root/.zisk/provingKey
     command:
@@ -65,7 +65,7 @@ services:
       - zisk-proving-key-v1.3.2-alpha:/root/.zisk/provingKey
 
   reth-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.19.5-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.19.6-cuda
     command:
       - "--port"
       - "3000"

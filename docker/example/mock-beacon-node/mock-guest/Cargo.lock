@@ -688,13 +688,13 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ere-platform-core"
-version = "0.19.5"
-source = "git+https://github.com/eth-act/ere?tag=v0.19.5#fba5601fd907634acdc0ce9f19dc8651aa8c0edd"
+version = "0.19.6"
+source = "git+https://github.com/eth-act/ere?tag=v0.19.6#24118285f6e9b8115b3ad568775f7fe55ff78bf5"
 
 [[package]]
 name = "ere-platform-openvm"
-version = "0.19.5"
-source = "git+https://github.com/eth-act/ere?tag=v0.19.5#fba5601fd907634acdc0ce9f19dc8651aa8c0edd"
+version = "0.19.6"
+source = "git+https://github.com/eth-act/ere?tag=v0.19.6#24118285f6e9b8115b3ad568775f7fe55ff78bf5"
 dependencies = [
  "ere-platform-core",
  "openvm",
@@ -705,8 +705,8 @@ dependencies = [
 
 [[package]]
 name = "ere-platform-sp1"
-version = "0.19.5"
-source = "git+https://github.com/eth-act/ere?tag=v0.19.5#fba5601fd907634acdc0ce9f19dc8651aa8c0edd"
+version = "0.19.6"
+source = "git+https://github.com/eth-act/ere?tag=v0.19.6#24118285f6e9b8115b3ad568775f7fe55ff78bf5"
 dependencies = [
  "ere-platform-core",
  "libzkevm",
@@ -715,8 +715,8 @@ dependencies = [
 
 [[package]]
 name = "ere-platform-zisk"
-version = "0.19.5"
-source = "git+https://github.com/eth-act/ere?tag=v0.19.5#fba5601fd907634acdc0ce9f19dc8651aa8c0edd"
+version = "0.19.6"
+source = "git+https://github.com/eth-act/ere?tag=v0.19.6#24118285f6e9b8115b3ad568775f7fe55ff78bf5"
 dependencies = [
  "ere-platform-core",
  "ziskos",
