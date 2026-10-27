@@ -28,8 +28,5 @@ lighthouse_types.workspace = true
 # ere
 ere-verifier.workspace = true
 
-# ere-guests
-stateless-validator-downloader.workspace = true
-
 # local
 zkboost-types.workspace = true

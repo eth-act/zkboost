@@ -5,10 +5,11 @@
 
 #![warn(unused_crate_dependencies)]
 
-use std::{net::Ipv4Addr, sync::Arc};
+use std::{fs, net::Ipv4Addr, path::PathBuf, sync::Arc};
 
+use anyhow::Context;
 use clap::Parser;
-use mock_beacon_node::MockBeaconNode;
+use mock_beacon_node::{DEFAULT_PROOF_ENGINE_JSON, MockBeaconNode};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use url::Url;
@@ -31,6 +32,10 @@ struct Cli {
     /// Port serving the Engine API to the CL.
     #[arg(long, default_value_t = 8551)]
     engine_port: u16,
+    /// `proof-engine.json` of the eth-act Lighthouse with the verifying keys of the proof types to
+    /// verify, by default the embedded `tests/fixture/proof-engine.json`.
+    #[arg(long)]
+    proof_engine: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -41,8 +46,17 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let mock_beacon_node =
-        Arc::new(MockBeaconNode::new(cli.cl_endpoint, cli.zkboost_endpoint).await?);
+    let proof_engine_json = match &cli.proof_engine {
+        Some(path) => {
+            fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?
+        }
+        None => DEFAULT_PROOF_ENGINE_JSON.to_owned(),
+    };
+    let mock_beacon_node = Arc::new(MockBeaconNode::new(
+        cli.cl_endpoint,
+        cli.zkboost_endpoint,
+        &proof_engine_json,
+    )?);
     let beacon_api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, cli.port)).await?;
     let engine_api = TcpListener::bind((Ipv4Addr::UNSPECIFIED, cli.engine_port)).await?;
     tokio::try_join!(

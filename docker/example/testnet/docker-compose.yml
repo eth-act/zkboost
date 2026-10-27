@@ -18,22 +18,23 @@ services:
       retries: 30
 
   ethrex-openvm:
-    image: ghcr.io/eth-act/ere/ere-server-openvm:0.18.1-cuda
+    image: ghcr.io/eth-act/ere/ere-server-openvm:0.19.5-cuda
     command:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.18.1/stateless-validator-ethrex-openvm-v2.1.0-preview.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.19.0/stateless-validator-ethrex-openvm-v2.1.0-preview.elf"
       - "gpu"
     shm_size: 2G
     networks:
       - zkboost
     environment:
       - RUST_LOG=info
+      - ERE_OPENVM_SETUP_ON_INIT=1
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
-      start_period: 300s
+      start_period: 600s
     deploy:
       resources:
         reservations:
@@ -42,13 +43,34 @@ services:
               device_ids: ['0']
               capabilities: [gpu]
 
+  # Fills the ZisK proving key volume once, with the same archive and `.md5` marker as
+  # crates/prover/zisk/src/sdk/proving_key.rs of the ere version of the image.
+  zisk-proving-key:
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.19.5-cuda
+    entrypoint: bash
+    working_dir: /root/.zisk/provingKey
+    command:
+      - -ec
+      - |
+        MD5=5bb0a34749bb366d82734116ce4384e5
+        grep -qx $$MD5 .md5 2>/dev/null && exit 0
+        curl -fsSL -o key.tar.gz https://storage.googleapis.com/zisk-setup/zisk-provingkey-1.3.2-alpha-blake3.tar.gz
+        echo "$$MD5  key.tar.gz" | md5sum -c
+        tar xzf key.tar.gz -C /root/.zisk
+        rm key.tar.gz
+        echo $$MD5 > .md5
+    networks:
+      - zkboost
+    volumes:
+      - zisk-proving-key-v1.3.2-alpha:/root/.zisk/provingKey
+
   reth-zisk:
-    image: ghcr.io/eth-act/ere/ere-server-zisk:0.18.1-cuda
+    image: ghcr.io/eth-act/ere/ere-server-zisk:0.19.5-cuda
     command:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.18.1/stateless-validator-reth-zisk-v1.2.0-alpha.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.19.0/stateless-validator-reth-zisk-v1.3.2-alpha.elf"
       - "gpu"
     shm_size: 32G
     ulimits:
@@ -60,10 +82,15 @@ services:
     environment:
       - RUST_LOG=info,asm_runner=warn,executor=warn,mem_planner_cpp=warn,proofman=warn,rom_setup=warn,sm_rom=warn,zisk=warn
       - ERE_ZISK_SETUP_ON_INIT=1
+    volumes:
+      - zisk-proving-key-v1.3.2-alpha:/root/.zisk/provingKey
     restart: unless-stopped
+    depends_on:
+      zisk-proving-key:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      start_period: 300s
+      start_period: 600s
     deploy:
       resources:
         reservations:
@@ -100,6 +127,10 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       start_period: 1s
       start_interval: 1s
+
+# The ZisK proving key, which zisk-proving-key downloads once.
+volumes:
+  zisk-proving-key-v1.3.2-alpha:
 
 # Only geth and zkboost join the enclave network to reach the testnet EL and CL.
 networks:

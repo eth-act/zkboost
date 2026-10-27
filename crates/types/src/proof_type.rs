@@ -42,6 +42,16 @@ pub enum ProofType {
     RethZisk = 6,
     /// Zesu with Zisk backend.
     ZesuZisk = 7,
+    /// Nimbus with SP1 backend.
+    NimbusSP1 = 8,
+    /// Nimbus with Zisk backend.
+    NimbusZisk = 9,
+    /// Nethermind with SP1 backend.
+    NethermindSP1 = 10,
+    /// Nethermind with Zisk backend.
+    NethermindZisk = 11,
+    /// Zilkworm with SP1 backend.
+    ZilkwormSP1 = 12,
 }
 
 impl ProofType {
@@ -58,15 +68,26 @@ impl ProofType {
             }
             Self::RethSP1 | Self::RethOpenVM | Self::RethZisk => StatelessValidatorKind::Reth,
             Self::ZesuZisk => StatelessValidatorKind::Zesu,
+            Self::NimbusSP1 | Self::NimbusZisk => StatelessValidatorKind::Nimbus,
+            Self::NethermindSP1 | Self::NethermindZisk => StatelessValidatorKind::Nethermind,
+            Self::ZilkwormSP1 => StatelessValidatorKind::Zilkworm,
         }
     }
 
     /// Returns the zkVM kind for this proof type.
     pub fn zkvm_kind(&self) -> zkVMKind {
         match self {
-            Self::EthrexSP1 | Self::RethSP1 => zkVMKind::SP1,
+            Self::EthrexSP1
+            | Self::RethSP1
+            | Self::NimbusSP1
+            | Self::NethermindSP1
+            | Self::ZilkwormSP1 => zkVMKind::SP1,
             Self::EthrexOpenVM | Self::RethOpenVM => zkVMKind::OpenVM,
-            Self::EthrexZisk | Self::RethZisk | Self::ZesuZisk => zkVMKind::Zisk,
+            Self::EthrexZisk
+            | Self::RethZisk
+            | Self::ZesuZisk
+            | Self::NimbusZisk
+            | Self::NethermindZisk => zkVMKind::Zisk,
         }
     }
 
@@ -85,6 +106,11 @@ impl ProofType {
             Self::RethSP1 => "reth-sp1",
             Self::RethZisk => "reth-zisk",
             Self::ZesuZisk => "zesu-zisk",
+            Self::NimbusSP1 => "nimbus-sp1",
+            Self::NimbusZisk => "nimbus-zisk",
+            Self::NethermindSP1 => "nethermind-sp1",
+            Self::NethermindZisk => "nethermind-zisk",
+            Self::ZilkwormSP1 => "zilkworm-sp1",
         }
     }
 }
@@ -107,6 +133,11 @@ impl FromStr for ProofType {
             "reth-sp1" => Self::RethSP1,
             "reth-zisk" => Self::RethZisk,
             "zesu-zisk" => Self::ZesuZisk,
+            "nimbus-sp1" => Self::NimbusSP1,
+            "nimbus-zisk" => Self::NimbusZisk,
+            "nethermind-sp1" => Self::NethermindSP1,
+            "nethermind-zisk" => Self::NethermindZisk,
+            "zilkworm-sp1" => Self::ZilkwormSP1,
             _ => return Err(ProofTypeParseError(s.to_string())),
         })
     }

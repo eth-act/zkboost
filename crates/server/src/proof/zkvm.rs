@@ -94,7 +94,7 @@ impl zkVMInstance {
         }
     }
 
-    /// Generates a compressed proof for the given payload, returning raw proof bytes.
+    /// Generates a proof for the given payload, returning raw proof bytes.
     ///
     /// `prove_span` is the worker's prove span. Backends that learn a backend-side job
     /// identifier (currently the cluster) record it there explicitly.

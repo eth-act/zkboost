@@ -42,6 +42,11 @@
             --pt-4: #06b6d4;
             --pt-5: #3b82f6;
             --pt-6: #8b5cf6;
+            --pt-7: #e879f9;
+            --pt-8: #059669;
+            --pt-9: #a3e635;
+            --pt-10: #c026d3;
+            --pt-11: #ec4899;
             --gas: #94a3b8;
         }
 
@@ -572,6 +577,11 @@
             'reth-sp1',
             'reth-zisk',
             'zesu-zisk',
+            'nimbus-sp1',
+            'nimbus-zisk',
+            'nethermind-sp1',
+            'nethermind-zisk',
+            'zilkworm-sp1',
         ];
         const PROOF_TYPE_HEX = Object.fromEntries(PROOF_TYPE_KEYS.map((key, i) => [key, cssVar(`--pt-${i}`)]));
         const PROOF_TYPE_COLORS = Object.fromEntries(
