@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/eth-act/zkboost/compare/v0.12.0...v0.19.0) (2026-10-27)
+
+
+### Features
+
+* update ere and ere-guests to v0.19.x ([#91](https://github.com/eth-act/zkboost/issues/91)) ([94e47f7](https://github.com/eth-act/zkboost/commit/94e47f7e01a3f3d73885c1937f734b913ccda7df))
+
 ## [0.12.0](https://github.com/eth-act/zkboost/compare/v0.11.1...v0.12.0) (2026-10-07)
 
 
