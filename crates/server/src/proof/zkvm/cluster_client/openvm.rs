@@ -8,7 +8,10 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, anyhow, bail, ensure};
 use ere_server_client::Input;
 use rand::{Rng, rng};
-use reqwest::multipart::{Form, Part};
+use reqwest::{
+    StatusCode,
+    multipart::{Form, Part},
+};
 use reqwest_eventsource::{Event, EventSource};
 use serde::{Deserialize, Serialize, de::IgnoredAny};
 use sha2::{Digest, Sha256};
@@ -18,6 +21,14 @@ use tracing::{Span, info, warn};
 /// Bound on the requests outside the prove timeout of the worker, the loadout read and the
 /// cancel.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Attempts to start a proof, `START_PROOF_RETRY_DELAY` apart. The manager answers 409 while the
+/// previous proof still holds its single proof slot, for example right after that proof settles
+/// or while its cancel is still on the way.
+const START_PROOF_ATTEMPTS: u32 = 5;
+
+/// Delay between two attempts to start a proof.
+const START_PROOF_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 /// A client of the axiom-edge manager of an OpenVM proving cluster.
 ///
@@ -104,18 +115,31 @@ impl OpenVMClusterClient {
         Ok(())
     }
 
-    /// Starts the stark proof of the staged stdin of a prove job.
+    /// Starts the stark proof of the staged stdin of a prove job, and retries a 409 up to
+    /// `START_PROOF_ATTEMPTS` attempts.
     async fn start_proof(&self, job_id: &str) -> anyhow::Result<()> {
-        let request = self
-            .http_client
-            .post(format!("{}/start_proof", self.endpoint))
-            .json(&StartProofRequest {
-                proof_uuid: job_id,
-                program: &self.program,
-                proof_type: "stark",
-            });
-        send(request).await?;
-        Ok(())
+        let body = StartProofRequest {
+            proof_uuid: job_id,
+            program: &self.program,
+            proof_type: "stark",
+        };
+        let mut attempt = 1;
+        loop {
+            let response = self
+                .http_client
+                .post(format!("{}/start_proof", self.endpoint))
+                .json(&body)
+                .send()
+                .await?;
+            if response.status() == StatusCode::CONFLICT && attempt < START_PROOF_ATTEMPTS {
+                warn!(%job_id, attempt, "openvm cluster prove job start retried");
+                tokio::time::sleep(START_PROOF_RETRY_DELAY).await;
+                attempt += 1;
+                continue;
+            }
+            error_for_status(response).await?;
+            return Ok(());
+        }
     }
 
     /// Follows the status events of a prove job until it settles.
@@ -213,7 +237,12 @@ impl Drop for OpenVMProveJob {
 
 /// Sends a request to the manager. The body of an error answer is the reason.
 async fn send(request: reqwest::RequestBuilder) -> anyhow::Result<reqwest::Response> {
-    let response = request.send().await?;
+    error_for_status(request.send().await?).await
+}
+
+/// Returns a success answer of the manager unchanged, and any other answer as an error with its
+/// body as the reason.
+async fn error_for_status(response: reqwest::Response) -> anyhow::Result<reqwest::Response> {
     let status = response.status();
     if status.is_success() {
         return Ok(response);
@@ -270,4 +299,86 @@ enum ProofStatus {
 #[derive(Debug, Serialize)]
 struct CancelProofRequest<'a> {
     proof_uuid: &'a str,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use axum::{Router, extract::State, http::StatusCode, routing::post};
+    use ere_server_client::Input;
+    use tracing::Span;
+
+    use crate::proof::zkvm::cluster_client::openvm::{
+        OpenVMClusterClient, ProgramRef, START_PROOF_ATTEMPTS,
+    };
+
+    /// Serves a manager whose `POST /start_proof` answers 409 `conflicts` times and 200 after.
+    /// Returns the endpoint and the count of start requests.
+    async fn serve_manager(conflicts: usize) -> (String, Arc<AtomicUsize>) {
+        let starts = Arc::new(AtomicUsize::new(0));
+        let app = Router::new()
+            .route("/upload_input/{uuid}", post(|| async { StatusCode::OK }))
+            .route(
+                "/start_proof",
+                post(move |State(starts): State<Arc<AtomicUsize>>| async move {
+                    if starts.fetch_add(1, Ordering::SeqCst) < conflicts {
+                        (
+                            StatusCode::CONFLICT,
+                            r#"{"error":"Another proof is already running"}"#,
+                        )
+                    } else {
+                        (StatusCode::OK, r#"{"status":"started"}"#)
+                    }
+                }),
+            )
+            .route("/cancel_proof", post(|| async { StatusCode::OK }))
+            .with_state(starts.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (endpoint, starts)
+    }
+
+    fn client(endpoint: String) -> Arc<OpenVMClusterClient> {
+        Arc::new(OpenVMClusterClient {
+            http_client: reqwest::Client::new(),
+            endpoint,
+            program: ProgramRef {
+                name: "program-test".to_string(),
+                version: 0,
+            },
+        })
+    }
+
+    #[tokio::test]
+    async fn test_start_proof_retries_conflict() {
+        let attempts = START_PROOF_ATTEMPTS as usize;
+        let (endpoint, starts) = serve_manager(attempts - 1).await;
+        let input = Input::new().with_stdin(vec![1]);
+
+        client(endpoint)
+            .create_prove_job(&input, &Span::none())
+            .await
+            .unwrap();
+
+        assert_eq!(starts.load(Ordering::SeqCst), attempts);
+    }
+
+    #[tokio::test]
+    async fn test_start_proof_fails_after_conflicts() {
+        let (endpoint, starts) = serve_manager(usize::MAX).await;
+        let input = Input::new().with_stdin(vec![1]);
+
+        let error = client(endpoint)
+            .create_prove_job(&input, &Span::none())
+            .await
+            .unwrap_err();
+
+        assert!(format!("{error:#}").contains("409 Conflict"));
+        assert_eq!(starts.load(Ordering::SeqCst), START_PROOF_ATTEMPTS as usize);
+    }
 }
