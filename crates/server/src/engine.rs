@@ -14,7 +14,7 @@ use std::{
     num::NonZeroUsize,
     path::Path,
     sync::{Arc, Mutex, OnceLock},
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 use alloy_primitives::B256;
@@ -43,7 +43,11 @@ use zkboost_types::{
 use crate::{
     config::Config,
     dashboard::DashboardMessage,
-    metrics::{record_proof_reused, record_submission, record_witness_fetch},
+    metrics::{
+        add_queue_depth, record_new_payload, record_payload_arrival, record_proof_dispatch_failure,
+        record_proof_latency, record_proof_reused, record_submission, record_witness_fetch,
+        set_latest_payload_timestamp, set_validator_ready,
+    },
     proof::{
         input::{NewPayloadRequestMeta, StatelessInput},
         worker::{ProofResult, WorkerInput, WorkerOutput},
@@ -62,11 +66,19 @@ const SUBMISSION_ATTEMPTS: u32 = 5;
 
 /// JSON-RPC request envelope.
 #[derive(Debug, Serialize, Deserialize)]
-struct JsonRpcRequest {
+pub(crate) struct JsonRpcRequest {
     jsonrpc: Value,
     id: Value,
-    method: String,
+    /// Method of the request.
+    pub(crate) method: String,
     params: Value,
+}
+
+impl JsonRpcRequest {
+    /// Decodes a JSON-RPC request body, or returns `None` for any other body.
+    pub(crate) fn decode(body: &[u8]) -> Option<Self> {
+        serde_json::from_slice(body).ok()
+    }
 }
 
 /// JSON-RPC response envelope.
@@ -107,9 +119,8 @@ pub(crate) struct NewPayload {
 }
 
 impl NewPayload {
-    /// Decodes a new payload request, or returns `None` for every other request body.
-    pub(crate) fn decode(body: &[u8]) -> Option<Self> {
-        let request = serde_json::from_slice::<JsonRpcRequest>(body).ok()?;
+    /// Decodes a new payload request, or returns `None` for every other request.
+    pub(crate) fn decode(request: JsonRpcRequest) -> Option<Self> {
         match NewPayloadParams::decode(&request.method, request.params.clone())? {
             Ok(params) => Some(Self { request, params }),
             Err(error) => {
@@ -133,6 +144,8 @@ pub(crate) struct EngineProxyState {
     blocks: Mutex<LruCache<(B256, Slot), B256>>,
     proofs: Mutex<LruCache<(Hash256, ProofType), Vec<u8>>>,
     requested: Mutex<HashSet<(Hash256, ProofType)>>,
+    /// Timestamp of the newest VALID payload, the start of its slot.
+    latest_payload_timestamp: Mutex<u64>,
     worker_input_txs: HashMap<ProofType, mpsc::Sender<WorkerInput>>,
     dashboard_service_tx: mpsc::Sender<DashboardMessage>,
 }
@@ -160,6 +173,7 @@ impl EngineProxyState {
             blocks: Mutex::new(LruCache::new(NonZeroUsize::new(BLOCK_CACHE_SLOTS).unwrap())),
             proofs: Mutex::new(LruCache::new(proofs_capacity)),
             requested: Mutex::new(HashSet::new()),
+            latest_payload_timestamp: Mutex::new(0),
             worker_input_txs,
             dashboard_service_tx,
         })
@@ -176,6 +190,7 @@ impl EngineProxyState {
         if self.worker_input_txs.is_empty() {
             return;
         }
+        set_validator_ready(false);
 
         let (spec, genesis_validators_root, validator_index) = tokio::select! {
             () = shutdown.cancelled() => return,
@@ -199,6 +214,7 @@ impl EngineProxyState {
             validator_index,
         );
         assert!(self.validator.set(validator).is_ok(), "run is called once");
+        set_validator_ready(true);
         info!(validator_index, "validator ready");
 
         let mut events = self.beacon_node_client.subscribe_execution_payloads();
@@ -246,11 +262,41 @@ impl EngineProxyState {
         }
     }
 
+    /// Forwards a new payload with `forward_payload`, and records the status of the EL answer and,
+    /// for a payload that the EL answered, how long after the start of its slot it arrived.
+    pub(crate) async fn new_payload(
+        self: Arc<Self>,
+        authorization: Option<&HeaderValue>,
+        new_payload: NewPayload,
+        body: Bytes,
+    ) -> reqwest::Result<EngineResponse> {
+        let received_at = SystemTime::now();
+        let timestamp = new_payload.params.timestamp();
+        let response = self.forward_payload(authorization, new_payload, body).await;
+        let status = response
+            .as_ref()
+            .map_or("error", |response| new_payload_status(&response.body));
+        record_new_payload(status);
+        // The EL answers a payload status only with the JWT, and checks the timestamp of a VALID
+        // payload, so a caller without the JWT moves neither series.
+        if status != "error" {
+            record_payload_arrival(timestamp, received_at);
+        }
+        if status == "VALID" {
+            let mut latest_payload_timestamp = self.latest_payload_timestamp.lock().unwrap();
+            if timestamp > *latest_payload_timestamp {
+                *latest_payload_timestamp = timestamp;
+                set_latest_payload_timestamp(timestamp);
+            }
+        }
+        response
+    }
+
     /// Forwards a new payload as `engine_newPayloadWithWitnessV5` and answers without the witness.
     /// Without a zkVM, without the method, or before the validator is ready, the payload is
     /// forwarded unchanged.
-    pub(crate) async fn new_payload(
-        self: Arc<Self>,
+    async fn forward_payload(
+        self: &Arc<Self>,
         authorization: Option<&HeaderValue>,
         new_payload: NewPayload,
         body: Bytes,
@@ -347,13 +393,17 @@ impl EngineProxyState {
             return Ok((upstream_response_body, None));
         }
 
-        let witness = upstream_response_body
-            .result
-            .as_ref()
-            .and_then(|result| result.witness.as_ref());
-        match witness {
-            Some(witness) => record_fetch("success", witness.len()),
-            None => record_fetch("missing", 0),
+        // Only a VALID status comes with a witness, and an error answer carries no status.
+        match (
+            &upstream_response_body.error,
+            &upstream_response_body.result,
+        ) {
+            (None, Some(result)) if result.status != "VALID" => record_fetch("not_valid", 0),
+            (None, Some(result)) => match &result.witness {
+                Some(witness) => record_fetch("success", witness.len()),
+                None => record_fetch("missing", 0),
+            },
+            _ => record_fetch("error", 0),
         }
 
         Ok((
@@ -404,6 +454,11 @@ impl EngineProxyState {
         span: Span,
     ) -> anyhow::Result<()> {
         let chain_id = self.validator()?.chain_id();
+        let record_dispatch_failures = |proof_types: &[ProofType], reason| {
+            for &proof_type in proof_types {
+                record_proof_dispatch_failure(proof_type, reason);
+            }
+        };
         let (payload_meta, payload) = tokio::task::spawn_blocking(move || {
             let payload = NewPayloadRequest::try_from(params)?;
             anyhow::Ok((
@@ -412,7 +467,11 @@ impl EngineProxyState {
             ))
         })
         .await
-        .expect("new payload request conversion does not panic")?;
+        .expect("new payload request conversion does not panic")
+        .inspect_err(|_| {
+            let proof_types = self.worker_input_txs.keys().copied().collect::<Vec<_>>();
+            record_dispatch_failures(&proof_types, "input_error");
+        })?;
 
         let mut proving = Vec::new();
         for (&proof_type, worker_input_tx) in &self.worker_input_txs {
@@ -423,23 +482,33 @@ impl EngineProxyState {
                 .get(&(payload_meta.new_payload_request_root, proof_type))
                 .cloned();
             let Some(proof) = proof else {
-                proving.push((proof_type, worker_input_tx));
+                // A proof in progress needs no input, which a payload imported again lacks.
+                let request = (payload_meta.new_payload_request_root, proof_type);
+                if !self.requested.lock().unwrap().contains(&request) {
+                    proving.push((proof_type, worker_input_tx));
+                }
                 continue;
             };
             info!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof reused");
             record_proof_reused(proof_type);
-            self.submit_proof(payload_meta, proof_type, proof);
+            self.submit_proof(payload_meta, proof_type, proof, true);
         }
         if proving.is_empty() {
             return Ok(());
         }
+        let proving_types = proving
+            .iter()
+            .map(|&(proof_type, _)| proof_type)
+            .collect::<Vec<_>>();
 
         let Some(witness) = witness else {
+            record_dispatch_failures(&proving_types, "missing_witness");
             bail!("valid payload without witness");
         };
         let protocol_fork = self
             .validator()?
-            .protocol_fork(Slot::new(payload_meta.slot))?;
+            .protocol_fork(Slot::new(payload_meta.slot))
+            .inspect_err(|_| record_dispatch_failures(&proving_types, "unsupported_fork"))?;
         let stateless_input = tokio::task::spawn_blocking(move || {
             let witness = decode_engine_witness(&witness)?;
             anyhow::Ok(StatelessInput::new(
@@ -452,7 +521,8 @@ impl EngineProxyState {
         })
         .await
         .expect("stateless input construction does not panic")
-        .context("stateless input construction")?;
+        .context("stateless input construction")
+        .inspect_err(|_| record_dispatch_failures(&proving_types, "input_error"))?;
         let stateless_input = Arc::new(stateless_input);
 
         for (proof_type, worker_input_tx) in proving {
@@ -466,15 +536,19 @@ impl EngineProxyState {
                 span: span.clone(),
                 queued_at: Instant::now(),
             };
+            // The depth grows before the send, so the dequeue of the worker never takes it below 0.
+            add_queue_depth(proof_type, 1.0);
             match worker_input_tx.try_send(worker_input) {
                 Ok(()) => {
                     debug!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof dispatched")
                 }
                 Err(error) => {
-                    let reason = match error {
-                        TrySendError::Full(_) => "worker channel full",
-                        TrySendError::Closed(_) => "worker channel closed",
+                    add_queue_depth(proof_type, -1.0);
+                    let (reason, label) = match error {
+                        TrySendError::Full(_) => ("worker channel full", "channel_full"),
+                        TrySendError::Closed(_) => ("worker channel closed", "channel_closed"),
                     };
+                    record_proof_dispatch_failure(proof_type, label);
                     error!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, reason, "proof dispatch failed");
                     self.requested.lock().unwrap().remove(&request);
                 }
@@ -497,7 +571,7 @@ impl EngineProxyState {
                     (payload_meta.new_payload_request_root, proof_type),
                     proof.clone(),
                 );
-                self.submit_proof(payload_meta, proof_type, proof);
+                self.submit_proof(payload_meta, proof_type, proof, false);
             }
             ProofResult::Err(error) => {
                 error!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, %error, "proving failed");
@@ -513,25 +587,20 @@ impl EngineProxyState {
     }
 
     /// Submits a proof to the beacon node in the background, with `SUBMISSION_ATTEMPTS` attempts
-    /// `BEACON_NODE_RETRY_DELAY` apart.
+    /// `BEACON_NODE_RETRY_DELAY` apart. The latencies of a `reused` proof, proven for an earlier
+    /// receipt of the payload, are not recorded.
     fn submit_proof(
         self: &Arc<Self>,
         payload_meta: NewPayloadRequestMeta,
         proof_type: ProofType,
         proof: Vec<u8>,
+        reused: bool,
     ) {
         let state = self.clone();
         let slot = Slot::new(payload_meta.slot);
         tokio::spawn(async move {
             let started = Instant::now();
-            let record = |status| {
-                record_submission(
-                    proof_type,
-                    status,
-                    started.elapsed(),
-                    payload_meta.received_at.elapsed(),
-                )
-            };
+            let record = |status| record_submission(proof_type, status, started.elapsed());
             for attempt in 1..=SUBMISSION_ATTEMPTS {
                 let submission = async {
                     let announced = state
@@ -568,6 +637,13 @@ impl EngineProxyState {
                     Ok(()) => {
                         info!(block_hash = %payload_meta.block_hash, %proof_type, "proof submitted");
                         record("success");
+                        if !reused {
+                            record_proof_latency(
+                                proof_type,
+                                payload_meta.received_at.elapsed(),
+                                payload_meta.timestamp,
+                            );
+                        }
                         break;
                     }
                     Err(error) if attempt < SUBMISSION_ATTEMPTS => {
@@ -608,6 +684,24 @@ fn read_keypair(keystore_path: &Path, password_path: &Path) -> anyhow::Result<Ke
     keystore
         .decrypt_keypair(&password[..password_end])
         .map_err(|error| anyhow!("decrypt keystore: {error:?}"))
+}
+
+/// Returns the status of the EL answer to an `engine_newPayload`, `other` for an unknown status
+/// and `error` without a result.
+fn new_payload_status(body: &[u8]) -> &'static str {
+    match serde_json::from_slice::<JsonRpcResponse<NewPayloadWithWitnessResponse>>(body) {
+        Ok(JsonRpcResponse {
+            result: Some(result),
+            ..
+        }) => match result.status.as_str() {
+            "VALID" => "VALID",
+            "INVALID" => "INVALID",
+            "SYNCING" => "SYNCING",
+            "ACCEPTED" => "ACCEPTED",
+            _ => "other",
+        },
+        _ => "error",
+    }
 }
 
 /// Decodes the RLP-encoded engine witness into the `ExecutionWitness`.
@@ -667,7 +761,23 @@ fn ssz_bytes_list<const M: usize>(
 mod tests {
     use alloy_rlp::Header;
 
-    use crate::engine::decode_engine_witness;
+    use crate::engine::{decode_engine_witness, new_payload_status};
+
+    #[test]
+    fn test_new_payload_status_is_bounded() {
+        let answer = |result: &str| format!(r#"{{"jsonrpc":"2.0","id":1,"result":{result}}}"#);
+        for status in ["VALID", "INVALID", "SYNCING", "ACCEPTED"] {
+            let body = answer(&format!(
+                r#"{{"status":"{status}","latestValidHash":null}}"#
+            ));
+            assert_eq!(new_payload_status(body.as_bytes()), status);
+        }
+        let unknown = answer(r#"{"status":"INVALID_BLOCK_HASH"}"#);
+        assert_eq!(new_payload_status(unknown.as_bytes()), "other");
+        let error = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no method"}}"#;
+        assert_eq!(new_payload_status(error.as_bytes()), "error");
+        assert_eq!(new_payload_status(b"not json"), "error");
+    }
 
     /// Wraps already RLP-encoded items into an RLP list.
     fn rlp_list(items: &[Vec<u8>]) -> Vec<u8> {

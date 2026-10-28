@@ -22,6 +22,8 @@ pub(crate) struct NewPayloadRequestMeta {
     pub(crate) block_number: u64,
     /// Slot of the payload.
     pub(crate) slot: u64,
+    /// Unix timestamp of the payload, the start of its slot.
+    pub(crate) timestamp: u64,
     /// Gas used by the block, for mock proving-time simulation.
     pub(crate) gas_used: u64,
     /// When the payload arrived, the start of its proof latency.
@@ -39,6 +41,7 @@ impl NewPayloadRequestMeta {
                 .context("payload without parent beacon block root")?,
             block_number: payload.block_number(),
             slot: payload.slot().context("payload without slot")?,
+            timestamp: payload.timestamp(),
             gas_used: payload.gas_used(),
             received_at,
         })
