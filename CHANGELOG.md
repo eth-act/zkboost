@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.1](https://github.com/eth-act/zkboost/compare/v0.19.0...v0.19.1) (2026-10-28)
+
+
+### Features
+
+* bump ere to v0.19.6 to align version for CLs ([#93](https://github.com/eth-act/zkboost/issues/93)) ([3d75d54](https://github.com/eth-act/zkboost/commit/3d75d54997be3a34473473b58b17e4822b70085a))
+
+
+### Bug Fixes
+
+* better observability ([#95](https://github.com/eth-act/zkboost/issues/95)) ([f327127](https://github.com/eth-act/zkboost/commit/f32712797d657ab57ba19314f40632e8df17ca29))
+
 ## [0.19.0](https://github.com/eth-act/zkboost/compare/v0.12.0...v0.19.0) (2026-10-27)
 
 
