@@ -225,20 +225,31 @@ The zkboost dashboard is auto-provisioned and available at Grafana > Dashboards 
 
 ### Available Metrics
 
-| Metric                                   | Type      | Description                                     |
-| ---------------------------------------- | --------- | ----------------------------------------------- |
-| `zkboost_http_requests_total`            | Counter   | Total HTTP requests by endpoint, method, status |
-| `zkboost_http_request_duration_seconds`  | Histogram | Request latency by endpoint                     |
-| `zkboost_http_requests_in_flight`        | Gauge     | Currently processing requests                   |
-| `zkboost_witness_fetch_total`            | Counter   | Witness fetch round trips by status             |
-| `zkboost_witness_fetch_duration_seconds` | Histogram | Witness fetch round trip time                   |
-| `zkboost_witness_bytes`                  | Histogram | Witness sizes of valid payloads                 |
-| `zkboost_queue_wait_duration_seconds`    | Histogram | Time a proof request waits for a worker         |
-| `zkboost_prove_total`                    | Counter   | Prove operations by proof type and status       |
-| `zkboost_prove_duration_seconds`         | Histogram | Proof generation time                           |
-| `zkboost_prove_proof_bytes`              | Histogram | Generated proof sizes                           |
-| `zkboost_programs_loaded`                | Gauge     | Number of loaded zkVMs                          |
-| `zkboost_build_info`                     | Gauge     | Build version info                              |
+| Metric                                     | Type      | Description                                          |
+| ------------------------------------------ | --------- | ---------------------------------------------------- |
+| `zkboost_http_requests_total`              | Counter   | Engine API requests by JSON-RPC method, status       |
+| `zkboost_http_request_duration_seconds`    | Histogram | Engine API request latency by JSON-RPC method        |
+| `zkboost_http_requests_in_flight`          | Gauge     | Currently processing requests                        |
+| `zkboost_payload_arrival_delay_seconds`    | Histogram | Time from the slot start of a payload to its receipt |
+| `zkboost_latest_payload_timestamp_seconds` | Gauge     | Timestamp of the newest VALID payload                |
+| `zkboost_new_payload_total`                | Counter   | New payload requests by the status of the EL answer  |
+| `zkboost_witness_fetch_total`              | Counter   | Witness fetch round trips by status                  |
+| `zkboost_witness_fetch_duration_seconds`   | Histogram | Witness fetch round trip time                        |
+| `zkboost_witness_bytes`                    | Histogram | Witness sizes of valid payloads                      |
+| `zkboost_proof_dispatch_failures_total`    | Counter   | Proof requests that end before a worker, by reason   |
+| `zkboost_queue_depth`                      | Gauge     | Proof inputs waiting for a worker                    |
+| `zkboost_queue_wait_duration_seconds`      | Histogram | Time a proof request waits for a worker              |
+| `zkboost_prove_total`                      | Counter   | Prove operations by proof type and status            |
+| `zkboost_prove_duration_seconds`           | Histogram | Proof generation time                                |
+| `zkboost_prove_proof_bytes`                | Histogram | Generated proof sizes                                |
+| `zkboost_proof_reused_total`               | Counter   | Cached proofs submitted again                        |
+| `zkboost_submission_total`                 | Counter   | Proof submissions by proof type and status           |
+| `zkboost_submission_duration_seconds`      | Histogram | Proof submission time with the retries               |
+| `zkboost_proof_latency_seconds`            | Histogram | Time from the payload receipt to the accepted proof  |
+| `zkboost_proof_slot_latency_seconds`       | Histogram | Time from the slot start to the accepted proof       |
+| `zkboost_validator_ready`                  | Gauge     | 1 once the validator that proving needs is ready     |
+| `zkboost_programs_loaded`                  | Gauge     | Number of loaded zkVMs                               |
+| `zkboost_build_info`                       | Gauge     | Build version info                                   |
 
 ## Supported Backends
 

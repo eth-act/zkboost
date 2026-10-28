@@ -24,7 +24,7 @@ use crate::{
     dashboard::{DashboardService, DashboardState},
     engine::EngineProxyState,
     http::{AppState, router},
-    metrics::{set_build_info, set_programs_loaded},
+    metrics::{register_series, set_build_info, set_programs_loaded},
     proof::{worker, zkvm::zkVMInstance},
 };
 
@@ -61,6 +61,7 @@ impl zkBoostServer {
         }
         set_programs_loaded(zkvms.len());
         set_build_info(env!("CARGO_PKG_VERSION"));
+        register_series(zkvms.keys().copied());
 
         Ok(Self {
             zkvms: Arc::new(zkvms),

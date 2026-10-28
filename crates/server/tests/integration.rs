@@ -28,7 +28,8 @@ use lighthouse_eth2_keystore::Keystore;
 use lighthouse_types::{
     BlobParameters, BlobSchedule, ChainSpec, Config as SpecConfig, Epoch, MainnetEthSpec,
 };
-use metrics_exporter_prometheus::PrometheusBuilder;
+use metrics::{LocalRecorderGuard, set_default_local_recorder};
+use metrics_exporter_prometheus::PrometheusRecorder;
 use serde_json::{Value, json};
 use tokio::{
     net::TcpListener,
@@ -39,6 +40,7 @@ use tracing_subscriber::EnvFilter;
 use url::Url;
 use zkboost_server::{
     config::{Config, DashboardConfig, MockProvingTime, zkVMConfig},
+    metrics::prometheus_builder,
     server::zkBoostServer,
 };
 use zkboost_types::{
@@ -147,7 +149,11 @@ async fn mock_el_handler(
     State(state): State<Arc<MockElState>>,
     headers: HeaderMap,
     Json(request): Json<Value>,
-) -> Json<Value> {
+) -> Result<Json<Value>, StatusCode> {
+    // Like an EL, a call without a JWT is rejected before it is processed.
+    if headers.get(AUTHORIZATION).is_none() {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
     let method = request["method"].as_str().unwrap_or_default().to_owned();
     state.calls.lock().unwrap().push(ElCall {
         method: method.clone(),
@@ -157,11 +163,11 @@ async fn mock_el_handler(
     });
 
     if method == NewPayloadParams::WITH_WITNESS_METHOD && !state.witness_supported {
-        return Json(json!({
+        return Ok(Json(json!({
             "jsonrpc": "2.0",
             "error": { "code": -32601, "message": "Method not found" },
             "id": request["id"],
-        }));
+        })));
     }
     let result = match method.as_str() {
         method if method == NewPayloadParams::WITH_WITNESS_METHOD => {
@@ -194,7 +200,9 @@ async fn mock_el_handler(
         _ => Value::Null,
     };
 
-    Json(json!({ "jsonrpc": "2.0", "result": result, "id": request["id"] }))
+    Ok(Json(
+        json!({ "jsonrpc": "2.0", "result": result, "id": request["id"] }),
+    ))
 }
 
 async fn start_mock_el(
@@ -445,6 +453,9 @@ struct TestHarness {
     jwt_secret: JwtSecret,
     proof_types: Vec<ProofType>,
     shutdown: tokio_util::sync::CancellationToken,
+    /// Makes the recorder that `/metrics` renders the default of the test thread, where every
+    /// task of the current-thread runtime records.
+    _metrics_recorder: LocalRecorderGuard<'static>,
 }
 
 impl TestHarness {
@@ -500,7 +511,10 @@ impl TestHarness {
                 })
                 .collect(),
         };
-        let metrics = PrometheusBuilder::new().build_recorder().handle();
+        let recorder: &'static PrometheusRecorder =
+            Box::leak(Box::new(prometheus_builder().build_recorder()));
+        let metrics_recorder = set_default_local_recorder(recorder);
+        let metrics = recorder.handle();
         let shutdown = tokio_util::sync::CancellationToken::new();
         let server = zkBoostServer::new(config, metrics).await.unwrap();
         let (addr, _) = server.run(shutdown.clone()).await.unwrap();
@@ -520,7 +534,28 @@ impl TestHarness {
             jwt_secret: JwtSecret::random(),
             proof_types,
             shutdown,
+            _metrics_recorder: metrics_recorder,
         }
+    }
+
+    /// Returns the value of the series `series` that `/metrics` of zkboost renders, if any.
+    async fn find_metric(&self, series: &str) -> Option<f64> {
+        let text = reqwest::get(self.zkboost_endpoint.join("metrics").unwrap())
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        text.lines()
+            .find_map(|line| line.strip_prefix(series)?.strip_prefix(' '))
+            .map(|value| value.parse().unwrap())
+    }
+
+    /// Returns the value of the series `series` that `/metrics` of zkboost renders.
+    async fn metric(&self, series: &str) -> f64 {
+        self.find_metric(series)
+            .await
+            .unwrap_or_else(|| panic!("no {series} in /metrics"))
     }
 
     /// Sends a JSON-RPC request to zkboost with a JWT and returns the response body.
@@ -647,11 +682,73 @@ async fn test_new_payload_proof_submitted() {
 
         harness.assert_proofs_submitted().await;
 
+        assert_eq!(harness.metric("zkboost_validator_ready").await, 1.0);
+        assert_eq!(
+            harness
+                .metric(r#"zkboost_http_requests_total{endpoint="engine_newPayloadV5",method="POST",status="200"}"#)
+                .await,
+            1.0
+        );
+        assert_eq!(
+            harness
+                .metric(r#"zkboost_new_payload_total{status="VALID"}"#)
+                .await,
+            1.0
+        );
+        assert_eq!(
+            harness
+                .metric("zkboost_payload_arrival_delay_seconds_count")
+                .await,
+            1.0
+        );
+        assert_eq!(
+            harness
+                .metric("zkboost_latest_payload_timestamp_seconds")
+                .await,
+            harness.fixture.params.timestamp() as f64
+        );
+        for proof_type in harness.proof_types.clone() {
+            let label = format!(r#"{{proof_type="{proof_type}"}}"#);
+            assert_eq!(
+                harness.metric(&format!("zkboost_queue_depth{label}")).await,
+                0.0
+            );
+            assert_eq!(
+                harness
+                    .metric(&format!("zkboost_proof_slot_latency_seconds_count{label}"))
+                    .await,
+                1.0
+            );
+            let failure = format!(r#"{{proof_type="{proof_type}",reason="channel_full"}}"#);
+            assert_eq!(
+                harness
+                    .metric(&format!("zkboost_proof_dispatch_failures_total{failure}"))
+                    .await,
+                0.0
+            );
+        }
+
         // The same payload sent again is submitted from the cache, faster than a new proof.
         let resubmitted = Instant::now();
         harness.new_payload().await;
         harness.assert_proofs_submitted().await;
         assert!(resubmitted.elapsed() < Duration::from_millis(3000));
+        // A reused proof is no second accepted proof of the payload.
+        for proof_type in harness.proof_types.clone() {
+            let label = format!(r#"{{proof_type="{proof_type}"}}"#);
+            assert_eq!(
+                harness
+                    .metric(&format!("zkboost_proof_reused_total{label}"))
+                    .await,
+                1.0
+            );
+            assert_eq!(
+                harness
+                    .metric(&format!("zkboost_proof_slot_latency_seconds_count{label}"))
+                    .await,
+                1.0
+            );
+        }
     }
 }
 
@@ -669,6 +766,29 @@ async fn test_other_methods_forwarded() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].method, "engine_forkchoiceUpdatedV4");
     assert!(calls[0].authorization.is_some());
+
+    // A call without the JWT, which the EL rejects, adds no series.
+    let rejected = reqwest::Client::new()
+        .post(harness.zkboost_endpoint.clone())
+        .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": "engine_madeUpV1", "params": [] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+    let series = |endpoint: &str, status: u16| {
+        format!(
+            r#"zkboost_http_requests_total{{endpoint="{endpoint}",method="POST",status="{status}"}}"#
+        )
+    };
+    assert_eq!(
+        harness
+            .metric(&series("engine_forkchoiceUpdatedV4", 200))
+            .await,
+        1.0
+    );
+    for endpoint in ["engine_madeUpV1", "/"] {
+        assert!(harness.find_metric(&series(endpoint, 401)).await.is_none());
+    }
 }
 
 /// An EL without the witness method answers the plain method, and nothing is proven.
@@ -697,6 +817,18 @@ async fn test_witness_method_unsupported_forwarded() {
     );
 
     harness.assert_no_proof_submitted().await;
+
+    // A method that the EL answers with a JSON-RPC error keeps its label, so the failing method
+    // shows on the dashboard.
+    let response = harness
+        .engine_call(NewPayloadParams::WITH_WITNESS_METHOD, json!([]))
+        .await;
+    assert_eq!(response["error"]["code"], -32601);
+    let series = format!(
+        r#"zkboost_http_requests_total{{endpoint="{}",method="POST",status="200"}}"#,
+        NewPayloadParams::WITH_WITNESS_METHOD
+    );
+    assert_eq!(harness.metric(&series).await, 1.0);
 }
 
 #[tokio::test]
@@ -712,6 +844,58 @@ async fn test_invalid_payload_not_proven() {
     assert!(response["result"].get("witness").is_none());
 
     harness.assert_no_proof_submitted().await;
+    assert_eq!(
+        harness
+            .metric(r#"zkboost_witness_fetch_total{status="not_valid"}"#)
+            .await,
+        1.0
+    );
+    assert_eq!(
+        harness
+            .metric("zkboost_payload_arrival_delay_seconds_count")
+            .await,
+        1.0
+    );
+    // Only the timestamp of a VALID payload has been checked by the EL.
+    assert!(
+        harness
+            .find_metric("zkboost_latest_payload_timestamp_seconds")
+            .await
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn test_payload_imported_again_while_proving() {
+    let mut harness = TestHarness::new(Behavior::default()).await;
+
+    harness.new_payload().await;
+    // Every worker has dequeued its input, so the 3 s mock proofs are in progress.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        for proof_type in harness.proof_types.clone() {
+            let series = format!(
+                r#"zkboost_queue_wait_duration_seconds_count{{proof_type="{proof_type}"}}"#
+            );
+            while harness.metric(&series).await == 0.0 {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+    })
+    .await
+    .expect("proofs in progress");
+
+    // The EL answers the payload again without a witness, which the proofs in progress need not.
+    harness.new_payload().await;
+    harness.assert_proofs_submitted().await;
+    for proof_type in harness.proof_types.clone() {
+        let failure = format!(r#"{{proof_type="{proof_type}",reason="missing_witness"}}"#);
+        assert_eq!(
+            harness
+                .metric(&format!("zkboost_proof_dispatch_failures_total{failure}"))
+                .await,
+            0.0
+        );
+    }
 }
 
 #[tokio::test]
@@ -724,6 +908,19 @@ async fn test_proof_failure_not_submitted() {
 
     harness.new_payload().await;
     harness.assert_no_proof_submitted().await;
+    // The histograms of a proof start at 0, where a failed proof leaves them.
+    for proof_type in harness.proof_types.clone() {
+        for histogram in [
+            "zkboost_prove_duration_seconds",
+            "zkboost_prove_proof_bytes",
+            "zkboost_submission_duration_seconds",
+            "zkboost_proof_latency_seconds",
+            "zkboost_proof_slot_latency_seconds",
+        ] {
+            let series = format!(r#"{histogram}_count{{proof_type="{proof_type}"}}"#);
+            assert_eq!(harness.metric(&series).await, 0.0);
+        }
+    }
 }
 
 #[tokio::test]
@@ -849,6 +1046,15 @@ async fn test_payload_forwarded_without_zkvm() {
         ..Default::default()
     })
     .await;
+
+    // The histograms without labels start at 0, also without a zkVM.
+    for histogram in [
+        "zkboost_payload_arrival_delay_seconds",
+        "zkboost_witness_fetch_duration_seconds",
+        "zkboost_witness_bytes",
+    ] {
+        assert_eq!(harness.metric(&format!("{histogram}_count")).await, 0.0);
+    }
 
     let response = harness.new_payload().await;
     assert_eq!(response["result"]["status"], "VALID");

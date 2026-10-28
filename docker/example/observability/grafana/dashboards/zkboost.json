@@ -46,7 +46,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 0,
         "y": 1
       },
@@ -73,7 +73,7 @@
           "refId": "A"
         }
       ],
-      "title": "Programs Loaded",
+      "title": "Prover",
       "type": "stat"
     },
     {
@@ -86,29 +86,46 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "No"
+                },
+                "1": {
+                  "text": "Yes"
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
               }
             ]
-          }
+          },
+          "unit": "none"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 4,
+        "x": 3,
         "y": 1
       },
-      "id": 2,
+      "id": 40,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -123,69 +140,21 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(zkboost_http_requests_in_flight{service=~\"$service\"})",
-          "legendFormat": "In Flight",
-          "refId": "A"
-        }
-      ],
-      "title": "Requests In Flight",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "reqps"
+          "expr": "up{service=~\"$service\"}",
+          "legendFormat": "Up",
+          "refId": "A",
+          "instant": true
         },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
         {
-          "expr": "sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval]))",
-          "legendFormat": "RPS",
-          "refId": "A"
+          "expr": "zkboost_validator_ready{service=~\"$service\"}",
+          "legendFormat": "Validator",
+          "refId": "B",
+          "instant": true
         }
       ],
-      "title": "Request Rate",
-      "type": "stat"
+      "title": "Ready",
+      "type": "stat",
+      "description": "Up means Prometheus reaches zkboost. Validator means zkboost is ready to prove and sign."
     },
     {
       "datasource": {
@@ -207,25 +176,25 @@
               },
               {
                 "color": "yellow",
-                "value": 0.01
+                "value": 36
               },
               {
                 "color": "red",
-                "value": 0.05
+                "value": 60
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "s"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
+        "w": 7,
+        "x": 7,
         "y": 1
       },
-      "id": 4,
+      "id": 41,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -243,13 +212,79 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "(sum(rate(zkboost_http_requests_total{service=~\"$service\",status=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval]))",
-          "legendFormat": "Error Rate",
+          "expr": "time() - (zkboost_latest_payload_timestamp_seconds{service=~\"$service\"} > 0)",
+          "legendFormat": "Age",
           "refId": "A"
         }
       ],
-      "title": "Error Rate (5xx)",
-      "type": "stat"
+      "title": "Payload Age",
+      "type": "stat",
+      "description": "Time since the slot start of the newest valid payload. It grows when the CL stops sending payloads."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 7,
+        "x": 14,
+        "y": 1
+      },
+      "id": 42,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "zkboost_queue_depth{service=~\"$service\", proof_type=~\"$proof_type\"}",
+          "legendFormat": "{{proof_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Queue Depth",
+      "type": "stat",
+      "description": "Proofs waiting for a prover, per proof type."
     },
     {
       "datasource": {
@@ -276,8 +311,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
+        "w": 3,
+        "x": 21,
         "y": 1
       },
       "id": 5,
@@ -318,7 +353,7 @@
       },
       "id": 101,
       "panels": [],
-      "title": "HTTP Metrics",
+      "title": "Engine API",
       "type": "row"
     },
     {
@@ -379,7 +414,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 6
       },
@@ -407,7 +442,7 @@
           "refId": "A"
         }
       ],
-      "title": "Request Rate by Endpoint",
+      "title": "Request Rate by Method",
       "type": "timeseries"
     },
     {
@@ -468,8 +503,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 6
       },
       "id": 7,
@@ -506,7 +541,7 @@
           "refId": "C"
         }
       ],
-      "title": "Request Latency by Endpoint",
+      "title": "Request Latency by Method",
       "type": "timeseries"
     },
     {
@@ -567,9 +602,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 14
+        "w": 8,
+        "x": 16,
+        "y": 6
       },
       "id": 8,
       "options": {
@@ -590,13 +625,170 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval])) by (status)",
-          "legendFormat": "{{status}}",
+          "expr": "sum(rate(zkboost_http_requests_total{service=~\"$service\"}[$__rate_interval])) by (endpoint, status)",
+          "legendFormat": "{{endpoint}} {{status}}",
           "refId": "A"
         }
       ],
       "title": "Request Rate by Status Code",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 108,
+      "panels": [],
+      "title": "Payload Arrival",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "log",
+              "log": 2
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 0.5
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "late payloads per minute"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 60
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.scaleDistribution",
+                "value": {
+                  "type": "linear"
+                }
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 15
+      },
+      "id": 45,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "B"
+        },
+        {
+          "expr": "60 * (sum(rate(zkboost_payload_arrival_delay_seconds_count{service=~\"$service\"}[$__rate_interval])) - sum(rate(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\", le=\"12.0\"}[$__rate_interval])))",
+          "legendFormat": "late payloads per minute",
+          "refId": "C"
+        }
+      ],
+      "title": "Payload Arrival Delay",
+      "type": "timeseries",
+      "description": "Time from the slot start until zkboost receives the payload. Bars count the payloads later than 12 s."
     },
     {
       "datasource": {
@@ -650,17 +842,48 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "reqps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "VALID"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "INVALID|error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 14
+        "w": 8,
+        "x": 16,
+        "y": 15
       },
-      "id": 9,
+      "id": 46,
       "options": {
         "legend": {
           "calcs": [
@@ -679,13 +902,14 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(zkboost_http_requests_in_flight{service=~\"$service\"}) by (endpoint)",
-          "legendFormat": "{{endpoint}}",
+          "expr": "sum by (status) (rate(zkboost_new_payload_total{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{status}}",
           "refId": "A"
         }
       ],
-      "title": "Requests In Flight",
-      "type": "timeseries"
+      "title": "EL Payload Status",
+      "type": "timeseries",
+      "description": "EL answers to new payloads. Only VALID payloads are proven."
     },
     {
       "collapsed": false,
@@ -693,11 +917,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 23
       },
       "id": 105,
       "panels": [],
-      "title": "Witness Fetch",
+      "title": "engine_newPayloadWithWitnessV5",
       "type": "row"
     },
     {
@@ -760,7 +984,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 23
+        "y": 24
       },
       "id": 30,
       "options": {
@@ -786,7 +1010,7 @@
           "refId": "A"
         }
       ],
-      "title": "Witness Fetch Rate",
+      "title": "Request Rate by Result",
       "type": "timeseries"
     },
     {
@@ -849,7 +1073,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 23
+        "y": 24
       },
       "id": 31,
       "options": {
@@ -875,8 +1099,9 @@
           "refId": "A"
         }
       ],
-      "title": "Witness Fetch Duration",
-      "type": "timeseries"
+      "title": "Request Duration",
+      "type": "timeseries",
+      "description": "Mean round trip of the calls that returned a witness."
     },
     {
       "datasource": {
@@ -938,7 +1163,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 23
+        "y": 24
       },
       "id": 32,
       "options": {
@@ -973,7 +1198,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 32
       },
       "id": 102,
       "panels": [],
@@ -1032,6 +1257,100 @@
               }
             ]
           },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(rate(zkboost_queue_wait_duration_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_queue_wait_duration_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type)",
+          "legendFormat": "{{proof_type}} avg",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, proof_type) (rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
+          "legendFormat": "{{proof_type}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Queue Wait",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
           "unit": "ops"
         },
         "overrides": []
@@ -1040,7 +1359,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 32
+        "y": 41
       },
       "id": 10,
       "options": {
@@ -1061,9 +1380,14 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_prove_total{service=~\"$service\"}[$__rate_interval])) by (proof_type, status)",
+          "expr": "sum(rate(zkboost_prove_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type, status)",
           "legendFormat": "{{proof_type}} ({{status}})",
           "refId": "A"
+        },
+        {
+          "expr": "sum by (proof_type, reason) (rate(zkboost_proof_dispatch_failures_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) > 0",
+          "legendFormat": "{{proof_type}} dispatch failed ({{reason}})",
+          "refId": "B"
         }
       ],
       "title": "Prove Operations Rate",
@@ -1121,7 +1445,7 @@
               },
               {
                 "color": "red",
-                "value": 9
+                "value": 12
               }
             ]
           },
@@ -1133,7 +1457,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 32
+        "y": 41
       },
       "id": 11,
       "options": {
@@ -1154,23 +1478,24 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p99",
           "refId": "C"
         }
       ],
       "title": "Prove Duration",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Prove duration percentiles of successful proofs. Failed and timed-out attempts are not included. The red line is one slot (12 s)."
     },
     {
       "datasource": {
@@ -1232,7 +1557,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 32
+        "y": 41
       },
       "id": 12,
       "options": {
@@ -1253,7 +1578,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_prove_proof_bytes_sum{service=~\"$service\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_prove_proof_bytes_count{service=~\"$service\"}[$__rate_interval])) by (proof_type)",
+          "expr": "sum(rate(zkboost_prove_proof_bytes_sum{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_prove_proof_bytes_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type)",
           "legendFormat": "{{proof_type}} avg",
           "refId": "A"
         }
@@ -1309,13 +1634,46 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byType",
+              "options": "string"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "+Inf": {
+                        "index": 0,
+                        "text": "> 12s"
+                      }
+                    }
+                  },
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": "(.+)",
+                      "result": {
+                        "index": 1,
+                        "text": "$1s"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 49
       },
       "id": 27,
       "options": {
@@ -1347,243 +1705,215 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"0.5\"}[$__range]))",
-          "format": "table",
+          "expr": "sum by (le, proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__range]))",
+          "format": "heatmap",
           "instant": true,
+          "legendFormat": "{{le}}",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"0.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"1.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "D"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "E"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"2.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "F"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "G"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"3.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "H"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "I"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"4.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "J"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "K"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"5.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "L"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "M"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"6.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "N"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "O"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"7.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "P"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "Q"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"8.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "R"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "S"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"9.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "T"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "U"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"10.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "V"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.5\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.0\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "W"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"12.0\"}[$__range])) - sum by (proof_type) (increase(zkboost_prove_duration_seconds_bucket{service=~\"$service\",le=\"11.5\"}[$__range]))",
-          "format": "table",
-          "instant": true,
-          "refId": "X"
         }
       ],
       "title": "Prove Duration Distribution",
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "lastNotNull"
+            ],
+            "includeTimeField": false,
+            "labelsToFields": true
+          }
+        },
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "proof_type",
+            "rowField": "Field",
+            "valueField": "Last *"
+          }
+        }
+      ],
+      "type": "barchart",
+      "description": "Successful proofs per prove duration bucket in the selected time range."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Proof results per proof type in the selected time range. On time means accepted within 12 s of the slot start.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "noValue": "N/A",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "On time %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 95
+                    },
+                    {
+                      "color": "green",
+                      "value": 99
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Late|.* failed"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 43,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum by (proof_type) (increase(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__range]))",
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "legendFormat": ""
+        },
+        {
+          "expr": "100 * sum by (proof_type) (increase(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"}[$__range])) / (sum by (proof_type) (increase(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__range])) > 0)",
+          "refId": "B",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "legendFormat": ""
+        },
+        {
+          "expr": "sum by (proof_type) (increase(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__range])) - sum by (proof_type) (increase(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"}[$__range]))",
+          "refId": "C",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "legendFormat": ""
+        },
+        {
+          "expr": "sum by (proof_type) (increase(zkboost_proof_dispatch_failures_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__range]))",
+          "refId": "D",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "legendFormat": ""
+        },
+        {
+          "expr": "sum by (proof_type) (increase(zkboost_prove_total{service=~\"$service\", proof_type=~\"$proof_type\", status=~\"error|timeout\"}[$__range]))",
+          "refId": "E",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "legendFormat": ""
+        },
+        {
+          "expr": "sum by (proof_type) (increase(zkboost_submission_total{service=~\"$service\", proof_type=~\"$proof_type\", status=\"error\"}[$__range]))",
+          "refId": "F",
+          "instant": true,
+          "range": false,
+          "format": "table",
+          "legendFormat": ""
+        }
+      ],
+      "title": "Proof Outcomes",
       "transformations": [
         {
           "id": "merge",
@@ -1593,75 +1923,30 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "instance": true,
-              "job": true,
-              "le": true,
-              "status": true
+              "Time": true
             },
             "indexByName": {
+              "proof_type": 0,
               "Value #A": 1,
               "Value #B": 2,
               "Value #C": 3,
               "Value #D": 4,
               "Value #E": 5,
-              "Value #F": 6,
-              "Value #G": 7,
-              "Value #H": 8,
-              "Value #I": 9,
-              "Value #J": 10,
-              "Value #K": 11,
-              "Value #L": 12,
-              "Value #M": 13,
-              "Value #N": 14,
-              "Value #O": 15,
-              "Value #P": 16,
-              "Value #Q": 17,
-              "Value #R": 18,
-              "Value #S": 19,
-              "Value #T": 20,
-              "Value #U": 21,
-              "Value #V": 22,
-              "Value #W": 23,
-              "Value #X": 24,
-              "proof_type": 0
+              "Value #F": 6
             },
             "renameByName": {
-              "Value #A": "0.5s",
-              "Value #B": "1.0s",
-              "Value #C": "1.5s",
-              "Value #D": "2.0s",
-              "Value #E": "2.5s",
-              "Value #F": "3.0s",
-              "Value #G": "3.5s",
-              "Value #H": "4.0s",
-              "Value #I": "4.5s",
-              "Value #J": "5.0s",
-              "Value #K": "5.5s",
-              "Value #L": "6.0s",
-              "Value #M": "6.5s",
-              "Value #N": "7.0s",
-              "Value #O": "7.5s",
-              "Value #P": "8.0s",
-              "Value #Q": "8.5s",
-              "Value #R": "9.0s",
-              "Value #S": "9.5s",
-              "Value #T": "10.0s",
-              "Value #U": "10.5s",
-              "Value #V": "11.0s",
-              "Value #W": "11.5s",
-              "Value #X": "12.0s",
-              "proof_type": "Proof Type"
+              "proof_type": "Proof type",
+              "Value #A": "Accepted",
+              "Value #B": "On time %",
+              "Value #C": "Late",
+              "Value #D": "Dispatch failed",
+              "Value #E": "Prove failed",
+              "Value #F": "Submission failed"
             }
           }
-        },
-        {
-          "id": "transpose",
-          "options": {}
         }
       ],
-      "type": "barchart"
+      "type": "table"
     },
     {
       "datasource": {
@@ -1693,7 +1978,8 @@
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
-              "type": "linear"
+              "type": "log",
+              "log": 2
             },
             "showPoints": "never",
             "spanNulls": false,
@@ -1702,16 +1988,21 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
-            }
+              "mode": "area"
+            },
+            "axisSoftMin": 0.5
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "transparent",
                 "value": null
+              },
+              {
+                "color": "red",
+                "value": 12
               }
             ]
           },
@@ -1720,12 +2011,12 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 63
       },
-      "id": 33,
+      "id": 37,
       "options": {
         "legend": {
           "calcs": [
@@ -1744,13 +2035,211 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_queue_wait_duration_seconds_sum{service=~\"$service\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_queue_wait_duration_seconds_count{service=~\"$service\"}[$__rate_interval])) by (proof_type)",
-          "legendFormat": "{{proof_type}} avg",
+          "expr": "histogram_quantile(0.99, sum by (le, proof_type) (rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
+          "legendFormat": "{{proof_type}} slot to accepted p99",
           "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, proof_type) (rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
+          "legendFormat": "{{proof_type}} receipt to accepted p99",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
+          "legendFormat": "CL arrival p99",
+          "refId": "C"
         }
       ],
-      "title": "Queue Wait",
-      "type": "timeseries"
+      "title": "Proof Latency",
+      "type": "timeseries",
+      "description": "p99 time until a proof is accepted, from the slot start and from the payload receipt. CL arrival is the payload delay before zkboost. Red is later than one slot (12 s)."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "proofs per minute",
+            "axisPlacement": "auto",
+            "axisSoftMax": 1,
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "within 12 s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "12 to 36 s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "36 s to 2 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "2 to 10 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "over 10 min"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "dark-red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 72
+      },
+      "id": 44,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"}[$__rate_interval])))",
+          "legendFormat": "within 12 s",
+          "refId": "A"
+        },
+        {
+          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"}[$__rate_interval])))",
+          "legendFormat": "12 to 36 s",
+          "refId": "B"
+        },
+        {
+          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"}[$__rate_interval])))",
+          "legendFormat": "36 s to 2 min",
+          "refId": "C"
+        },
+        {
+          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"}[$__rate_interval])))",
+          "legendFormat": "2 to 10 min",
+          "refId": "D"
+        },
+        {
+          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"}[$__rate_interval])))",
+          "legendFormat": "over 10 min",
+          "refId": "E"
+        }
+      ],
+      "title": "Proof Lateness ($proof_type)",
+      "type": "timeseries",
+      "description": "Accepted proofs per minute, grouped by the time from the slot start to acceptance.",
+      "repeat": "proof_type",
+      "repeatDirection": "h",
+      "maxPerRow": 2
     },
     {
       "collapsed": false,
@@ -1758,7 +2247,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 80
       },
       "id": 106,
       "panels": [],
@@ -1825,7 +2314,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 81
       },
       "id": 34,
       "options": {
@@ -1846,7 +2335,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_submission_total{service=~\"$service\"}[$__rate_interval])) by (proof_type, status)",
+          "expr": "sum(rate(zkboost_submission_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type, status)",
           "legendFormat": "{{proof_type}} ({{status}})",
           "refId": "A"
         }
@@ -1914,13 +2403,14 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 81
       },
       "id": 35,
       "options": {
         "legend": {
           "calcs": [
-            "sum"
+            "mean",
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -1934,7 +2424,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_proof_reused_total{service=~\"$service\"}[$__rate_interval])) by (proof_type)",
+          "expr": "sum(rate(zkboost_proof_reused_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type)",
           "legendFormat": "{{proof_type}}",
           "refId": "A"
         }
@@ -2000,9 +2490,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 65
+        "y": 89
       },
       "id": 36,
       "options": {
@@ -2023,126 +2513,24 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.50, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.95, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
+          "expr": "histogram_quantile(0.99, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p99",
           "refId": "C"
         }
       ],
       "title": "Submission Duration",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 12
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 65
-      },
-      "id": 37,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p99",
-          "refId": "C"
-        }
-      ],
-      "title": "Proof Latency",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Time to submit an accepted proof, with retries. Failed submissions are not included."
     },
     {
       "collapsed": false,
@@ -2150,7 +2538,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 97
       },
       "id": 103,
       "panels": [],
@@ -2309,7 +2697,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 74
+        "y": 98
       },
       "id": 25,
       "options": {
@@ -2474,7 +2862,7 @@
         "h": 16,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 106
       },
       "id": 23,
       "options": {
@@ -2545,6 +2933,29 @@
         "query": {
           "qryType": 1,
           "query": "label_values(zkboost_build_info, service)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(zkboost_queue_depth{service=~\"$service\"}, proof_type)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "proof_type",
+        "label": "Proof type",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(zkboost_queue_depth{service=~\"$service\"}, proof_type)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 2,

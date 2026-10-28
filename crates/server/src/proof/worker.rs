@@ -78,6 +78,7 @@ pub(crate) async fn run_worker(
 
         let queue_wait = input.queued_at.elapsed();
         metrics::record_queue_wait(proof_type, queue_wait);
+        metrics::add_queue_depth(proof_type, -1.0);
 
         info!(block_hash = %payload_meta.block_hash, %proof_type, "proving");
 
