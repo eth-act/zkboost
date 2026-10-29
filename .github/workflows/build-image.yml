@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - 'release/**'
   pull_request:
 
 jobs:
@@ -35,7 +36,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/zkboost
           tags: |
-            type=sha,prefix=,format=short,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'pull_request' }}
+            type=sha,prefix=,format=short
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -101,10 +102,16 @@ jobs:
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-amd64 \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}-arm64
 
-      - name: Tag semver and latest
+      - name: Tag semver
         if: needs.check-git-tag.outputs.exists == 'true'
         run: |
           docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}/zkboost:${{ needs.check-git-tag.outputs.semver }} \
+            ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}
+
+      - name: Tag latest
+        if: needs.check-git-tag.outputs.exists == 'true' && github.ref == 'refs/heads/master'
+        run: |
+          docker buildx imagetools create \
             -t ghcr.io/${{ github.repository }}/zkboost:latest \
             ghcr.io/${{ github.repository }}/zkboost:${{ needs.build-images.outputs.version }}
