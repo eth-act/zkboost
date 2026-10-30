@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/eth-act/zkboost/compare/v0.19.1...v0.19.2) (2026-10-30)
+
+
+### Bug Fixes
+
+* refactor a bit and improve dashboard ([#97](https://github.com/eth-act/zkboost/issues/97)) ([1a08415](https://github.com/eth-act/zkboost/commit/1a08415a38abb1c3a17655c19c15275748bc1bf8))
+
 ## [0.19.1](https://github.com/eth-act/zkboost/compare/v0.19.0...v0.19.1) (2026-10-28)
 
 
