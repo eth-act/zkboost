@@ -4,7 +4,7 @@
 #![warn(unused_crate_dependencies)]
 
 pub use execution_proof::*;
-pub use new_payload::{NewPayloadParams, NewPayloadRequestExt};
+pub use new_payload::{NewPayloadRequestExt, NewPayloadVersion};
 pub use proof_type::*;
 pub use stateless_validator_common::{
     HashTreeRoot, ProgressiveList, Sha2Hasher, SszDecode, SszEncode, SszList, SszVector,

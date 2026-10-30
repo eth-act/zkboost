@@ -25,7 +25,7 @@ use ere_verifier::Verifier;
 use lighthouse_bls::Signature;
 use lighthouse_types::{BeaconBlockRef, ChainSpec, EthSpec, Hash256, MainnetEthSpec, Slot};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, value::RawValue};
 use tokio::{
     net::TcpListener,
     sync::{OnceCell, mpsc},
@@ -34,8 +34,8 @@ use tokio::{
 use tracing::{info, warn};
 use url::Url;
 use zkboost_types::{
-    HashTreeRoot, MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, MockProof, NewPayloadParams,
-    NewPayloadRequest, NewPayloadRequestExt, ProofType, ProtocolFork, Sha2Hasher,
+    HashTreeRoot, MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, MockProof, NewPayloadRequest,
+    NewPayloadRequestExt, NewPayloadVersion, ProofType, ProtocolFork, Sha2Hasher,
     SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode, SszEncode,
     StatelessValidationResult, execution_proof_domain,
 };
@@ -81,11 +81,11 @@ pub(crate) struct MockBeaconNode {
     pending: Mutex<HashMap<Hash256, PendingPayload>>,
 }
 
-/// JSON-RPC request envelope, decoded to find `engine_newPayloadV5`.
+/// JSON-RPC request envelope, decoded to find an `engine_newPayload` of a proven version.
 #[derive(Deserialize)]
 struct JsonRpcRequest {
     method: String,
-    params: Value,
+    params: Box<RawValue>,
 }
 
 /// JSON-RPC response envelope of `engine_newPayloadV5`. Every other field is ignored.
@@ -179,31 +179,36 @@ impl MockBeaconNode {
             .copied()
     }
 
-    /// Awaits the proofs of the payload of an `engine_newPayloadV5` request that zkboost
-    /// answered with `VALID`. Every other request needs nothing.
-    async fn new_payload(self: &Arc<Self>, request: &[u8], response: &[u8]) -> anyhow::Result<()> {
+    /// Awaits the proofs of the payload of an `engine_newPayload` request of a proven version that
+    /// zkboost answered with `VALID`. Every other request needs nothing.
+    async fn track_valid_payload(
+        self: &Arc<Self>,
+        request: &[u8],
+        response: &[u8],
+    ) -> anyhow::Result<()> {
         let Ok(request) = serde_json::from_slice::<JsonRpcRequest>(request) else {
             return Ok(());
         };
-        let Some(params) = NewPayloadParams::decode(&request.method, request.params) else {
+        let Some(version) = NewPayloadVersion::from_method(&request.method) else {
             return Ok(());
         };
-        let params = params.context("decode new payload params")?;
+        let request = version
+            .decode_params(request.params.get())
+            .context("decode new payload params")?;
         let response: NewPayloadResponse =
             serde_json::from_slice(response).context("decode new payload response")?;
         let status = response.result.map(|result| result.status);
         if status.as_deref() != Some("VALID") {
-            info!(block_hash = %params.block_hash(), ?status, "payload not valid");
+            info!(block_hash = %request.block_hash(), ?status, "payload not valid");
             return Ok(());
         }
-        self.await_proofs(params).await
+        self.await_proofs(request).await
     }
 
     /// Registers a valid payload and collects its verified proofs in the background until
     /// `PROOF_TIMEOUT`. A payload that is already registered keeps its registration.
-    async fn await_proofs(self: &Arc<Self>, params: NewPayloadParams) -> anyhow::Result<()> {
-        let block_hash = Hash256::from(params.block_hash().0);
-        let request = NewPayloadRequest::try_from(params).context("decode payload")?;
+    async fn await_proofs(self: &Arc<Self>, request: NewPayloadRequest) -> anyhow::Result<()> {
+        let block_hash = Hash256::from(request.block_hash().0);
         let slot = Slot::new(request.slot().context("payload without slot")?);
         let public_values = StatelessValidationResult {
             new_payload_request_root: request.hash_tree_root(&Sha2Hasher),
@@ -341,7 +346,7 @@ async fn forward_engine_api_request(
             return StatusCode::BAD_GATEWAY.into_response();
         }
     };
-    if let Err(error) = mock_beacon_node.new_payload(&body, &response).await {
+    if let Err(error) = mock_beacon_node.track_valid_payload(&body, &response).await {
         warn!(error = %format!("{error:#}"), "new payload not awaited");
     }
     (status, [(CONTENT_TYPE, "application/json")], response).into_response()

@@ -37,6 +37,7 @@ const PROOF_DISPATCH_FAILURES_TOTAL: &str = "zkboost_proof_dispatch_failures_tot
 const QUEUE_DEPTH: &str = "zkboost_queue_depth";
 const PROOF_SLOT_LATENCY_SECONDS: &str = "zkboost_proof_slot_latency_seconds";
 const VALIDATOR_READY: &str = "zkboost_validator_ready";
+const PROOF_STEP_SECONDS: &str = "zkboost_proof_step_seconds";
 
 const DEFAULT_BUCKETS: &[f64] = &[
     0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
@@ -52,13 +53,17 @@ const QUEUE_WAIT_BUCKETS: &[f64] = &[
 
 // The buckets past the slot, up to an hour, so a delay of minutes keeps its size instead of
 // landing in +Inf.
-const LATE_TAIL_BUCKETS: [f64; 9] = [24.0, 36.0, 60.0, 120.0, 180.0, 300.0, 600.0, 1800.0, 3600.0];
+const LATE_TAIL_BUCKETS: [f64; 14] = [
+    24.0, 36.0, 60.0, 120.0, 180.0, 240.0, 300.0, 360.0, 420.0, 480.0, 540.0, 600.0, 1800.0, 3600.0,
+];
+
+// The prove buckets past the slot, for a proof timeout longer than the slot.
+const PROVE_TAIL_BUCKETS: [f64; 5] = [24.0, 36.0, 48.0, 60.0, 120.0];
 
 // The known label values of the counters. Every counter and histogram with labels known at startup
 // starts at 0, because `increase` and `rate` do not count the first event of a series that starts
 // after them.
-const NEW_PAYLOAD_STATUSES: [&str; 6] =
-    ["VALID", "INVALID", "SYNCING", "ACCEPTED", "other", "error"];
+const NEW_PAYLOAD_STATUSES: [&str; 5] = ["VALID", "INVALID", "SYNCING", "ACCEPTED", "error"];
 const WITNESS_FETCH_STATUSES: [&str; 4] = ["success", "missing", "not_valid", "error"];
 const PROVE_STATUSES: [&str; 3] = ["success", "error", "timeout"];
 const SUBMISSION_STATUSES: [&str; 2] = ["success", "error"];
@@ -68,6 +73,14 @@ const PROOF_DISPATCH_FAILURE_REASONS: [&str; 5] = [
     "unsupported_fork",
     "channel_full",
     "channel_closed",
+];
+// The steps of an accepted proof in the order of the proof pipeline.
+const PROOF_STEPS: [&str; 5] = [
+    "payload_arrival",
+    "witness_fetch",
+    "queue_wait",
+    "prove",
+    "submission",
 ];
 
 /// Initializes the Prometheus metrics exporter and registers metric descriptions.
@@ -146,6 +159,10 @@ pub fn init_metrics() -> PrometheusHandle {
         PROOF_SLOT_LATENCY_SECONDS,
         "time from the start of the slot of the payload to the accepted proof"
     );
+    describe_histogram!(
+        PROOF_STEP_SECONDS,
+        "time of each step of an accepted proof, recorded at acceptance"
+    );
 
     // Application metrics
     describe_gauge!(PROGRAMS_LOADED, "zkvm programs loaded");
@@ -163,6 +180,7 @@ pub fn prometheus_builder() -> PrometheusBuilder {
     let slot_buckets = from_fn::<_, 24, _>(|i| (i + 1) as f64 * 0.5);
     // The slot buckets resolve the delays within the slot, and the tail the delays past it.
     let late_buckets = [slot_buckets.as_slice(), LATE_TAIL_BUCKETS.as_slice()].concat();
+    let prove_buckets = [slot_buckets.as_slice(), PROVE_TAIL_BUCKETS.as_slice()].concat();
     // 16 KiB to 64 MiB, doubling. The default buckets end at 10.0 and put every size in +Inf.
     let byte_buckets = from_fn::<_, 13, _>(|i| (16_384_u64 << i) as f64);
     PrometheusBuilder::new()
@@ -170,7 +188,7 @@ pub fn prometheus_builder() -> PrometheusBuilder {
         .unwrap()
         .set_buckets_for_metric(
             Matcher::Full(PROVE_DURATION_SECONDS.to_owned()),
-            &slot_buckets,
+            &prove_buckets,
         )
         .unwrap()
         // The witness fetch is the engine_newPayloadWithWitness round trip to the EL, which the
@@ -201,6 +219,9 @@ pub fn prometheus_builder() -> PrometheusBuilder {
             Matcher::Full(PROOF_SLOT_LATENCY_SECONDS.to_owned()),
             &late_buckets,
         )
+        .unwrap()
+        // The steps are read as means, so one bucket at the slot is enough.
+        .set_buckets_for_metric(Matcher::Full(PROOF_STEP_SECONDS.to_owned()), &[12.0])
         .unwrap()
         .set_buckets_for_metric(Matcher::Full(WITNESS_BYTES.to_owned()), &byte_buckets)
         .unwrap()
@@ -234,12 +255,12 @@ fn record_http_request(endpoint: &str, method: &str, status: u16, duration: Dura
         "endpoint" => endpoint,
         "method" => method
     )
-    .record(duration.as_secs_f64());
+    .record(duration);
 }
 
-/// Records the receipt at `received_at` of a payload whose slot starts at the Unix `timestamp`.
-pub fn record_payload_arrival(timestamp: u64, received_at: SystemTime) {
-    histogram!(PAYLOAD_ARRIVAL_DELAY_SECONDS).record(seconds_after(timestamp, received_at));
+/// Records the time from the start of the slot of a payload until its receipt.
+pub fn record_payload_arrival(arrival: Duration) {
+    histogram!(PAYLOAD_ARRIVAL_DELAY_SECONDS).record(arrival);
 }
 
 /// Sets the timestamp of the newest VALID payload, the start of its slot.
@@ -247,7 +268,8 @@ pub fn set_latest_payload_timestamp(timestamp: u64) {
     gauge!(LATEST_PAYLOAD_TIMESTAMP_SECONDS).set(timestamp as f64);
 }
 
-/// Records the status of the EL answer to an `engine_newPayload`, `error` without an answer.
+/// Records the status of the EL answer to an `engine_newPayload`, `error` without an answer or with
+/// an unknown status.
 pub fn record_new_payload(status: &'static str) {
     debug_assert!(NEW_PAYLOAD_STATUSES.contains(&status));
     counter!(NEW_PAYLOAD_TOTAL, "status" => status).increment(1);
@@ -259,7 +281,7 @@ pub fn record_witness_fetch(status: &'static str, duration: Duration, witness_si
     debug_assert!(WITNESS_FETCH_STATUSES.contains(&status));
     counter!(WITNESS_FETCH_TOTAL, "status" => status).increment(1);
     if status == "success" {
-        histogram!(WITNESS_FETCH_DURATION_SECONDS).record(duration.as_secs_f64());
+        histogram!(WITNESS_FETCH_DURATION_SECONDS).record(duration);
         histogram!(WITNESS_BYTES).record(witness_size as f64);
     }
 }
@@ -269,11 +291,7 @@ pub fn record_witness_fetch(status: &'static str, duration: Duration, witness_si
 /// prove duration histogram starts after dequeue, so without this metric a
 /// backlog is invisible.
 pub fn record_queue_wait(proof_type: ProofType, duration: Duration) {
-    histogram!(
-        QUEUE_WAIT_DURATION_SECONDS,
-        "proof_type" => proof_type.to_string(),
-    )
-    .record(duration.as_secs_f64());
+    histogram!(QUEUE_WAIT_DURATION_SECONDS, "proof_type" => proof_type.as_str()).record(duration);
 }
 
 /// Records a proof request that ends before its input reaches the worker.
@@ -281,7 +299,7 @@ pub fn record_proof_dispatch_failure(proof_type: ProofType, reason: &'static str
     debug_assert!(PROOF_DISPATCH_FAILURE_REASONS.contains(&reason));
     counter!(
         PROOF_DISPATCH_FAILURES_TOTAL,
-        "proof_type" => proof_type.to_string(),
+        "proof_type" => proof_type.as_str(),
         "reason" => reason
     )
     .increment(1);
@@ -289,7 +307,7 @@ pub fn record_proof_dispatch_failure(proof_type: ProofType, reason: &'static str
 
 /// Adds `delta` to the number of proof inputs waiting in the channel of a worker.
 pub fn add_queue_depth(proof_type: ProofType, delta: f64) {
-    gauge!(QUEUE_DEPTH, "proof_type" => proof_type.to_string()).increment(delta);
+    gauge!(QUEUE_DEPTH, "proof_type" => proof_type.as_str()).increment(delta);
 }
 
 /// Registers the counters of every known label value, the histograms without labels, and the
@@ -310,18 +328,16 @@ pub fn register_series(proof_types: impl IntoIterator<Item = ProofType>) {
     }
     for proof_type in proof_types {
         add_queue_depth(proof_type, 0.0);
-        let proof_type = proof_type.to_string();
-        counter!(PROOF_REUSED_TOTAL, "proof_type" => proof_type.clone()).increment(0);
+        let proof_type = proof_type.as_str();
+        counter!(PROOF_REUSED_TOTAL, "proof_type" => proof_type).increment(0);
         for status in PROVE_STATUSES {
-            counter!(PROVE_TOTAL, "proof_type" => proof_type.clone(), "status" => status)
-                .increment(0);
+            counter!(PROVE_TOTAL, "proof_type" => proof_type, "status" => status).increment(0);
         }
         for status in SUBMISSION_STATUSES {
-            counter!(SUBMISSION_TOTAL, "proof_type" => proof_type.clone(), "status" => status)
-                .increment(0);
+            counter!(SUBMISSION_TOTAL, "proof_type" => proof_type, "status" => status).increment(0);
         }
         for reason in PROOF_DISPATCH_FAILURE_REASONS {
-            counter!(PROOF_DISPATCH_FAILURES_TOTAL, "proof_type" => proof_type.clone(), "reason" => reason)
+            counter!(PROOF_DISPATCH_FAILURES_TOTAL, "proof_type" => proof_type, "reason" => reason)
                 .increment(0);
         }
         for name in [
@@ -332,7 +348,10 @@ pub fn register_series(proof_types: impl IntoIterator<Item = ProofType>) {
             PROOF_LATENCY_SECONDS,
             PROOF_SLOT_LATENCY_SECONDS,
         ] {
-            let _ = histogram!(name, "proof_type" => proof_type.clone());
+            let _ = histogram!(name, "proof_type" => proof_type);
+        }
+        for step in PROOF_STEPS {
+            let _ = histogram!(PROOF_STEP_SECONDS, "proof_type" => proof_type, "step" => step);
         }
     }
 }
@@ -345,63 +364,70 @@ pub fn record_prove(
     proof_size: usize,
 ) {
     debug_assert!(PROVE_STATUSES.contains(&status));
-    counter!(
-        PROVE_TOTAL,
-        "proof_type" => proof_type.to_string(),
-        "status" => status
-    )
-    .increment(1);
+    let proof_type = proof_type.as_str();
+    counter!(PROVE_TOTAL, "proof_type" => proof_type, "status" => status).increment(1);
     if status == "success" {
-        histogram!(
-            PROVE_DURATION_SECONDS,
-            "proof_type" => proof_type.to_string(),
-        )
-        .record(duration.as_secs_f64());
-        histogram!(
-            PROVE_PROOF_BYTES,
-            "proof_type" => proof_type.to_string(),
-        )
-        .record(proof_size as f64);
+        histogram!(PROVE_DURATION_SECONDS, "proof_type" => proof_type).record(duration);
+        histogram!(PROVE_PROOF_BYTES, "proof_type" => proof_type).record(proof_size as f64);
     }
 }
 
 /// Records a cached proof submitted again for a payload imported again.
 pub fn record_proof_reused(proof_type: ProofType) {
-    counter!(PROOF_REUSED_TOTAL, "proof_type" => proof_type.to_string()).increment(1);
+    counter!(PROOF_REUSED_TOTAL, "proof_type" => proof_type.as_str()).increment(1);
 }
 
 /// Records a proof submission result. The submission duration is recorded for an accepted
 /// submission only.
 pub fn record_submission(proof_type: ProofType, status: &'static str, duration: Duration) {
     debug_assert!(SUBMISSION_STATUSES.contains(&status));
-    counter!(
-        SUBMISSION_TOTAL,
-        "proof_type" => proof_type.to_string(),
-        "status" => status
-    )
-    .increment(1);
+    let proof_type = proof_type.as_str();
+    counter!(SUBMISSION_TOTAL, "proof_type" => proof_type, "status" => status).increment(1);
     if status == "success" {
-        histogram!(
-            SUBMISSION_DURATION_SECONDS,
-            "proof_type" => proof_type.to_string(),
-        )
-        .record(duration.as_secs_f64());
+        histogram!(SUBMISSION_DURATION_SECONDS, "proof_type" => proof_type).record(duration);
     }
 }
 
-/// Records the latencies of an accepted proof since the payload receipt and since the start of
-/// the slot at the Unix `timestamp`.
-pub fn record_proof_latency(proof_type: ProofType, latency: Duration, timestamp: u64) {
-    histogram!(
-        PROOF_LATENCY_SECONDS,
-        "proof_type" => proof_type.to_string(),
-    )
-    .record(latency.as_secs_f64());
-    histogram!(
-        PROOF_SLOT_LATENCY_SECONDS,
-        "proof_type" => proof_type.to_string(),
-    )
-    .record(seconds_after(timestamp, SystemTime::now()));
+/// The timing of a payload before its proofs are requested, the first steps of their latency.
+#[derive(Debug, Clone, Copy)]
+pub struct PayloadTiming {
+    /// The time from the start of the slot of the payload until its receipt.
+    pub arrival: Duration,
+    /// The receipt on the monotonic clock.
+    pub received_at: Instant,
+    /// The time from the receipt until the EL returned the witness.
+    pub witness_fetch: Duration,
+}
+
+/// The timing of a proof from the start of its slot to its submission.
+#[derive(Debug, Clone, Copy)]
+pub struct ProofTiming {
+    /// The timing of the payload.
+    pub payload: PayloadTiming,
+    /// The wait in the worker channel.
+    pub queue_wait: Duration,
+    /// The proof generation.
+    pub prove: Duration,
+}
+
+/// Records the latencies of an accepted proof since the receipt and since the slot start, and the
+/// time of each step. The steps of the same proofs add up to their slot latency.
+pub fn record_proof_latency(proof_type: ProofType, timing: ProofTiming, submission: Duration) {
+    let proof_type = proof_type.as_str();
+    let latency = timing.payload.received_at.elapsed();
+    histogram!(PROOF_LATENCY_SECONDS, "proof_type" => proof_type).record(latency);
+    histogram!(PROOF_SLOT_LATENCY_SECONDS, "proof_type" => proof_type)
+        .record(timing.payload.arrival + latency);
+    let steps = [
+        timing.payload.arrival,
+        timing.payload.witness_fetch,
+        timing.queue_wait,
+        timing.prove,
+        submission,
+    ];
+    for (step, duration) in PROOF_STEPS.into_iter().zip(steps) {
+        histogram!(PROOF_STEP_SECONDS, "proof_type" => proof_type, "step" => step).record(duration);
+    }
 }
 
 /// Sets the number of loaded programs gauge.
@@ -419,12 +445,11 @@ pub fn set_validator_ready(ready: bool) {
     gauge!(VALIDATOR_READY).set(f64::from(u8::from(ready)));
 }
 
-/// Returns the seconds from the Unix `timestamp` until `time`, zero for a later timestamp.
-fn seconds_after(timestamp: u64, time: SystemTime) -> f64 {
-    let time = time
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is after the Unix epoch");
-    (time.as_secs_f64() - timestamp as f64).max(0.0)
+/// Returns the time from the Unix `timestamp` until `time`, zero for a later timestamp.
+pub fn duration_since_timestamp(timestamp: u64, time: SystemTime) -> Duration {
+    time.duration_since(UNIX_EPOCH)
+        .expect("system clock is after the Unix epoch")
+        .saturating_sub(Duration::from_secs(timestamp))
 }
 
 /// The JSON-RPC method of an Engine API request, which the handler puts on every answer except a
@@ -483,7 +508,7 @@ pub(crate) async fn http_metrics_middleware(request: Request, next: Next) -> Res
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use axum::{
         Extension, Router,
@@ -497,8 +522,9 @@ mod tests {
     use zkboost_types::ProofType;
 
     use crate::metrics::{
-        JsonRpcMethod, http_metrics_middleware, prometheus_builder, record_payload_arrival,
-        record_proof_latency,
+        JsonRpcMethod, PayloadTiming, ProofTiming, duration_since_timestamp,
+        http_metrics_middleware, prometheus_builder, record_payload_arrival, record_proof_latency,
+        record_prove,
     };
 
     /// Records with a recorder of the zkboost exporter and returns the exposition text.
@@ -535,25 +561,35 @@ mod tests {
     #[test]
     fn test_late_payload_arrival_stays_measurable() {
         let text = render(|| {
-            record_payload_arrival(now() - 200, SystemTime::now());
-            record_payload_arrival(now() + 60, SystemTime::now());
+            for timestamp in [now() - 200, now() + 60, u64::MAX] {
+                record_payload_arrival(duration_since_timestamp(timestamp, SystemTime::now()));
+            }
         });
 
         let name = "zkboost_payload_arrival_delay_seconds";
         assert_eq!(
             bucket(&text, name, "", 0.5),
-            1,
+            2,
             "a future timestamp counts as 0 s"
         );
-        assert_eq!(bucket(&text, name, "", 12.0), 1);
-        assert_eq!(bucket(&text, name, "", 180.0), 1);
-        assert_eq!(bucket(&text, name, "", 300.0), 2);
+        assert_eq!(bucket(&text, name, "", 12.0), 2);
+        assert_eq!(bucket(&text, name, "", 180.0), 2);
+        assert_eq!(bucket(&text, name, "", 300.0), 3);
     }
 
     #[test]
     fn test_late_proof_stays_measurable() {
+        let timing = ProofTiming {
+            payload: PayloadTiming {
+                arrival: Duration::from_secs(190),
+                received_at: Instant::now() - Duration::from_secs(150),
+                witness_fetch: Duration::from_millis(40),
+            },
+            queue_wait: Duration::from_secs(100),
+            prove: Duration::from_secs(10),
+        };
         let text = render(|| {
-            record_proof_latency(ProofType::RethOpenVM, Duration::from_secs(150), now() - 340);
+            record_proof_latency(ProofType::RethOpenVM, timing, Duration::from_millis(20));
         });
 
         let labels = r#"proof_type="reth-openvm""#;
@@ -561,10 +597,33 @@ mod tests {
         assert_eq!(bucket(&text, latency, labels, 12.0), 0);
         assert_eq!(bucket(&text, latency, labels, 120.0), 0);
         assert_eq!(bucket(&text, latency, labels, 180.0), 1);
+        // The proof is accepted 190 + 150 = 340 s after the slot start.
         let slot_latency = "zkboost_proof_slot_latency_seconds";
         assert_eq!(bucket(&text, slot_latency, labels, 300.0), 0);
-        assert_eq!(bucket(&text, slot_latency, labels, 600.0), 1);
+        assert_eq!(bucket(&text, slot_latency, labels, 360.0), 1);
         assert_eq!(bucket(&text, slot_latency, labels, f64::INFINITY), 1);
+        let step = "zkboost_proof_step_seconds";
+        let arrival = r#"proof_type="reth-openvm",step="payload_arrival""#;
+        assert_eq!(bucket(&text, step, arrival, 12.0), 0);
+        assert_eq!(bucket(&text, step, arrival, f64::INFINITY), 1);
+    }
+
+    #[test]
+    fn test_slow_prove_stays_measurable() {
+        let text = render(|| {
+            record_prove(
+                ProofType::RethOpenVM,
+                "success",
+                Duration::from_secs(100),
+                1,
+            );
+        });
+
+        let labels = r#"proof_type="reth-openvm""#;
+        let prove = "zkboost_prove_duration_seconds";
+        assert_eq!(bucket(&text, prove, labels, 12.0), 0);
+        assert_eq!(bucket(&text, prove, labels, 60.0), 0);
+        assert_eq!(bucket(&text, prove, labels, 120.0), 1);
     }
 
     /// Only a response with a JSON-RPC method is recorded, so a call that the EL rejected and a

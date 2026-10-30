@@ -10,16 +10,17 @@ use axum::{
 };
 use bytes::Bytes;
 use tracing::{error, instrument};
+use zkboost_types::NewPayloadVersion;
 
 use crate::{
-    engine::{JsonRpcRequest, NewPayload, engine_api_client::EngineResponse},
+    engine::engine_api::{EngineResponse, JsonRpcRequest},
     http::AppState,
     metrics::JsonRpcMethod,
 };
 
-/// Forwards an Engine API JSON-RPC request to the EL, through the proving pipeline for a new
-/// payload. A request that cannot reach the EL is answered with 502. Every answer except a JWT
-/// rejection of the EL carries the [`JsonRpcMethod`] of the request for the HTTP metrics.
+/// Forwards an Engine API request to the EL, a new payload through the proving pipeline. An
+/// unreachable EL is answered with 502. Every answer except a JWT rejection carries the
+/// [`JsonRpcMethod`] for the HTTP metrics.
 #[instrument(skip_all)]
 pub(crate) async fn post_engine(
     State(state): State<Arc<AppState>>,
@@ -28,15 +29,14 @@ pub(crate) async fn post_engine(
 ) -> Response {
     let authorization = headers.get(AUTHORIZATION);
     let request = JsonRpcRequest::decode(&body);
-    let json_rpc_method = request
-        .as_ref()
-        .map(|request| Extension(JsonRpcMethod(request.method.clone())));
-    let upstream = match request.and_then(NewPayload::decode) {
-        Some(new_payload) => {
+    let method = request.as_ref().map(|request| request.method.clone());
+    let version = method.as_deref().and_then(NewPayloadVersion::from_method);
+    let upstream = match request.zip(version) {
+        Some((request, version)) => {
             state
                 .engine
                 .clone()
-                .new_payload(authorization, new_payload, body)
+                .new_payload(authorization, body, request, version)
                 .await
         }
         None => {
@@ -47,18 +47,18 @@ pub(crate) async fn post_engine(
                 .await
         }
     };
+    let method = method.map(|method| Extension(JsonRpcMethod(method)));
     match upstream {
         Ok(EngineResponse { status, body }) => (
             status,
-            json_rpc_method
-                .filter(|_| !matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)),
+            method.filter(|_| !matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)),
             [("content-type", "application/json")],
             body,
         )
             .into_response(),
         Err(error) => {
             error!(%error, "engine request forward failed");
-            (StatusCode::BAD_GATEWAY, json_rpc_method, ()).into_response()
+            (StatusCode::BAD_GATEWAY, method, ()).into_response()
         }
     }
 }

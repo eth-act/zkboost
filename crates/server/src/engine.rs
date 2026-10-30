@@ -1,20 +1,16 @@
 //! Engine API proxy state. Every request is forwarded to the EL with the caller's `Authorization`
-//! header unchanged. `engine_newPayloadV5` goes upstream as `engine_newPayloadWithWitnessV5`, and
-//! the witness is removed from the status. A `VALID` payload is proven and submitted. Without a
-//! zkVM, every request is forwarded unchanged.
+//! header unchanged. An `engine_newPayload` of a proven version goes upstream as
+//! `engine_newPayloadWithWitness` of the same version, and the witness is removed from the status.
+//! A `VALID` payload is proven and submitted. Without a zkVM, every request is forwarded unchanged.
 //! The witness is the RLP list `[headers, codes, state]` and an optional, ignored `keys` list.
 
-pub(crate) mod beacon_node_client;
-pub(crate) mod engine_api_client;
-pub(crate) mod validator;
-
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, hash_map::Entry},
     fs,
     num::NonZeroUsize,
     path::Path,
     sync::{Arc, Mutex, OnceLock},
-    time::{Instant, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use alloy_primitives::B256;
@@ -23,36 +19,45 @@ use anyhow::{Context, anyhow, bail};
 use axum::http::HeaderValue;
 use beacon_node_client::{BEACON_NODE_RETRY_DELAY, BeaconNodeClient, ExecutionPayloadEvent};
 use bytes::Bytes;
-use engine_api_client::{EngineApiClient, EngineResponse};
+use engine_api::{
+    EngineApiClient, EngineResponse, JsonRpcRequest, JsonRpcResponse, NewPayloadStatus,
+    NewPayloadWithWitnessResponse,
+};
 use lighthouse_bls::Keypair;
 use lighthouse_eth2_keystore::Keystore;
 use lighthouse_types::{ChainSpec, Slot};
 use lru::LruCache;
-use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use tokio::sync::{mpsc, mpsc::error::TrySendError};
+use tokio::{
+    sync::{mpsc, mpsc::error::TrySendError},
+    task::JoinHandle,
+};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span, debug, error, info, info_span, warn};
 use validator::Validator;
 use zkboost_types::{
-    ExecutionWitness, Hash256, NewPayloadParams, NewPayloadRequest, ProgressiveList, ProofType,
-    SszList,
+    ExecutionWitness, Hash256, NewPayloadRequest, NewPayloadRequestExt, NewPayloadVersion,
+    ProgressiveList, ProofType, SszList,
 };
 
 use crate::{
     config::Config,
     dashboard::DashboardMessage,
     metrics::{
-        add_queue_depth, record_new_payload, record_payload_arrival, record_proof_dispatch_failure,
-        record_proof_latency, record_proof_reused, record_submission, record_witness_fetch,
-        set_latest_payload_timestamp, set_validator_ready,
+        PayloadTiming, ProofTiming, add_queue_depth, duration_since_timestamp, record_new_payload,
+        record_payload_arrival, record_proof_dispatch_failure, record_proof_latency,
+        record_proof_reused, record_submission, record_witness_fetch, set_latest_payload_timestamp,
+        set_validator_ready,
     },
     proof::{
         input::{NewPayloadRequestMeta, StatelessInput},
         worker::{ProofResult, WorkerInput, WorkerOutput},
     },
 };
+
+pub(crate) mod beacon_node_client;
+pub(crate) mod engine_api;
+pub(crate) mod validator;
 
 /// JSON-RPC error code of a method the EL does not serve.
 const JSON_RPC_METHOD_NOT_FOUND: i64 = -32601;
@@ -64,70 +69,80 @@ const BLOCK_CACHE_SLOTS: usize = 64;
 /// slot.
 const SUBMISSION_ATTEMPTS: u32 = 5;
 
-/// JSON-RPC request envelope.
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct JsonRpcRequest {
-    jsonrpc: Value,
-    id: Value,
-    /// Method of the request.
-    pub(crate) method: String,
-    params: Value,
+/// The receipt of a payload, read once on each clock. The wall clock places it in its slot, and
+/// every later time is measured on the monotonic clock from it.
+#[derive(Debug, Clone, Copy)]
+struct PayloadReceipt {
+    time: SystemTime,
+    instant: Instant,
 }
 
-impl JsonRpcRequest {
-    /// Decodes a JSON-RPC request body, or returns `None` for any other body.
-    pub(crate) fn decode(body: &[u8]) -> Option<Self> {
-        serde_json::from_slice(body).ok()
-    }
-}
-
-/// JSON-RPC response envelope.
-#[derive(Debug, Serialize, Deserialize)]
-struct JsonRpcResponse<T> {
-    jsonrpc: Value,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<T>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcError>,
-}
-
-/// JSON-RPC error object. Every field but the code passes through unchanged.
-#[derive(Debug, Serialize, Deserialize)]
-struct JsonRpcError {
-    code: i64,
-    #[serde(flatten)]
-    other: Map<String, Value>,
-}
-
-/// Result of `engine_newPayloadWithWitnessV5`. The witness is not serialized, so the CL receives
-/// the result of `engine_newPayloadV5`. Every other field passes through unchanged.
-#[derive(Debug, Serialize, Deserialize)]
-struct NewPayloadWithWitnessResponse {
-    status: String,
-    #[serde(skip_serializing)]
-    witness: Option<alloy_primitives::Bytes>,
-    #[serde(flatten)]
-    other: Map<String, Value>,
-}
-
-/// An `engine_newPayloadV5` request of the CL.
+/// The outcome of the forward of a new payload to the EL, for the work that follows the answer.
 #[derive(Debug)]
-pub(crate) struct NewPayload {
-    request: JsonRpcRequest,
-    params: NewPayloadParams,
+struct NewPayloadOutcome {
+    /// The payload status, `None` without a result or with an unknown status.
+    status: Option<NewPayloadStatus>,
+    /// The witness of a `VALID` payload.
+    witness: Option<Bytes>,
+    /// The time from the receipt until the EL returned the witness, `None` without a witness
+    /// fetch.
+    duration: Option<Duration>,
 }
 
-impl NewPayload {
-    /// Decodes a new payload request, or returns `None` for every other request.
-    pub(crate) fn decode(request: JsonRpcRequest) -> Option<Self> {
-        match NewPayloadParams::decode(&request.method, request.params.clone())? {
-            Ok(params) => Some(Self { request, params }),
-            Err(error) => {
-                warn!(%error, "new payload params not decodable, forwarded as is");
-                None
+/// The state of a proof of a payload before a claim.
+#[derive(Debug)]
+enum ProofState {
+    /// Proven, with the proof.
+    Proven(Vec<u8>),
+    /// Claimed by an earlier request.
+    InProgress,
+    /// Neither proven nor in progress, so the claim takes it.
+    Unproven,
+}
+
+/// The proven proofs, kept for a payload imported again, and the proofs in progress. One lock
+/// guards both, so every proof is claimed once.
+#[derive(Debug)]
+struct Proofs {
+    proven: LruCache<(Hash256, ProofType), Vec<u8>>,
+    in_progress: HashMap<(Hash256, ProofType), PayloadTiming>,
+}
+
+impl Proofs {
+    fn new(capacity: NonZeroUsize) -> Self {
+        Self {
+            proven: LruCache::new(capacity),
+            in_progress: HashMap::new(),
+        }
+    }
+
+    /// Claims a proof of a payload that is neither proven nor in progress, and returns its state
+    /// before the claim.
+    fn claim(&mut self, root: Hash256, proof_type: ProofType, timing: PayloadTiming) -> ProofState {
+        if let Some(proof) = self.proven.get(&(root, proof_type)) {
+            return ProofState::Proven(proof.clone());
+        }
+        match self.in_progress.entry((root, proof_type)) {
+            Entry::Occupied(_) => ProofState::InProgress,
+            Entry::Vacant(entry) => {
+                entry.insert(timing);
+                ProofState::Unproven
             }
         }
+    }
+
+    /// Ends the claim of a proof, keeps the proof of a successful one, and returns the timing of
+    /// its payload.
+    fn end_claim(
+        &mut self,
+        root: Hash256,
+        proof_type: ProofType,
+        proof: Option<Vec<u8>>,
+    ) -> Option<PayloadTiming> {
+        if let Some(proof) = proof {
+            self.proven.put((root, proof_type), proof);
+        }
+        self.in_progress.remove(&(root, proof_type))
     }
 }
 
@@ -142,8 +157,7 @@ pub(crate) struct EngineProxyState {
     /// Root of the beacon block that carries a payload, by the block hash and the slot of the
     /// payload.
     blocks: Mutex<LruCache<(B256, Slot), B256>>,
-    proofs: Mutex<LruCache<(Hash256, ProofType), Vec<u8>>>,
-    requested: Mutex<HashSet<(Hash256, ProofType)>>,
+    proofs: Mutex<Proofs>,
     /// Timestamp of the newest VALID payload, the start of its slot.
     latest_payload_timestamp: Mutex<u64>,
     worker_input_txs: HashMap<ProofType, mpsc::Sender<WorkerInput>>,
@@ -171,8 +185,7 @@ impl EngineProxyState {
             keypair,
             validator: OnceLock::new(),
             blocks: Mutex::new(LruCache::new(NonZeroUsize::new(BLOCK_CACHE_SLOTS).unwrap())),
-            proofs: Mutex::new(LruCache::new(proofs_capacity)),
-            requested: Mutex::new(HashSet::new()),
+            proofs: Mutex::new(Proofs::new(proofs_capacity)),
             latest_payload_timestamp: Mutex::new(0),
             worker_input_txs,
             dashboard_service_tx,
@@ -262,253 +275,260 @@ impl EngineProxyState {
         }
     }
 
-    /// Forwards a new payload with `forward_payload`, and records the status of the EL answer and,
-    /// for a payload that the EL answered, how long after the start of its slot it arrived.
+    /// Forwards a new payload, with the witness method when it can prove, and answers without the
+    /// witness. The work that needs the payload continues in the background.
     pub(crate) async fn new_payload(
         self: Arc<Self>,
         authorization: Option<&HeaderValue>,
-        new_payload: NewPayload,
         body: Bytes,
+        request: JsonRpcRequest,
+        version: NewPayloadVersion,
     ) -> reqwest::Result<EngineResponse> {
-        let received_at = SystemTime::now();
-        let timestamp = new_payload.params.timestamp();
-        let response = self.forward_payload(authorization, new_payload, body).await;
-        let status = response
-            .as_ref()
-            .map_or("error", |response| new_payload_status(&response.body));
-        record_new_payload(status);
-        // The EL answers a payload status only with the JWT, and checks the timestamp of a VALID
-        // payload, so a caller without the JWT moves neither series.
-        if status != "error" {
-            record_payload_arrival(timestamp, received_at);
-        }
-        if status == "VALID" {
-            let mut latest_payload_timestamp = self.latest_payload_timestamp.lock().unwrap();
-            if timestamp > *latest_payload_timestamp {
-                *latest_payload_timestamp = timestamp;
-                set_latest_payload_timestamp(timestamp);
+        let receipt = PayloadReceipt {
+            time: SystemTime::now(),
+            instant: Instant::now(),
+        };
+        let proving = !self.worker_input_txs.is_empty() && self.validator().is_ok();
+        let request = request.with_method(version.with_witness_method());
+        let body_with_witness = proving.then(|| Bytes::from(serde_json::to_vec(&request).unwrap()));
+        let decoding = tokio::task::spawn_blocking(move || {
+            let payload = version.decode_params(request.params.get())?;
+            anyhow::Ok((NewPayloadRequestMeta::new(&payload)?, payload))
+        });
+
+        let (response, outcome) = match body_with_witness {
+            Some(body_with_witness) => {
+                self.forward_with_witness(authorization, body, body_with_witness, receipt.instant)
+                    .await
             }
-        }
+            None => self.forward_without_witness(authorization, body).await,
+        };
+        tokio::spawn(self.complete_new_payload(decoding, outcome, receipt, Span::current()));
         response
     }
 
-    /// Forwards a new payload as `engine_newPayloadWithWitnessV5` and answers without the witness.
-    /// Without a zkVM, without the method, or before the validator is ready, the payload is
-    /// forwarded unchanged.
-    async fn forward_payload(
-        self: &Arc<Self>,
-        authorization: Option<&HeaderValue>,
-        new_payload: NewPayload,
-        body: Bytes,
-    ) -> reqwest::Result<EngineResponse> {
-        let payload_received_at = Instant::now();
-        let NewPayload { request, params } = new_payload;
-        let block_hash = params.block_hash();
-        info!(%block_hash, block_number = params.block_number(), "received new payload");
-
-        if self.worker_input_txs.is_empty() {
-            warn!(%block_hash, "no worker configured, skip proving");
-            return self.engine_api_client.forward(authorization, body).await;
-        }
-        if self.validator().is_err() {
-            warn!(%block_hash, "validator not ready, skip proving");
-            return self.engine_api_client.forward(authorization, body).await;
-        }
-
-        let (response, result) = self
-            .forward_new_payload(authorization, request, body, &params)
-            .await?;
-        if let Some(result) = result {
-            if result.status == "VALID" {
-                self.spawn_request_proofs(
-                    params,
-                    result.witness.map(|witness| witness.0),
-                    payload_received_at,
-                );
-            } else {
-                debug!(%block_hash, status = result.status, "payload not valid, skip proving");
-            }
-        }
-        Ok(response)
-    }
-
-    /// Forwards the payload as `engine_newPayloadWithWitnessV5` and records the round trip to the
-    /// EL on the dashboard and the metrics. It returns the answer for the CL without the witness,
-    /// and the parsed result. Without the method, the EL answers the plain request instead.
-    async fn forward_new_payload(
+    /// Forwards the payload as `engine_newPayload` without a witness fetch.
+    async fn forward_without_witness(
         &self,
         authorization: Option<&HeaderValue>,
-        request: JsonRpcRequest,
         body: Bytes,
-        params: &NewPayloadParams,
-    ) -> reqwest::Result<(EngineResponse, Option<NewPayloadWithWitnessResponse>)> {
-        let block_hash = params.block_hash();
-        self.notify_dashboard(DashboardMessage::fetch_witness_start(
-            params.block_number(),
-            block_hash,
-            params.timestamp(),
-            params.gas_used(),
-            params.gas_limit(),
-        ));
-
-        let upstream_request = JsonRpcRequest {
-            method: NewPayloadParams::WITH_WITNESS_METHOD.to_owned(),
-            ..request
+    ) -> (reqwest::Result<EngineResponse>, NewPayloadOutcome) {
+        let response = self.engine_api_client.forward(authorization, body).await;
+        let status = response
+            .as_ref()
+            .ok()
+            .and_then(|response| new_payload_status(&response.body));
+        let outcome = NewPayloadOutcome {
+            status,
+            witness: None,
+            duration: None,
         };
-        let upstream_body = serde_json::to_vec(&upstream_request).unwrap();
+        (response, outcome)
+    }
 
-        let started = Instant::now();
-        let upstream_response = self
+    /// Forwards the payload as `engine_newPayloadWithWitness`, or as `engine_newPayload` if the EL
+    /// does not serve that method, and records the witness fetch.
+    async fn forward_with_witness(
+        &self,
+        authorization: Option<&HeaderValue>,
+        body: Bytes,
+        body_with_witness: Bytes,
+        received_at: Instant,
+    ) -> (reqwest::Result<EngineResponse>, NewPayloadOutcome) {
+        let response = self
             .engine_api_client
-            .forward(authorization, upstream_body.into())
+            .forward(authorization, body_with_witness)
             .await;
-        let duration = started.elapsed();
-
-        let record_fetch = |status: &'static str, witness_size: usize| {
-            record_witness_fetch(status, duration, witness_size);
-            self.notify_dashboard(DashboardMessage::fetch_witness_end(
-                block_hash,
-                witness_size,
-                status == "success",
-            ));
+        let duration = received_at.elapsed();
+        let fetched = |fetch_result, status, witness: Option<Bytes>| {
+            record_witness_fetch(
+                fetch_result,
+                duration,
+                witness.as_ref().map_or(0, Bytes::len),
+            );
+            NewPayloadOutcome {
+                status,
+                witness,
+                duration: Some(duration),
+            }
         };
 
-        let upstream_response = upstream_response.inspect_err(|_| record_fetch("error", 0))?;
-        let Ok(upstream_response_body) = serde_json::from_slice::<
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => return (Err(error), fetched("error", None, None)),
+        };
+        let Ok(mut response_body) = serde_json::from_slice::<
             JsonRpcResponse<NewPayloadWithWitnessResponse>,
-        >(&upstream_response.body) else {
-            record_fetch("error", 0);
-            return Ok((upstream_response, None));
+        >(&response.body) else {
+            return (Ok(response), fetched("error", None, None));
         };
-
-        if upstream_response_body
+        if response_body
             .error
             .as_ref()
             .is_some_and(|error| error.code == JSON_RPC_METHOD_NOT_FOUND)
         {
-            warn!(%block_hash, method = upstream_request.method, "witness method not served by the el, forwarded without proving");
-            record_fetch("missing", 0);
-            let upstream_response_body =
-                self.engine_api_client.forward(authorization, body).await?;
-            return Ok((upstream_response_body, None));
+            warn!("witness method not served by the el, forwarded without proving");
+            record_witness_fetch("missing", duration, 0);
+            return self.forward_without_witness(authorization, body).await;
         }
 
-        // Only a VALID status comes with a witness, and an error answer carries no status.
-        match (
-            &upstream_response_body.error,
-            &upstream_response_body.result,
-        ) {
-            (None, Some(result)) if result.status != "VALID" => record_fetch("not_valid", 0),
-            (None, Some(result)) => match &result.witness {
-                Some(witness) => record_fetch("success", witness.len()),
-                None => record_fetch("missing", 0),
-            },
-            _ => record_fetch("error", 0),
-        }
-
-        Ok((
-            EngineResponse {
-                status: upstream_response.status,
-                body: serde_json::to_vec(&upstream_response_body).unwrap().into(),
-            },
-            upstream_response_body.result,
-        ))
+        let status = response_body.status();
+        let witness = response_body
+            .result
+            .as_mut()
+            .and_then(|result| result.witness.take());
+        // Only a VALID status comes with a witness.
+        let (fetch_result, witness) = match (status, witness) {
+            (Some(NewPayloadStatus::Valid), Some(witness)) => ("success", Some(witness.0)),
+            (Some(NewPayloadStatus::Valid), None) => ("missing", None),
+            (Some(_), _) => ("not_valid", None),
+            (None, _) => ("error", None),
+        };
+        let response = EngineResponse {
+            status: response.status,
+            body: serde_json::to_vec(&response_body).unwrap().into(),
+        };
+        (Ok(response), fetched(fetch_result, status, witness))
     }
 
-    /// Requests the proofs of a valid payload in the background under the `request_proof` span.
-    fn spawn_request_proofs(
-        self: &Arc<Self>,
-        params: NewPayloadParams,
-        witness: Option<Bytes>,
-        payload_received_at: Instant,
+    /// Records a new payload on the metrics and the dashboard, and requests the proofs of a
+    /// `VALID` payload. The `request_proof` span has the request span as parent, which this task
+    /// never enters, so the request span ends with the answer.
+    async fn complete_new_payload(
+        self: Arc<Self>,
+        decoding: JoinHandle<anyhow::Result<(NewPayloadRequestMeta, NewPayloadRequest)>>,
+        outcome: NewPayloadOutcome,
+        receipt: PayloadReceipt,
+        parent: Span,
     ) {
-        let block_hash = params.block_hash();
+        let NewPayloadOutcome {
+            status,
+            witness,
+            duration,
+        } = outcome;
+        let status_label = status.map_or("error", NewPayloadStatus::as_str);
+        record_new_payload(status_label);
+        let valid = status == Some(NewPayloadStatus::Valid);
+        let decoded = decoding.await.unwrap_or_else(|error| Err(error.into()));
+        let (payload_meta, payload) = match decoded {
+            Ok(payload) => payload,
+            Err(error) => {
+                warn!(%error, "new payload params not decodable, skip proving");
+                if duration.is_some() && valid {
+                    for &proof_type in self.worker_input_txs.keys() {
+                        record_proof_dispatch_failure(proof_type, "input_error");
+                    }
+                }
+                return;
+            }
+        };
+        let block_hash = payload_meta.block_hash;
+        let block_number = payload_meta.block_number;
+        info!(%block_hash, block_number, "received new payload");
+        let arrival = duration_since_timestamp(payload_meta.timestamp, receipt.time);
+        // The EL answers a payload status only with the JWT, and checks the timestamp of a VALID
+        // payload, so a caller without the JWT moves neither series.
+        if status.is_some() {
+            record_payload_arrival(arrival);
+        }
+        if valid {
+            let mut latest_payload_timestamp = self.latest_payload_timestamp.lock().unwrap();
+            if payload_meta.timestamp > *latest_payload_timestamp {
+                *latest_payload_timestamp = payload_meta.timestamp;
+                set_latest_payload_timestamp(payload_meta.timestamp);
+            }
+        }
+
+        let Some(witness_fetch) = duration else {
+            debug!(%block_hash, "witness not fetched, skip proving");
+            return;
+        };
+        let timing = PayloadTiming {
+            arrival,
+            received_at: receipt.instant,
+            witness_fetch,
+        };
+        self.notify_dashboard(DashboardMessage::fetch_witness_start(
+            block_number,
+            block_hash,
+            payload_meta.timestamp,
+            payload_meta.gas_used,
+            payload.gas_limit(),
+            receipt.time,
+        ));
+        self.notify_dashboard(DashboardMessage::fetch_witness_end(
+            block_hash,
+            witness.as_ref().map_or(0, Bytes::len),
+            witness.is_some(),
+            receipt.time + witness_fetch,
+        ));
+        if !valid {
+            debug!(%block_hash, status = status_label, "payload not valid, skip proving");
+            return;
+        }
+
         let span = info_span!(
+            parent: &parent,
             "request_proof",
             %block_hash,
-            block_number = params.block_number(),
-            timestamp = params.timestamp(),
-            gas_used = params.gas_used()
+            block_number,
+            timestamp = payload_meta.timestamp,
+            gas_used = payload_meta.gas_used
         );
-        let state = self.clone();
-        tokio::spawn(
-            async move {
-                if let Err(error) = state
-                    .request_proofs(params, witness, payload_received_at, Span::current())
-                    .await
-                {
-                    error!(%block_hash, %error, "proof request failed");
-                }
-            }
-            .instrument(span),
-        );
+        if let Err(error) = self
+            .request_proofs(payload_meta, payload, witness, timing)
+            .instrument(span.clone())
+            .await
+        {
+            error!(parent: &span, %block_hash, %error, "proof request failed");
+        }
     }
 
-    /// Submits the cached proofs of a payload, then builds the stateless input from the witness
-    /// under the protocol fork of the payload and queues the rest at the zkVM workers.
+    /// Claims the proofs of a payload, submits the proven ones again, and queues the stateless
+    /// input of the others at their workers.
     async fn request_proofs(
         self: &Arc<Self>,
-        params: NewPayloadParams,
+        payload_meta: NewPayloadRequestMeta,
+        payload: NewPayloadRequest,
         witness: Option<Bytes>,
-        payload_received_at: Instant,
-        span: Span,
+        timing: PayloadTiming,
     ) -> anyhow::Result<()> {
-        let chain_id = self.validator()?.chain_id();
-        let record_dispatch_failures = |proof_types: &[ProofType], reason| {
-            for &proof_type in proof_types {
-                record_proof_dispatch_failure(proof_type, reason);
-            }
-        };
-        let (payload_meta, payload) = tokio::task::spawn_blocking(move || {
-            let payload = NewPayloadRequest::try_from(params)?;
-            anyhow::Ok((
-                NewPayloadRequestMeta::new(&payload, payload_received_at)?,
-                payload,
-            ))
-        })
-        .await
-        .expect("new payload request conversion does not panic")
-        .inspect_err(|_| {
-            let proof_types = self.worker_input_txs.keys().copied().collect::<Vec<_>>();
-            record_dispatch_failures(&proof_types, "input_error");
-        })?;
+        let validator = self.validator()?;
+        let root = payload_meta.new_payload_request_root;
 
-        let mut proving = Vec::new();
+        let mut claimed = Vec::new();
         for (&proof_type, worker_input_tx) in &self.worker_input_txs {
-            let proof = self
-                .proofs
-                .lock()
-                .unwrap()
-                .get(&(payload_meta.new_payload_request_root, proof_type))
-                .cloned();
-            let Some(proof) = proof else {
-                // A proof in progress needs no input, which a payload imported again lacks.
-                let request = (payload_meta.new_payload_request_root, proof_type);
-                if !self.requested.lock().unwrap().contains(&request) {
-                    proving.push((proof_type, worker_input_tx));
+            let claim = self.proofs.lock().unwrap().claim(root, proof_type, timing);
+            match claim {
+                ProofState::Proven(proof) => {
+                    info!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof reused");
+                    record_proof_reused(proof_type);
+                    self.submit_proof(payload_meta, proof_type, proof, None);
                 }
-                continue;
-            };
-            info!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof reused");
-            record_proof_reused(proof_type);
-            self.submit_proof(payload_meta, proof_type, proof, true);
+                // A proof in progress needs no input, which a payload imported again lacks.
+                ProofState::InProgress => {
+                    debug!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof already requested");
+                }
+                ProofState::Unproven => claimed.push((proof_type, worker_input_tx)),
+            }
         }
-        if proving.is_empty() {
+        if claimed.is_empty() {
             return Ok(());
         }
-        let proving_types = proving
-            .iter()
-            .map(|&(proof_type, _)| proof_type)
-            .collect::<Vec<_>>();
+        let end_claims = |reason| {
+            for &(proof_type, _) in &claimed {
+                self.abandon_claim(root, proof_type, reason);
+            }
+        };
 
         let Some(witness) = witness else {
-            record_dispatch_failures(&proving_types, "missing_witness");
+            end_claims("missing_witness");
             bail!("valid payload without witness");
         };
-        let protocol_fork = self
-            .validator()?
+        let protocol_fork = validator
             .protocol_fork(Slot::new(payload_meta.slot))
-            .inspect_err(|_| record_dispatch_failures(&proving_types, "unsupported_fork"))?;
+            .inspect_err(|_| end_claims("unsupported_fork"))?;
+        let chain_id = validator.chain_id();
         let stateless_input = tokio::task::spawn_blocking(move || {
             let witness = decode_engine_witness(&witness)?;
             anyhow::Ok(StatelessInput::new(
@@ -522,18 +542,13 @@ impl EngineProxyState {
         .await
         .expect("stateless input construction does not panic")
         .context("stateless input construction")
-        .inspect_err(|_| record_dispatch_failures(&proving_types, "input_error"))?;
+        .inspect_err(|_| end_claims("input_error"))?;
         let stateless_input = Arc::new(stateless_input);
 
-        for (proof_type, worker_input_tx) in proving {
-            let request = (payload_meta.new_payload_request_root, proof_type);
-            if !self.requested.lock().unwrap().insert(request) {
-                debug!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proof already requested");
-                continue;
-            }
+        for (proof_type, worker_input_tx) in claimed {
             let worker_input = WorkerInput {
                 stateless_input: stateless_input.clone(),
-                span: span.clone(),
+                span: Span::current(),
                 queued_at: Instant::now(),
             };
             // The depth grows before the send, so the dequeue of the worker never takes it below 0.
@@ -548,13 +563,21 @@ impl EngineProxyState {
                         TrySendError::Full(_) => ("worker channel full", "channel_full"),
                         TrySendError::Closed(_) => ("worker channel closed", "channel_closed"),
                     };
-                    record_proof_dispatch_failure(proof_type, label);
                     error!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, reason, "proof dispatch failed");
-                    self.requested.lock().unwrap().remove(&request);
+                    self.abandon_claim(root, proof_type, label);
                 }
             }
         }
         Ok(())
+    }
+
+    /// Ends the claim of a proof whose request fails before its input reaches the worker.
+    fn abandon_claim(&self, root: Hash256, proof_type: ProofType, reason: &'static str) {
+        record_proof_dispatch_failure(proof_type, reason);
+        self.proofs
+            .lock()
+            .unwrap()
+            .end_claim(root, proof_type, None);
     }
 
     /// Records the outcome of a proof attempt and submits a proof to the beacon node.
@@ -563,15 +586,27 @@ impl EngineProxyState {
             payload_meta,
             proof_type,
             proof_result,
+            queue_wait,
+            prove_duration,
         } = output;
+        let proof = match &proof_result {
+            ProofResult::Ok(proof) => Some(proof.clone()),
+            ProofResult::Err(_) | ProofResult::Timeout => None,
+        };
+        let payload_timing = self.proofs.lock().unwrap().end_claim(
+            payload_meta.new_payload_request_root,
+            proof_type,
+            proof,
+        );
         match proof_result {
             ProofResult::Ok(proof) => {
                 info!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, proof_size = proof.len(), "proved");
-                self.proofs.lock().unwrap().put(
-                    (payload_meta.new_payload_request_root, proof_type),
-                    proof.clone(),
-                );
-                self.submit_proof(payload_meta, proof_type, proof, false);
+                let timing = payload_timing.map(|payload| ProofTiming {
+                    payload,
+                    queue_wait,
+                    prove: prove_duration,
+                });
+                self.submit_proof(payload_meta, proof_type, proof, timing);
             }
             ProofResult::Err(error) => {
                 error!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, %error, "proving failed");
@@ -580,21 +615,17 @@ impl EngineProxyState {
                 error!(block_hash = %payload_meta.block_hash, block_number = payload_meta.block_number, %proof_type, "proving timed out");
             }
         }
-        self.requested
-            .lock()
-            .unwrap()
-            .remove(&(payload_meta.new_payload_request_root, proof_type));
     }
 
     /// Submits a proof to the beacon node in the background, with `SUBMISSION_ATTEMPTS` attempts
-    /// `BEACON_NODE_RETRY_DELAY` apart. The latencies of a `reused` proof, proven for an earlier
-    /// receipt of the payload, are not recorded.
+    /// `BEACON_NODE_RETRY_DELAY` apart. A reused proof has no `timing`, so its latencies are not
+    /// recorded.
     fn submit_proof(
         self: &Arc<Self>,
         payload_meta: NewPayloadRequestMeta,
         proof_type: ProofType,
         proof: Vec<u8>,
-        reused: bool,
+        timing: Option<ProofTiming>,
     ) {
         let state = self.clone();
         let slot = Slot::new(payload_meta.slot);
@@ -637,12 +668,8 @@ impl EngineProxyState {
                     Ok(()) => {
                         info!(block_hash = %payload_meta.block_hash, %proof_type, "proof submitted");
                         record("success");
-                        if !reused {
-                            record_proof_latency(
-                                proof_type,
-                                payload_meta.received_at.elapsed(),
-                                payload_meta.timestamp,
-                            );
+                        if let Some(timing) = timing {
+                            record_proof_latency(proof_type, timing, started.elapsed());
                         }
                         break;
                     }
@@ -686,22 +713,12 @@ fn read_keypair(keystore_path: &Path, password_path: &Path) -> anyhow::Result<Ke
         .map_err(|error| anyhow!("decrypt keystore: {error:?}"))
 }
 
-/// Returns the status of the EL answer to an `engine_newPayload`, `other` for an unknown status
-/// and `error` without a result.
-fn new_payload_status(body: &[u8]) -> &'static str {
-    match serde_json::from_slice::<JsonRpcResponse<NewPayloadWithWitnessResponse>>(body) {
-        Ok(JsonRpcResponse {
-            result: Some(result),
-            ..
-        }) => match result.status.as_str() {
-            "VALID" => "VALID",
-            "INVALID" => "INVALID",
-            "SYNCING" => "SYNCING",
-            "ACCEPTED" => "ACCEPTED",
-            _ => "other",
-        },
-        _ => "error",
-    }
+/// Returns the payload status of the EL answer to an `engine_newPayload`, `None` without a result
+/// or with an unknown status.
+fn new_payload_status(body: &[u8]) -> Option<NewPayloadStatus> {
+    serde_json::from_slice::<JsonRpcResponse<NewPayloadWithWitnessResponse>>(body)
+        .ok()?
+        .status()
 }
 
 /// Decodes the RLP-encoded engine witness into the `ExecutionWitness`.
@@ -759,9 +776,23 @@ fn ssz_bytes_list<const M: usize>(
 
 #[cfg(test)]
 mod tests {
-    use alloy_rlp::Header;
+    use std::{
+        num::NonZeroUsize,
+        time::{Duration, Instant},
+    };
 
-    use crate::engine::{decode_engine_witness, new_payload_status};
+    use alloy_rlp::Header;
+    use serde_json::json;
+    use zkboost_types::{Hash256, ProofType};
+
+    use crate::{
+        engine::{
+            ProofState, Proofs, decode_engine_witness,
+            engine_api::{JsonRpcResponse, NewPayloadStatus, NewPayloadWithWitnessResponse},
+            new_payload_status,
+        },
+        metrics::PayloadTiming,
+    };
 
     #[test]
     fn test_new_payload_status_is_bounded() {
@@ -770,13 +801,63 @@ mod tests {
             let body = answer(&format!(
                 r#"{{"status":"{status}","latestValidHash":null}}"#
             ));
-            assert_eq!(new_payload_status(body.as_bytes()), status);
+            assert_eq!(
+                new_payload_status(body.as_bytes()).map(NewPayloadStatus::as_str),
+                Some(status)
+            );
         }
         let unknown = answer(r#"{"status":"INVALID_BLOCK_HASH"}"#);
-        assert_eq!(new_payload_status(unknown.as_bytes()), "other");
+        assert_eq!(new_payload_status(unknown.as_bytes()), None);
         let error = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no method"}}"#;
-        assert_eq!(new_payload_status(error.as_bytes()), "error");
-        assert_eq!(new_payload_status(b"not json"), "error");
+        assert_eq!(new_payload_status(error.as_bytes()), None);
+        assert_eq!(new_payload_status(b"not json"), None);
+    }
+
+    /// An answer with an unknown status passes through without the witness.
+    #[test]
+    fn test_witness_removed_with_unknown_status() {
+        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"status":"UNKNOWN","latestValidHash":null,"witness":"0xc0"}}"#;
+        let response =
+            serde_json::from_str::<JsonRpcResponse<NewPayloadWithWitnessResponse>>(body).unwrap();
+        assert_eq!(response.status(), None);
+        assert_eq!(
+            serde_json::to_value(&response).unwrap(),
+            json!({"jsonrpc":"2.0","id":1,"result":{"status":"UNKNOWN","latestValidHash":null}})
+        );
+    }
+
+    /// A proof is claimed only while it is neither proven nor in progress.
+    #[test]
+    fn test_proof_claimed_once() {
+        let mut proofs = Proofs::new(NonZeroUsize::MIN);
+        let (root, proof_type) = (Hash256::ZERO, ProofType::RethOpenVM);
+        let timing = PayloadTiming {
+            arrival: Duration::ZERO,
+            received_at: Instant::now(),
+            witness_fetch: Duration::ZERO,
+        };
+
+        assert!(matches!(
+            proofs.claim(root, proof_type, timing),
+            ProofState::Unproven
+        ));
+        assert!(matches!(
+            proofs.claim(root, proof_type, timing),
+            ProofState::InProgress
+        ));
+
+        assert!(proofs.end_claim(root, proof_type, None).is_some());
+        assert!(matches!(
+            proofs.claim(root, proof_type, timing),
+            ProofState::Unproven
+        ));
+
+        assert!(proofs.end_claim(root, proof_type, Some(vec![1])).is_some());
+        assert!(matches!(
+            proofs.claim(root, proof_type, timing),
+            ProofState::Proven(proof) if proof == [1]
+        ));
+        assert!(proofs.in_progress.is_empty());
     }
 
     /// Wraps already RLP-encoded items into an RLP list.

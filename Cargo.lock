@@ -8866,7 +8866,6 @@ dependencies = [
 name = "zkboost-types"
 version = "0.19.1"
 dependencies = [
- "alloy-eips",
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "anyhow",

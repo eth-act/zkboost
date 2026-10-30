@@ -247,6 +247,7 @@ The zkboost dashboard is auto-provisioned and available at Grafana > Dashboards 
 | `zkboost_submission_duration_seconds`      | Histogram | Proof submission time with the retries               |
 | `zkboost_proof_latency_seconds`            | Histogram | Time from the payload receipt to the accepted proof  |
 | `zkboost_proof_slot_latency_seconds`       | Histogram | Time from the slot start to the accepted proof       |
+| `zkboost_proof_step_seconds`               | Histogram | Time of each step of an accepted proof               |
 | `zkboost_validator_ready`                  | Gauge     | 1 once the validator that proving needs is ready     |
 | `zkboost_programs_loaded`                  | Gauge     | Number of loaded zkVMs                               |
 | `zkboost_build_info`                       | Gauge     | Build version info                                   |
