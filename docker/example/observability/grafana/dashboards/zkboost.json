@@ -4,7 +4,7 @@
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
@@ -382,7 +382,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -410,7 +410,113 @@
           },
           "unit": "reqps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_newPayloadV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_forkchoiceUpdatedV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getPayloadV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getPayloadBodies/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getBlobsV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_exchangeCapabilities/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getClientVersionV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -471,7 +577,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -499,7 +605,131 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_newPayloadV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_forkchoiceUpdatedV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getPayloadV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getPayloadBodies/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getBlobsV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_exchangeCapabilities/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getClientVersionV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ p50$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -529,11 +759,6 @@
           "expr": "histogram_quantile(0.50, sum(rate(zkboost_http_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, endpoint))",
           "legendFormat": "{{endpoint}} p50",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_http_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, endpoint))",
-          "legendFormat": "{{endpoint}} p95",
-          "refId": "B"
         },
         {
           "expr": "histogram_quantile(0.99, sum(rate(zkboost_http_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le, endpoint))",
@@ -570,7 +795,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -580,7 +805,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -598,7 +823,131 @@
           },
           "unit": "reqps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_newPayloadV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_forkchoiceUpdatedV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getPayloadV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getPayloadBodies/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getBlobsV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_exchangeCapabilities/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^engine_getClientVersionV/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ [45][0-9][0-9]$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -643,7 +992,7 @@
       },
       "id": 108,
       "panels": [],
-      "title": "Payload Arrival",
+      "title": "Payload & Witness",
       "type": "row"
     },
     {
@@ -654,7 +1003,8 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "fixedColor": "#7EB26D",
+            "mode": "fixed"
           },
           "custom": {
             "axisBorderShow": false,
@@ -672,12 +1022,11 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
-              "type": "log",
-              "log": 2
+              "type": "linear"
             },
             "showPoints": "never",
             "spanNulls": false,
@@ -688,7 +1037,7 @@
             "thresholdsStyle": {
               "mode": "off"
             },
-            "axisSoftMin": 0.5
+            "axisSoftMin": 0
           },
           "mappings": [],
           "thresholds": {
@@ -711,7 +1060,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "none"
+                "value": "opm"
               },
               {
                 "id": "custom.drawStyle",
@@ -743,12 +1092,30 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
           }
         ]
       },
       "gridPos": {
         "h": 8,
-        "w": 16,
+        "w": 12,
         "x": 0,
         "y": 15
       },
@@ -781,14 +1148,15 @@
           "refId": "B"
         },
         {
-          "expr": "60 * (sum(rate(zkboost_payload_arrival_delay_seconds_count{service=~\"$service\"}[$__rate_interval])) - sum(rate(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\", le=\"12.0\"}[$__rate_interval])))",
+          "expr": "(sum(clamp_min(zkboost_payload_arrival_delay_seconds_count{service=~\"$service\"} - zkboost_payload_arrival_delay_seconds_count{service=~\"$service\"} offset $__interval, 0)) - sum(clamp_min(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\", le=\"12.0\"} - zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\", le=\"12.0\"} offset $__interval, 0))) * 60000 / $__interval_ms",
           "legendFormat": "late payloads per minute",
-          "refId": "C"
+          "refId": "C",
+          "interval": "1m"
         }
       ],
-      "title": "Payload Arrival Delay",
+      "title": "engine_newPayloadV5 Arrival",
       "type": "timeseries",
-      "description": "Time from the slot start until zkboost receives the payload. Bars count the payloads later than 12 s."
+      "description": "Time from the slot start until zkboost receives the payload. Bars show the payloads later than 12 s per minute."
     },
     {
       "datasource": {
@@ -816,7 +1184,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -874,13 +1242,43 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SYNCING"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "yellow",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ACCEPTED"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
+        "w": 12,
+        "x": 12,
         "y": 15
       },
       "id": 46,
@@ -907,24 +1305,11 @@
           "refId": "A"
         }
       ],
-      "title": "EL Payload Status",
+      "title": "engine_newPayloadWithWitnessV5 Status",
       "type": "timeseries",
       "description": "EL answers to new payloads. Only VALID payloads are proven."
     },
     {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 23
-      },
-      "id": 105,
-      "panels": [],
-      "title": "engine_newPayloadWithWitnessV5",
-      "type": "row"
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -950,96 +1335,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 24
-      },
-      "id": 30,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "sum(rate(zkboost_witness_fetch_total{service=~\"$service\"}[$__rate_interval])) by (status)",
-          "legendFormat": "{{status}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Request Rate by Result",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -1071,9 +1367,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 24
+        "w": 12,
+        "x": 0,
+        "y": 23
       },
       "id": 31,
       "options": {
@@ -1099,7 +1395,7 @@
           "refId": "A"
         }
       ],
-      "title": "Request Duration",
+      "title": "engine_newPayloadWithWitnessV5 Duration",
       "type": "timeseries",
       "description": "Mean round trip of the calls that returned a witness."
     },
@@ -1129,7 +1425,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -1161,9 +1457,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 24
+        "w": 12,
+        "x": 12,
+        "y": 23
       },
       "id": 32,
       "options": {
@@ -1198,11 +1494,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 31
       },
       "id": 102,
       "panels": [],
-      "title": "Prove Operations",
+      "title": "Prover Overview",
       "type": "row"
     },
     {
@@ -1231,7 +1527,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -1259,13 +1555,212 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ p50$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
+        "w": 12,
         "x": 0,
-        "y": 33
+        "y": 32
       },
       "id": 33,
       "options": {
@@ -1286,8 +1781,8 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_queue_wait_duration_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type) / sum(rate(zkboost_queue_wait_duration_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type)",
-          "legendFormat": "{{proof_type}} avg",
+          "expr": "histogram_quantile(0.50, sum by (le, proof_type) (rate(zkboost_queue_wait_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
+          "legendFormat": "{{proof_type}} p50",
           "refId": "A"
         },
         {
@@ -1325,7 +1820,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -1351,15 +1846,256 @@
               }
             ]
           },
-          "unit": "ops"
+          "unit": "opm"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/\\(error\\)$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/\\(timeout\\)$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    0,
+                    10
+                  ],
+                  "fill": "dot"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ dispatch failed /"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    5,
+                    2,
+                    5
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 41
+        "w": 12,
+        "x": 12,
+        "y": 32
       },
       "id": 10,
       "options": {
@@ -1380,17 +2116,17 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_prove_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type, status)",
+          "expr": "60 * (sum(rate(zkboost_prove_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type, status))",
           "legendFormat": "{{proof_type}} ({{status}})",
           "refId": "A"
         },
         {
-          "expr": "sum by (proof_type, reason) (rate(zkboost_proof_dispatch_failures_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) > 0",
+          "expr": "60 * (sum by (proof_type, reason) (rate(zkboost_proof_dispatch_failures_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) > 0)",
           "legendFormat": "{{proof_type}} dispatch failed ({{reason}})",
           "refId": "B"
         }
       ],
-      "title": "Prove Operations Rate",
+      "title": "Prove Rate",
       "type": "timeseries"
     },
     {
@@ -1419,7 +2155,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -1433,7 +2169,9 @@
             },
             "thresholdsStyle": {
               "mode": "line"
-            }
+            },
+            "axisSoftMin": 0,
+            "axisSoftMax": 13
           },
           "mappings": [],
           "thresholds": {
@@ -1451,13 +2189,212 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ p50$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 41
+        "w": 12,
+        "x": 0,
+        "y": 40
       },
       "id": 11,
       "options": {
@@ -1483,11 +2420,6 @@
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p95",
-          "refId": "B"
-        },
-        {
           "expr": "histogram_quantile(0.99, sum(rate(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p99",
           "refId": "C"
@@ -1495,7 +2427,7 @@
       ],
       "title": "Prove Duration",
       "type": "timeseries",
-      "description": "Prove duration percentiles of successful proofs. Failed and timed-out attempts are not included. The red line is one slot (12 s)."
+      "description": "Prove time of successful proofs. Red is one slot (12 s)."
     },
     {
       "datasource": {
@@ -1523,7 +2455,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -1551,13 +2483,194 @@
           },
           "unit": "decbytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 41
+        "w": 12,
+        "x": 12,
+        "y": 40
       },
       "id": 12,
       "options": {
@@ -1649,7 +2762,7 @@
                     "options": {
                       "+Inf": {
                         "index": 0,
-                        "text": "> 12s"
+                        "text": "> 120s"
                       }
                     }
                   },
@@ -1666,6 +2779,186 @@
                 ]
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
@@ -1673,7 +2966,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 48
       },
       "id": 27,
       "options": {
@@ -1736,6 +3029,306 @@
       ],
       "type": "barchart",
       "description": "Successful proofs per prove duration bucket in the selected time range."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMin": 0,
+            "axisSoftMax": 13
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 12
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ p50$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      },
+      "id": 48,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, proof_type) (rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
+          "legendFormat": "{{proof_type}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, proof_type) (rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
+          "legendFormat": "{{proof_type}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Proof Latency",
+      "type": "timeseries",
+      "description": "Time from the slot start until a proof is accepted. Red is one slot (12 s)."
     },
     {
       "datasource": {
@@ -1806,8 +3399,7 @@
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background",
-                  "mode": "basic"
+                  "type": "color-text"
                 }
               }
             ]
@@ -1848,7 +3440,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 65
       },
       "id": 43,
       "options": {
@@ -1949,110 +3541,94 @@
       "type": "table"
     },
     {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 71
+      },
+      "id": 109,
+      "panels": [],
+      "repeat": "proof_type",
+      "title": "Prover - $proof_type",
+      "type": "row"
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
           "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
             "scaleDistribution": {
-              "type": "log",
-              "log": 2
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "area"
-            },
-            "axisSoftMin": 0.5
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 12
-              }
-            ]
-          },
-          "unit": "s"
+              "type": "linear"
+            }
+          }
         },
         "overrides": []
       },
       "gridPos": {
         "h": 9,
-        "w": 24,
+        "w": 12,
         "x": 0,
-        "y": 63
+        "y": 72
       },
-      "id": 37,
+      "id": 47,
+      "interval": "1m",
       "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
         "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
         },
         "tooltip": {
           "mode": "multi",
-          "sort": "desc"
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false,
+          "unit": "s"
         }
       },
-      "pluginVersion": "10.0.0",
+      "pluginVersion": "12.4.2",
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le, proof_type) (rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
-          "legendFormat": "{{proof_type}} slot to accepted p99",
+          "expr": "sum by (le) (clamp_min(zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"} - zkboost_prove_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"} offset $__interval, 0))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum by (le, proof_type) (rate(zkboost_proof_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])))",
-          "legendFormat": "{{proof_type}} receipt to accepted p99",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(zkboost_payload_arrival_delay_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
-          "legendFormat": "CL arrival p99",
-          "refId": "C"
         }
       ],
-      "title": "Proof Latency",
-      "type": "timeseries",
-      "description": "p99 time until a proof is accepted, from the slot start and from the payload receipt. CL arrival is the payload delay before zkboost. Red is later than one slot (12 s)."
+      "title": "Prove Duration ($proof_type)",
+      "type": "heatmap",
+      "description": "Successful proofs per prove duration bucket and time step."
     },
     {
       "datasource": {
@@ -2068,7 +3644,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "proofs per minute",
+            "axisLabel": "",
             "axisPlacement": "auto",
             "axisSoftMax": 1,
             "barAlignment": 0,
@@ -2107,7 +3683,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "opm"
         },
         "overrides": [
           {
@@ -2188,9 +3764,9 @@
         ]
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 72
       },
       "id": 44,
@@ -2209,37 +3785,294 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"}[$__rate_interval])))",
+          "expr": "(sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"} offset $__interval, 0))) * 60000 / $__interval_ms",
           "legendFormat": "within 12 s",
           "refId": "A"
         },
         {
-          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"}[$__rate_interval])))",
+          "expr": "(sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"} offset $__interval, 0)) - sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"12.0\"} offset $__interval, 0))) * 60000 / $__interval_ms",
           "legendFormat": "12 to 36 s",
           "refId": "B"
         },
         {
-          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"}[$__rate_interval])))",
+          "expr": "(sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"} offset $__interval, 0)) - sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"36.0\"} offset $__interval, 0))) * 60000 / $__interval_ms",
           "legendFormat": "36 s to 2 min",
           "refId": "C"
         },
         {
-          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"}[$__rate_interval])))",
+          "expr": "(sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"} offset $__interval, 0)) - sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"120.0\"} offset $__interval, 0))) * 60000 / $__interval_ms",
           "legendFormat": "2 to 10 min",
           "refId": "D"
         },
         {
-          "expr": "60 * (sum(rate(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) - sum(rate(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"}[$__rate_interval])))",
+          "expr": "(sum(clamp_min(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"} - zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"} offset $__interval, 0)) - sum(clamp_min(zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"} - zkboost_proof_slot_latency_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\", le=\"600.0\"} offset $__interval, 0))) * 60000 / $__interval_ms",
           "legendFormat": "over 10 min",
           "refId": "E"
         }
       ],
-      "title": "Proof Lateness ($proof_type)",
+      "title": "Late Proof ($proof_type)",
       "type": "timeseries",
-      "description": "Accepted proofs per minute, grouped by the time from the slot start to acceptance.",
-      "repeat": "proof_type",
-      "repeatDirection": "h",
-      "maxPerRow": 2
+      "description": "Accepted proofs per minute, by time from the slot start.",
+      "interval": "1m"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            },
+            "axisSoftMin": 0,
+            "axisSoftMax": 13
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 12
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "payload arrival"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "witness fetch"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "queue wait"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "prove"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "submission"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.gradientMode",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "accepted"
+            },
+            "properties": [
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 81
+      },
+      "id": 49,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(clamp_min(zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"payload_arrival\"} - zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"payload_arrival\"} offset $__rate_interval, 0)) / sum(clamp_min(zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"payload_arrival\"} - zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"payload_arrival\"} offset $__rate_interval, 0))",
+          "legendFormat": "payload arrival",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(clamp_min(zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"witness_fetch\"} - zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"witness_fetch\"} offset $__rate_interval, 0)) / sum(clamp_min(zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"witness_fetch\"} - zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"witness_fetch\"} offset $__rate_interval, 0))",
+          "legendFormat": "witness fetch",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(clamp_min(zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"queue_wait\"} - zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"queue_wait\"} offset $__rate_interval, 0)) / sum(clamp_min(zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"queue_wait\"} - zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"queue_wait\"} offset $__rate_interval, 0))",
+          "legendFormat": "queue wait",
+          "refId": "C"
+        },
+        {
+          "expr": "sum(clamp_min(zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"prove\"} - zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"prove\"} offset $__rate_interval, 0)) / sum(clamp_min(zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"prove\"} - zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"prove\"} offset $__rate_interval, 0))",
+          "legendFormat": "prove",
+          "refId": "D"
+        },
+        {
+          "expr": "sum(clamp_min(zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"submission\"} - zkboost_proof_step_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\", step=\"submission\"} offset $__rate_interval, 0)) / sum(clamp_min(zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"submission\"} - zkboost_proof_step_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\", step=\"submission\"} offset $__rate_interval, 0))",
+          "legendFormat": "submission",
+          "refId": "E"
+        },
+        {
+          "expr": "sum(clamp_min(zkboost_proof_slot_latency_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\"} - zkboost_proof_slot_latency_seconds_sum{service=~\"$service\", proof_type=~\"$proof_type\"} offset $__rate_interval, 0)) / sum(clamp_min(zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"} - zkboost_proof_slot_latency_seconds_count{service=~\"$service\", proof_type=~\"$proof_type\"} offset $__rate_interval, 0))",
+          "legendFormat": "accepted",
+          "refId": "F"
+        }
+      ],
+      "title": "Proof Latency ($proof_type)",
+      "type": "timeseries",
+      "description": "Mean time of each step of the proofs accepted at that time, stacked. The dashed line is their mean time from the slot start."
     },
     {
       "collapsed": false,
@@ -2247,7 +4080,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 80
+        "y": 90
       },
       "id": 106,
       "panels": [],
@@ -2280,7 +4113,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -2306,15 +4139,214 @@
               }
             ]
           },
-          "unit": "ops"
+          "unit": "opm"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/\\(error\\)$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 81
+        "y": 91
       },
       "id": 34,
       "options": {
@@ -2335,7 +4367,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(zkboost_submission_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type, status)",
+          "expr": "60 * (sum(rate(zkboost_submission_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type, status))",
           "legendFormat": "{{proof_type}} ({{status}})",
           "refId": "A"
         }
@@ -2369,96 +4401,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 81
-      },
-      "id": 35,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "sum(rate(zkboost_proof_reused_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type)",
-          "legendFormat": "{{proof_type}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Proofs Reused",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -2486,13 +4429,212 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ p50$/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 89
+        "w": 12,
+        "x": 12,
+        "y": 91
       },
       "id": 36,
       "options": {
@@ -2518,11 +4660,6 @@
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
-          "legendFormat": "{{proof_type}} p95",
-          "refId": "B"
-        },
-        {
           "expr": "histogram_quantile(0.99, sum(rate(zkboost_submission_duration_seconds_bucket{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (le, proof_type))",
           "legendFormat": "{{proof_type}} p99",
           "refId": "C"
@@ -2530,7 +4667,279 @@
       ],
       "title": "Submission Duration",
       "type": "timeseries",
-      "description": "Time to submit an accepted proof, with retries. Failed submissions are not included."
+      "description": "Time to submit an accepted proof, retries included."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 0,
+            "axisSoftMax": 1
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "opm"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#7EB26D",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EAB839",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ethrex-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#6ED0E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-openvm( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#EF843C",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#1F78C1",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#BA43A9",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zesu-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#705DA0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#508642",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nimbus-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#CCA300",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#447EBC",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^nethermind-zisk( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#C15C17",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^zilkworm-sp1( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E5A8E2",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 99
+      },
+      "id": 35,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "60 * (sum(rate(zkboost_proof_reused_total{service=~\"$service\", proof_type=~\"$proof_type\"}[$__rate_interval])) by (proof_type))",
+          "legendFormat": "{{proof_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Proofs Reused",
+      "type": "timeseries"
     },
     {
       "collapsed": false,
@@ -2538,7 +4947,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 97
+        "y": 107
       },
       "id": 103,
       "panels": [],
@@ -2697,7 +5106,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 98
+        "y": 108
       },
       "id": 25,
       "options": {
@@ -2862,7 +5271,7 @@
         "h": 16,
         "w": 24,
         "x": 0,
-        "y": 106
+        "y": 116
       },
       "id": 23,
       "options": {
