@@ -23,7 +23,7 @@ services:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.19.0/stateless-validator-ethrex-openvm-v2.1.0-preview.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.19.1/stateless-validator-ethrex-openvm-v2.1.0-preview.elf"
       - "gpu"
     shm_size: 2G
     networks:
@@ -70,7 +70,7 @@ services:
       - "--port"
       - "3000"
       - "--elf-url"
-      - "https://github.com/eth-act/ere-guests/releases/download/v0.19.0/stateless-validator-reth-zisk-v1.3.2-alpha.elf"
+      - "https://github.com/eth-act/ere-guests/releases/download/v0.19.1/stateless-validator-reth-zisk-v1.3.2-alpha.elf"
       - "gpu"
     shm_size: 32G
     ulimits:

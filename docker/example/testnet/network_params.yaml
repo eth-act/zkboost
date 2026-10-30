@@ -27,7 +27,7 @@ participants:
       /config: proof-engine.json
 network_params:
   gloas_fork_epoch: 0
-# The verifying keys of the ethrex and reth guests of the ere-guests v0.19.0 release, by EIP-8025 proof type.
+# The verifying keys of the ethrex and reth guests of the ere-guests v0.19.1 release, by EIP-8025 proof type.
 extra_files:
   proof-engine.json: |
     {
