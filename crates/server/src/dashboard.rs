@@ -195,13 +195,14 @@ pub(crate) enum DashboardMessage {
 }
 
 impl DashboardMessage {
-    /// Builds the witness fetch start message of a block, timed now.
+    /// Builds the message of a witness fetch of a block that started at `started_at`.
     pub(crate) fn fetch_witness_start(
         block_number: u64,
         block_hash: Hash256,
         block_timestamp: u64,
         gas_used: u64,
         gas_limit: u64,
+        started_at: SystemTime,
     ) -> Self {
         Self::FetchWitnessStart {
             block_number,
@@ -209,21 +210,22 @@ impl DashboardMessage {
             block_timestamp,
             gas_used,
             gas_limit,
-            timestamp_secs: now_secs(),
+            timestamp_secs: unix_secs(started_at),
         }
     }
 
-    /// Builds the witness fetch end message of a block, timed now.
+    /// Builds the message of a witness fetch of a block that ended at `ended_at`.
     pub(crate) fn fetch_witness_end(
         block_hash: Hash256,
         witness_size: usize,
         success: bool,
+        ended_at: SystemTime,
     ) -> Self {
         Self::FetchWitnessEnd {
             block_hash,
             witness_size,
             success,
-            timestamp_secs: now_secs(),
+            timestamp_secs: unix_secs(ended_at),
         }
     }
 
@@ -496,8 +498,12 @@ impl DashboardService {
 
 /// Returns the current wall-clock time as seconds since the Unix epoch.
 fn now_secs() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    unix_secs(SystemTime::now())
+}
+
+/// Returns a wall-clock time as seconds since the Unix epoch.
+fn unix_secs(time: SystemTime) -> f64 {
+    time.duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64()
 }

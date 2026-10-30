@@ -1,7 +1,5 @@
 //! Assembles the `StatelessInput` of a payload and encodes it once to schema-id-prefixed SSZ.
 
-use std::time::Instant;
-
 use anyhow::Context;
 use zkboost_types::{
     ExecutionWitness, Hash256, HashTreeRoot, NewPayloadRequest, NewPayloadRequestExt, ProtocolFork,
@@ -26,13 +24,11 @@ pub(crate) struct NewPayloadRequestMeta {
     pub(crate) timestamp: u64,
     /// Gas used by the block, for mock proving-time simulation.
     pub(crate) gas_used: u64,
-    /// When the payload arrived, the start of its proof latency.
-    pub(crate) received_at: Instant,
 }
 
 impl NewPayloadRequestMeta {
-    /// Reads the metadata of a payload request received at `received_at`.
-    pub(crate) fn new(payload: &NewPayloadRequest, received_at: Instant) -> anyhow::Result<Self> {
+    /// Reads the metadata of a payload request.
+    pub(crate) fn new(payload: &NewPayloadRequest) -> anyhow::Result<Self> {
         Ok(Self {
             new_payload_request_root: Hash256::from(payload.hash_tree_root(&Sha2Hasher)),
             block_hash: payload.block_hash(),
@@ -43,7 +39,6 @@ impl NewPayloadRequestMeta {
             slot: payload.slot().context("payload without slot")?,
             timestamp: payload.timestamp(),
             gas_used: payload.gas_used(),
-            received_at,
         })
     }
 }
@@ -106,8 +101,6 @@ impl StatelessInput {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use crate::proof::input::{NewPayloadRequestMeta, StatelessInput};
 
     /// The stateless input of block 93354 of glamsterdam-devnet-8.
@@ -124,7 +117,7 @@ mod tests {
             .unwrap();
         let input = StatelessInput::new(
             protocol_fork,
-            NewPayloadRequestMeta::new(&fixture.new_payload_request, Instant::now()).unwrap(),
+            NewPayloadRequestMeta::new(&fixture.new_payload_request).unwrap(),
             fixture.new_payload_request,
             fixture.witness,
             fixture.chain_id,

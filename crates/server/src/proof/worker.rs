@@ -1,6 +1,9 @@
 //! Per-zkVM worker loop that processes proof requests sequentially, with a timeout and shutdown.
 
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use tokio::{sync::mpsc, time::timeout};
 use tokio_util::sync::CancellationToken;
@@ -35,6 +38,10 @@ pub(crate) struct WorkerOutput {
     pub(crate) proof_type: ProofType,
     /// Result of the attempt.
     pub(crate) proof_result: ProofResult,
+    /// The wait of the input in the worker channel, from the dispatch to the dequeue.
+    pub(crate) queue_wait: Duration,
+    /// Duration of the attempt.
+    pub(crate) prove_duration: Duration,
 }
 
 /// Result of a single proof generation attempt.
@@ -132,6 +139,8 @@ pub(crate) async fn run_worker(
                 payload_meta,
                 proof_type,
                 proof_result,
+                queue_wait,
+                prove_duration: duration,
             })
             .await
         {

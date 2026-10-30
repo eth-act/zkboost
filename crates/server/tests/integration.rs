@@ -14,9 +14,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy_primitives::{B256, Bytes, hex};
+use alloy_eips::eip4895::Withdrawal;
+use alloy_primitives::{B256, Bytes, U256, hex};
 use alloy_rlp::Header;
-use alloy_rpc_types_engine::{Claims, JwtSecret};
+use alloy_rpc_types_engine::{
+    Claims, ExecutionPayloadV1, ExecutionPayloadV2, ExecutionPayloadV3, ExecutionPayloadV4,
+    JwtSecret,
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -44,9 +48,10 @@ use zkboost_server::{
     server::zkBoostServer,
 };
 use zkboost_types::{
-    ExecutionWitness, Hash256, HashTreeRoot, MockProof, NewPayloadParams, ProofType, ProtocolFork,
-    Sha2Hasher, SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode,
-    StatelessInput, StatelessValidationResult, execution_proof_domain,
+    ExecutionWitness, Hash256, HashTreeRoot, MockProof, NewPayloadRequest, NewPayloadRequestExt,
+    NewPayloadVersion, ProofType, ProtocolFork, Sha2Hasher, SignedExecutionProofEnvelope,
+    SignedExecutionProofEnvelopes, SszDecode, SszEncode, StatelessInput, StatelessValidationResult,
+    execution_proof_domain,
 };
 
 /// The keystore of validator 256 of the ethereum-package mnemonic, a copy of the testnet example.
@@ -75,7 +80,8 @@ const EXPECTED_OUTPUT: [u8; 43] =
 const MOCK_PROOF_SIZE: usize = 256 << 10;
 
 struct Fixture {
-    params: NewPayloadParams,
+    params: Value,
+    timestamp: u64,
     new_payload_request_root: Hash256,
     block_hash: B256,
     parent_beacon_block_root: B256,
@@ -94,12 +100,12 @@ impl Fixture {
             chain_id,
             ..
         } = input;
-        let params = NewPayloadParams::try_from(&new_payload_request).unwrap();
         Fixture {
-            block_hash: params.block_hash(),
-            parent_beacon_block_root: params.2,
-            slot: params.0.slot_number,
-            params,
+            params: encode_new_payload_params(&new_payload_request),
+            timestamp: new_payload_request.timestamp(),
+            block_hash: new_payload_request.block_hash(),
+            parent_beacon_block_root: new_payload_request.parent_beacon_block_root().unwrap(),
+            slot: new_payload_request.slot().unwrap(),
             new_payload_request_root: Hash256::from(
                 new_payload_request.hash_tree_root(&Sha2Hasher),
             ),
@@ -107,6 +113,77 @@ impl Fixture {
             witness: encode_engine_witness(&witness),
         }
     }
+}
+
+/// Encodes the `engine_newPayloadV5` params of a Gloas request as the CL sends them.
+fn encode_new_payload_params(request: &NewPayloadRequest) -> Value {
+    let NewPayloadRequest::Gloas(request) = request else {
+        panic!("the fixture is a Gloas request");
+    };
+    let payload = &request.execution_payload;
+    let execution_payload = ExecutionPayloadV4 {
+        payload_inner: ExecutionPayloadV3 {
+            payload_inner: ExecutionPayloadV2 {
+                payload_inner: ExecutionPayloadV1 {
+                    parent_hash: payload.parent_hash.into(),
+                    fee_recipient: payload.fee_recipient.into(),
+                    state_root: payload.state_root.into(),
+                    receipts_root: payload.receipts_root.into(),
+                    logs_bloom: payload.logs_bloom.into(),
+                    prev_randao: payload.prev_randao.into(),
+                    block_number: payload.block_number,
+                    gas_limit: payload.gas_limit,
+                    gas_used: payload.gas_used,
+                    timestamp: payload.timestamp,
+                    extra_data: Bytes::copy_from_slice(&payload.extra_data),
+                    base_fee_per_gas: U256::from_le_bytes(payload.base_fee_per_gas),
+                    block_hash: payload.block_hash.into(),
+                    transactions: payload
+                        .transactions
+                        .iter()
+                        .map(|transaction| Bytes::copy_from_slice(transaction))
+                        .collect(),
+                },
+                withdrawals: payload
+                    .withdrawals
+                    .iter()
+                    .map(|withdrawal| Withdrawal {
+                        index: withdrawal.index,
+                        validator_index: withdrawal.validator_index,
+                        address: withdrawal.address.into(),
+                        amount: withdrawal.amount,
+                    })
+                    .collect(),
+            },
+            blob_gas_used: payload.blob_gas_used,
+            excess_blob_gas: payload.excess_blob_gas,
+        },
+        block_access_list: Bytes::copy_from_slice(&payload.block_access_list),
+        slot_number: payload.slot_number,
+    };
+    // EIP-7685 requests, each the type byte, which is the index here, and the SSZ list, without
+    // empty lists.
+    let requests = &request.execution_requests;
+    let execution_requests: Vec<Bytes> = [
+        requests.deposits.to_ssz(),
+        requests.withdrawals.to_ssz(),
+        requests.consolidations.to_ssz(),
+        requests.builder_deposits.to_ssz(),
+        requests.builder_exits.to_ssz(),
+    ]
+    .into_iter()
+    .enumerate()
+    .filter(|(_, list)| !list.is_empty())
+    .map(|(request_type, list)| [&[request_type as u8], list.as_slice()].concat().into())
+    .collect();
+    let versioned_hashes: Vec<B256> = request.versioned_hashes.iter().map(B256::from).collect();
+    let parent_beacon_block_root = B256::from(request.parent_beacon_block_root);
+    json!([
+        execution_payload,
+        versioned_hashes,
+        parent_beacon_block_root,
+        execution_requests
+    ])
 }
 
 /// Encodes the witness as the EL returns it, an RLP list of the headers, codes, and state nodes.
@@ -142,6 +219,7 @@ struct MockElState {
     fixture: Fixture,
     payload_status: &'static str,
     witness_supported: bool,
+    witness_every_call: bool,
     calls: Mutex<Vec<ElCall>>,
 }
 
@@ -162,7 +240,7 @@ async fn mock_el_handler(
             .map(|value| value.to_str().unwrap().to_owned()),
     });
 
-    if method == NewPayloadParams::WITH_WITNESS_METHOD && !state.witness_supported {
+    if method == NewPayloadVersion::V5.with_witness_method() && !state.witness_supported {
         return Ok(Json(json!({
             "jsonrpc": "2.0",
             "error": { "code": -32601, "message": "Method not found" },
@@ -170,13 +248,14 @@ async fn mock_el_handler(
         })));
     }
     let result = match method.as_str() {
-        method if method == NewPayloadParams::WITH_WITNESS_METHOD => {
+        method if method == NewPayloadVersion::V5.with_witness_method() => {
             let mut status = json!({
                 "status": state.payload_status,
                 "latestValidHash": state.fixture.block_hash,
                 "validationError": null,
             });
-            // Like geth, the witness comes with the first answer of the payload only.
+            // Like geth, the witness comes with the first answer of the payload only, unless every
+            // answer carries it.
             let first_request = state
                 .calls
                 .lock()
@@ -185,12 +264,12 @@ async fn mock_el_handler(
                 .filter(|call| call.method == method)
                 .count()
                 == 1;
-            if state.payload_status == "VALID" && first_request {
+            if state.payload_status == "VALID" && (first_request || state.witness_every_call) {
                 status["witness"] = json!(state.fixture.witness);
             }
             status
         }
-        method if method == NewPayloadParams::METHOD => {
+        method if method == NewPayloadVersion::V5.method() => {
             json!({ "status": "VALID", "latestValidHash": state.fixture.block_hash, "validationError": null })
         }
         "engine_forkchoiceUpdatedV4" => json!({
@@ -209,11 +288,13 @@ async fn start_mock_el(
     fixture: Fixture,
     payload_status: &'static str,
     witness_supported: bool,
+    witness_every_call: bool,
 ) -> (Url, Arc<MockElState>) {
     let state = Arc::new(MockElState {
         fixture,
         payload_status,
         witness_supported,
+        witness_every_call,
         calls: Mutex::new(Vec::new()),
     });
     let app = axum::Router::new()
@@ -435,6 +516,7 @@ async fn serve(app: axum::Router) -> Url {
 struct Behavior {
     payload_invalid: bool,
     witness_unsupported: bool,
+    witness_every_call: bool,
     proof_timeout: bool,
     proof_failure: bool,
     ambiguous_block: bool,
@@ -472,6 +554,7 @@ impl TestHarness {
             Fixture::load(),
             payload_status,
             !behavior.witness_unsupported,
+            behavior.witness_every_call,
         )
         .await;
         let (beacon_endpoint, beacon_node, envelopes) = start_mock_beacon_node(
@@ -576,8 +659,8 @@ impl TestHarness {
     }
 
     async fn new_payload(&self) -> Value {
-        let params = serde_json::to_value(&self.fixture.params).unwrap();
-        self.engine_call(NewPayloadParams::METHOD, params).await
+        self.engine_call(NewPayloadVersion::V5.method(), self.fixture.params.clone())
+            .await
     }
 
     /// Waits for one signed envelope of every configured proof type, verifies the signature as
@@ -651,6 +734,19 @@ fn test_fixture_expected_output() {
     assert_eq!(expected.schema_id, ProtocolFork::Amsterdam.schema_id());
 }
 
+/// A payload survives the trip through the Engine API params and their JSON form.
+#[test]
+fn test_new_payload_params_round_trip() {
+    let (_, input) = StatelessInput::from_schema_prefixed_ssz(AMSTERDAM_STATELESS_INPUT).unwrap();
+    let params = encode_new_payload_params(&input.new_payload_request);
+    assert_eq!(
+        NewPayloadVersion::V5
+            .decode_params(&params.to_string())
+            .unwrap(),
+        input.new_payload_request
+    );
+}
+
 #[tokio::test]
 async fn test_new_payload_proof_submitted() {
     {
@@ -670,7 +766,7 @@ async fn test_new_payload_proof_submitted() {
         let calls = harness.el_calls();
         let new_payload = calls
             .iter()
-            .find(|call| call.method == NewPayloadParams::WITH_WITNESS_METHOD)
+            .find(|call| call.method == NewPayloadVersion::V5.with_witness_method())
             .expect("new payload forwarded with witness");
         assert!(
             new_payload
@@ -705,7 +801,7 @@ async fn test_new_payload_proof_submitted() {
             harness
                 .metric("zkboost_latest_payload_timestamp_seconds")
                 .await,
-            harness.fixture.params.timestamp() as f64
+            harness.fixture.timestamp as f64
         );
         for proof_type in harness.proof_types.clone() {
             let label = format!(r#"{{proof_type="{proof_type}"}}"#);
@@ -726,6 +822,34 @@ async fn test_new_payload_proof_submitted() {
                     .await,
                 0.0
             );
+            // Every step of the accepted proof is recorded once, and the steps add up to its
+            // latency from the slot start, apart from the input building.
+            let mut steps = 0.0;
+            for step in [
+                "payload_arrival",
+                "witness_fetch",
+                "queue_wait",
+                "prove",
+                "submission",
+            ] {
+                let series = format!(r#"{{proof_type="{proof_type}",step="{step}"}}"#);
+                assert_eq!(
+                    harness
+                        .metric(&format!("zkboost_proof_step_seconds_count{series}"))
+                        .await,
+                    1.0
+                );
+                steps += harness
+                    .metric(&format!("zkboost_proof_step_seconds_sum{series}"))
+                    .await;
+            }
+            let slot_latency = harness
+                .metric(&format!("zkboost_proof_slot_latency_seconds_sum{label}"))
+                .await;
+            assert!(
+                steps <= slot_latency && slot_latency - steps < 1.0,
+                "steps {steps} s, slot latency {slot_latency} s"
+            );
         }
 
         // The same payload sent again is submitted from the cache, faster than a new proof.
@@ -745,6 +869,13 @@ async fn test_new_payload_proof_submitted() {
             assert_eq!(
                 harness
                     .metric(&format!("zkboost_proof_slot_latency_seconds_count{label}"))
+                    .await,
+                1.0
+            );
+            let prove_step = format!(r#"{{proof_type="{proof_type}",step="prove"}}"#);
+            assert_eq!(
+                harness
+                    .metric(&format!("zkboost_proof_step_seconds_count{prove_step}"))
                     .await,
                 1.0
             );
@@ -811,22 +942,31 @@ async fn test_witness_method_unsupported_forwarded() {
     assert_eq!(
         methods,
         [
-            NewPayloadParams::WITH_WITNESS_METHOD,
-            NewPayloadParams::METHOD
+            NewPayloadVersion::V5.with_witness_method(),
+            NewPayloadVersion::V5.method()
         ]
     );
 
     harness.assert_no_proof_submitted().await;
+    for proof_type in harness.proof_types.clone() {
+        let failure = format!(r#"{{proof_type="{proof_type}",reason="missing_witness"}}"#);
+        assert_eq!(
+            harness
+                .metric(&format!("zkboost_proof_dispatch_failures_total{failure}"))
+                .await,
+            0.0
+        );
+    }
 
     // A method that the EL answers with a JSON-RPC error keeps its label, so the failing method
     // shows on the dashboard.
     let response = harness
-        .engine_call(NewPayloadParams::WITH_WITNESS_METHOD, json!([]))
+        .engine_call(NewPayloadVersion::V5.with_witness_method(), json!([]))
         .await;
     assert_eq!(response["error"]["code"], -32601);
     let series = format!(
         r#"zkboost_http_requests_total{{endpoint="{}",method="POST",status="200"}}"#,
-        NewPayloadParams::WITH_WITNESS_METHOD
+        NewPayloadVersion::V5.with_witness_method()
     );
     assert_eq!(harness.metric(&series).await, 1.0);
 }
@@ -893,6 +1033,36 @@ async fn test_payload_imported_again_while_proving() {
             harness
                 .metric(&format!("zkboost_proof_dispatch_failures_total{failure}"))
                 .await,
+            0.0
+        );
+    }
+}
+
+/// Concurrent imports of a payload, which the EL answers with the witness every time, request every
+/// proof once.
+#[tokio::test]
+async fn test_concurrent_payloads_proven_once() {
+    let mut harness = TestHarness::new(Behavior {
+        witness_every_call: true,
+        ..Default::default()
+    })
+    .await;
+
+    let (first, second) = tokio::join!(harness.new_payload(), harness.new_payload());
+    assert_eq!(first["result"]["status"], "VALID");
+    assert_eq!(second["result"]["status"], "VALID");
+    harness.assert_proofs_submitted().await;
+    // The worker took one input, and no second one waits.
+    for proof_type in harness.proof_types.clone() {
+        let label = format!(r#"{{proof_type="{proof_type}"}}"#);
+        assert_eq!(
+            harness
+                .metric(&format!("zkboost_queue_wait_duration_seconds_count{label}"))
+                .await,
+            1.0
+        );
+        assert_eq!(
+            harness.metric(&format!("zkboost_queue_depth{label}")).await,
             0.0
         );
     }
@@ -1032,7 +1202,7 @@ async fn test_payload_forwarded_before_validator_ready() {
         .into_iter()
         .map(|call| call.method)
         .collect();
-    assert_eq!(methods, [NewPayloadParams::METHOD]);
+    assert_eq!(methods, [NewPayloadVersion::V5.method()]);
 
     harness.assert_no_proof_submitted().await;
 }
@@ -1064,7 +1234,7 @@ async fn test_payload_forwarded_without_zkvm() {
         .into_iter()
         .map(|call| call.method)
         .collect();
-    assert_eq!(methods, [NewPayloadParams::METHOD]);
+    assert_eq!(methods, [NewPayloadVersion::V5.method()]);
 
     harness.assert_no_proof_submitted().await;
 }

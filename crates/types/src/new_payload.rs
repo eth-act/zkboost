@@ -1,19 +1,14 @@
-//! Conversion between the `engine_newPayloadV5` parameters and the stateless validator
-//! `NewPayloadRequest`. Execution requests follow EIP-7685 on the wire. Each element is one
-//! request type byte and the SSZ request list. The elements are ordered by type and empty lists
+//! The proven `engine_newPayload` versions and the decoding of their parameters into the stateless
+//! validator `NewPayloadRequest`. Execution requests follow EIP-7685 on the wire. Each element is
+//! one request type byte and the SSZ request list. The elements are ordered by type and empty lists
 //! are omitted.
 
-use alloy_eips::eip4895::Withdrawal as EngineWithdrawal;
-use alloy_primitives::{B256, Bytes, U256};
-use alloy_rpc_types_engine::{
-    ExecutionPayloadV1, ExecutionPayloadV2, ExecutionPayloadV3 as EngineExecutionPayloadV3,
-    ExecutionPayloadV4 as EngineExecutionPayloadV4,
-};
+use alloy_primitives::{B256, Bytes};
+use alloy_rpc_types_engine::ExecutionPayloadV4 as EngineExecutionPayloadV4;
 use anyhow::{anyhow, bail, ensure};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
 use stateless_validator_common::{
-    ProgressiveList, SszDecode, SszEncode, SszList,
+    ProgressiveList, SszDecode, SszList,
     guest::input::new_payload_request::{
         ExecutionPayloadV4, ExecutionRequestsGloas, NewPayloadRequest, NewPayloadRequestGloas,
         Withdrawal,
@@ -26,142 +21,68 @@ const CONSOLIDATION_REQUEST_TYPE: u8 = 2;
 const BUILDER_DEPOSIT_REQUEST_TYPE: u8 = 3;
 const BUILDER_EXIT_REQUEST_TYPE: u8 = 4;
 
-/// Positional parameters of `engine_newPayloadV5`, the only proven `engine_newPayload` version.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NewPayloadParams(
-    /// `executionPayload`
-    pub EngineExecutionPayloadV4,
-    /// `expectedBlobVersionedHashes`
-    pub Vec<B256>,
-    /// `parentBeaconBlockRoot`
-    pub B256,
-    /// `executionRequests`
-    pub Vec<Bytes>,
-);
+/// An `engine_newPayload` version that zkboost proves. A new version is one more variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewPayloadVersion {
+    /// `engine_newPayloadV5`, a Gloas payload.
+    V5,
+}
 
-impl NewPayloadParams {
-    /// The proven `engine_newPayload` method.
-    pub const METHOD: &str = "engine_newPayloadV5";
-    /// The `engine_newPayloadWithWitness` variant of the proven method.
-    pub const WITH_WITNESS_METHOD: &str = "engine_newPayloadWithWitnessV5";
-
-    /// Decodes the parameters of `method`, or returns `None` for any other method.
-    pub fn decode(method: &str, params: Value) -> Option<serde_json::Result<Self>> {
-        (method == Self::METHOD).then(|| serde_json::from_value(params))
+impl NewPayloadVersion {
+    /// Returns the version of a proven `engine_newPayload` method.
+    pub fn from_method(method: &str) -> Option<Self> {
+        match method {
+            "engine_newPayloadV5" => Some(Self::V5),
+            _ => None,
+        }
     }
 
-    /// Returns the block hash of the payload.
-    pub fn block_hash(&self) -> B256 {
-        self.0.payload_inner.payload_inner.payload_inner.block_hash
+    /// Returns the `engine_newPayload` method.
+    pub fn method(self) -> &'static str {
+        match self {
+            Self::V5 => "engine_newPayloadV5",
+        }
     }
 
-    /// Returns the block number of the payload.
-    pub fn block_number(&self) -> u64 {
-        self.0
-            .payload_inner
-            .payload_inner
-            .payload_inner
-            .block_number
+    /// Returns the `engine_newPayloadWithWitness` method.
+    pub fn with_witness_method(self) -> &'static str {
+        match self {
+            Self::V5 => "engine_newPayloadWithWitnessV5",
+        }
     }
 
-    /// Returns the timestamp of the payload.
-    pub fn timestamp(&self) -> u64 {
-        self.0.payload_inner.payload_inner.payload_inner.timestamp
-    }
-
-    /// Returns the gas used by the payload.
-    pub fn gas_used(&self) -> u64 {
-        self.0.payload_inner.payload_inner.payload_inner.gas_used
-    }
-
-    /// Returns the gas limit of the payload.
-    pub fn gas_limit(&self) -> u64 {
-        self.0.payload_inner.payload_inner.payload_inner.gas_limit
+    /// Decodes the JSON params of the method.
+    pub fn decode_params(self, params: &str) -> anyhow::Result<NewPayloadRequest> {
+        match self {
+            Self::V5 => serde_json::from_str::<NewPayloadRequestV5>(params)?.try_into(),
+        }
     }
 }
 
-impl TryFrom<NewPayloadParams> for NewPayloadRequest {
+/// The `engine_newPayloadV5` params as `NewPayloadRequestGloas` with the Engine API types.
+#[derive(Debug, Deserialize)]
+struct NewPayloadRequestV5 {
+    execution_payload: EngineExecutionPayloadV4,
+    versioned_hashes: Vec<B256>,
+    parent_beacon_block_root: B256,
+    execution_requests: Vec<Bytes>,
+}
+
+impl TryFrom<NewPayloadRequestV5> for NewPayloadRequest {
     type Error = anyhow::Error;
 
-    fn try_from(params: NewPayloadParams) -> anyhow::Result<Self> {
-        let NewPayloadParams(payload, versioned_hashes, parent_beacon_block_root, requests) =
-            params;
-        let versioned_hashes: Vec<[u8; 32]> =
-            versioned_hashes.into_iter().map(|hash| hash.0).collect();
+    fn try_from(request: NewPayloadRequestV5) -> anyhow::Result<Self> {
+        let versioned_hashes: Vec<[u8; 32]> = request
+            .versioned_hashes
+            .into_iter()
+            .map(|hash| hash.0)
+            .collect();
         Ok(Self::Gloas(NewPayloadRequestGloas {
-            execution_payload: execution_payload_v4(payload)?,
+            execution_payload: execution_payload_v4(request.execution_payload)?,
             versioned_hashes: versioned_hashes.into(),
-            parent_beacon_block_root: parent_beacon_block_root.0,
-            execution_requests: execution_requests_gloas(&requests)?,
+            parent_beacon_block_root: request.parent_beacon_block_root.0,
+            execution_requests: execution_requests_gloas(&request.execution_requests)?,
         }))
-    }
-}
-
-impl TryFrom<&NewPayloadRequest> for NewPayloadParams {
-    type Error = anyhow::Error;
-
-    fn try_from(request: &NewPayloadRequest) -> anyhow::Result<Self> {
-        let NewPayloadRequest::Gloas(request) = request else {
-            bail!("payloads before gloas have no proven engine_newPayload version");
-        };
-        let payload = &request.execution_payload;
-        let execution_payload = EngineExecutionPayloadV4 {
-            payload_inner: EngineExecutionPayloadV3 {
-                payload_inner: ExecutionPayloadV2 {
-                    payload_inner: ExecutionPayloadV1 {
-                        parent_hash: payload.parent_hash.into(),
-                        fee_recipient: payload.fee_recipient.into(),
-                        state_root: payload.state_root.into(),
-                        receipts_root: payload.receipts_root.into(),
-                        logs_bloom: payload.logs_bloom.into(),
-                        prev_randao: payload.prev_randao.into(),
-                        block_number: payload.block_number,
-                        gas_limit: payload.gas_limit,
-                        gas_used: payload.gas_used,
-                        timestamp: payload.timestamp,
-                        extra_data: Bytes::copy_from_slice(&payload.extra_data),
-                        base_fee_per_gas: U256::from_le_bytes(payload.base_fee_per_gas),
-                        block_hash: payload.block_hash.into(),
-                        transactions: payload
-                            .transactions
-                            .iter()
-                            .map(|transaction| Bytes::copy_from_slice(transaction))
-                            .collect(),
-                    },
-                    withdrawals: payload
-                        .withdrawals
-                        .iter()
-                        .map(|withdrawal| EngineWithdrawal {
-                            index: withdrawal.index,
-                            validator_index: withdrawal.validator_index,
-                            address: withdrawal.address.into(),
-                            amount: withdrawal.amount,
-                        })
-                        .collect(),
-                },
-                blob_gas_used: payload.blob_gas_used,
-                excess_blob_gas: payload.excess_blob_gas,
-            },
-            block_access_list: Bytes::copy_from_slice(&payload.block_access_list),
-            slot_number: payload.slot_number,
-        };
-        let requests = &request.execution_requests;
-        let execution_requests = [
-            encode_requests(DEPOSIT_REQUEST_TYPE, &requests.deposits),
-            encode_requests(WITHDRAWAL_REQUEST_TYPE, &requests.withdrawals),
-            encode_requests(CONSOLIDATION_REQUEST_TYPE, &requests.consolidations),
-            encode_requests(BUILDER_DEPOSIT_REQUEST_TYPE, &requests.builder_deposits),
-            encode_requests(BUILDER_EXIT_REQUEST_TYPE, &requests.builder_exits),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        Ok(Self(
-            execution_payload,
-            request.versioned_hashes.iter().map(B256::from).collect(),
-            request.parent_beacon_block_root.into(),
-            execution_requests,
-        ))
     }
 }
 
@@ -248,15 +169,6 @@ fn execution_requests_gloas(requests: &[Bytes]) -> anyhow::Result<ExecutionReque
     Ok(decoded)
 }
 
-fn encode_requests<T: SszEncode>(request_type: u8, requests: &ProgressiveList<T>) -> Option<Bytes> {
-    if requests.is_empty() {
-        return None;
-    }
-    let mut bytes = vec![request_type];
-    requests.ssz_append(&mut bytes);
-    Some(bytes.into())
-}
-
 fn decode_requests<T: SszDecode>(bytes: &[u8], label: &str) -> anyhow::Result<ProgressiveList<T>> {
     ProgressiveList::from_ssz_bytes(bytes)
         .map_err(|err| anyhow!("{label} are not decodable: {err:?}"))
@@ -269,6 +181,8 @@ pub trait NewPayloadRequestExt {
     fn block_hash(&self) -> B256;
     /// Returns the gas used by the execution payload.
     fn gas_used(&self) -> u64;
+    /// Returns the gas limit of the execution payload.
+    fn gas_limit(&self) -> u64;
     /// Returns the timestamp of the execution payload, the start of its slot.
     fn timestamp(&self) -> u64;
     /// Returns the parent beacon block root, part of the request since Deneb.
@@ -299,6 +213,10 @@ impl NewPayloadRequestExt for NewPayloadRequest {
         *execution_payload_field!(self, gas_used)
     }
 
+    fn gas_limit(&self) -> u64 {
+        *execution_payload_field!(self, gas_limit)
+    }
+
     fn timestamp(&self) -> u64 {
         *execution_payload_field!(self, timestamp)
     }
@@ -317,35 +235,5 @@ impl NewPayloadRequestExt for NewPayloadRequest {
             Self::Bellatrix(_) | Self::Capella(_) | Self::Deneb(_) | Self::ElectraFulu(_) => None,
             Self::Gloas(request) => Some(request.execution_payload.slot_number),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use stateless_validator_common::guest::{
-        StatelessInput, input::new_payload_request::NewPayloadRequest,
-    };
-
-    use crate::NewPayloadParams;
-
-    /// The stateless input of block 93354 of glamsterdam-devnet-8.
-    const AMSTERDAM_STATELESS_INPUT: &[u8] =
-        include_bytes!("../../server/tests/fixture/stateless_input_amsterdam.ssz");
-
-    /// A payload survives the trip through the Engine API parameters and their JSON form.
-    #[test]
-    fn test_new_payload_params_round_trip() {
-        let (_, input) =
-            StatelessInput::from_schema_prefixed_ssz(AMSTERDAM_STATELESS_INPUT).unwrap();
-        let request = input.new_payload_request;
-
-        let params = NewPayloadParams::try_from(&request).unwrap();
-        let json = serde_json::to_value(&params).unwrap();
-        assert!(json.as_array().is_some_and(|params| params.len() == 4));
-        let params = NewPayloadParams::decode(NewPayloadParams::METHOD, json)
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(NewPayloadRequest::try_from(params).unwrap(), request);
     }
 }

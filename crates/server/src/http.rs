@@ -164,23 +164,26 @@ pub(crate) mod tests {
         })
     }
 
+    /// Every route answers with its status and content type.
     #[tokio::test]
-    async fn test_health_endpoint() {
-        let state = mock_app_state().await;
-        let response = router(state)
-            .oneshot(
-                Request::builder()
-                    .uri("/health")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 200);
+    async fn test_routes() {
+        let router = router(mock_app_state().await);
+        for (uri, status, content_type) in [
+            ("/health", 200, None),
+            ("/dashboard", 200, Some("text/html; charset=utf-8")),
+            ("/dashboard/state", 200, Some("application/json")),
+            ("/dashboard/events", 200, Some("text/event-stream")),
+            ("/unknown", 404, None),
+        ] {
+            let request = Request::get(uri).body(Body::empty()).unwrap();
+            let response = router.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), status, "{uri}");
+            let header = response.headers().get("content-type");
+            assert_eq!(
+                header.map(|value| value.to_str().unwrap()),
+                content_type,
+                "{uri}"
+            );
+        }
     }
-
-    // The `otel` request-span propagation test lives in its own integration-test binary
-    // (`tests/otel_request_span.rs`): it needs a tracing subscriber that observes spans created
-    // on other tasks, and sharing a process with parallel tests poisons the global callsite
-    // interest cache.
 }

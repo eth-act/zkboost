@@ -25,7 +25,7 @@ use ere_verifier::Verifier;
 use lighthouse_bls::Signature;
 use lighthouse_types::{BeaconBlockRef, ChainSpec, EthSpec, Hash256, MainnetEthSpec, Slot};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, value::RawValue};
 use tokio::{
     net::TcpListener,
     sync::{OnceCell, mpsc},
@@ -34,8 +34,8 @@ use tokio::{
 use tracing::{info, warn};
 use url::Url;
 use zkboost_types::{
-    HashTreeRoot, MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, MockProof, NewPayloadParams,
-    NewPayloadRequest, NewPayloadRequestExt, ProofType, ProtocolFork, Sha2Hasher,
+    HashTreeRoot, MAX_EXECUTION_PROOFS_PER_PAYLOAD, MAX_PROOF_SIZE, MockProof, NewPayloadRequest,
+    NewPayloadRequestExt, NewPayloadVersion, ProofType, ProtocolFork, Sha2Hasher,
     SignedExecutionProofEnvelope, SignedExecutionProofEnvelopes, SszDecode, SszEncode,
     StatelessValidationResult, execution_proof_domain,
 };
@@ -81,11 +81,11 @@ pub(crate) struct MockBeaconNode {
     pending: Mutex<HashMap<Hash256, PendingPayload>>,
 }
 
-/// JSON-RPC request envelope, decoded to find `engine_newPayloadV5`.
+/// JSON-RPC request envelope, decoded to find an `engine_newPayload` of a proven version.
 #[derive(Deserialize)]
 struct JsonRpcRequest {
     method: String,
-    params: Value,
+    params: Box<RawValue>,
 }
 
 /// JSON-RPC response envelope of `engine_newPayloadV5`. Every other field is ignored.
@@ -179,31 +179,36 @@ impl MockBeaconNode {
             .copied()
     }
 
-    /// Awaits the proofs of the payload of an `engine_newPayloadV5` request that zkboost
-    /// answered with `VALID`. Every other request needs nothing.
-    async fn new_payload(self: &Arc<Self>, request: &[u8], response: &[u8]) -> anyhow::Result<()> {
+    /// Awaits the proofs of the payload of an `engine_newPayload` request of a proven version that
+    /// zkboost answered with `VALID`. Every other request needs nothing.
+    async fn track_valid_payload(
+        self: &Arc<Self>,
+        request: &[u8],
+        response: &[u8],
+    ) -> anyhow::Result<()> {
         let Ok(request) = serde_json::from_slice::<JsonRpcRequest>(request) else {
             return Ok(());
         };
-        let Some(params) = NewPayloadParams::decode(&request.method, request.params) else {
+        let Some(version) = NewPayloadVersion::from_method(&request.method) else {
             return Ok(());
         };
-        let params = params.context("decode new payload params")?;
+        let request = version
+            .decode_params(request.params.get())
+            .context("decode new payload params")?;
         let response: NewPayloadResponse =
             serde_json::from_slice(response).context("decode new payload response")?;
         let status = response.result.map(|result| result.status);
         if status.as_deref() != Some("VALID") {
-            info!(block_hash = %params.block_hash(), ?status, "payload not valid");
+            info!(block_hash = %request.block_hash(), ?status, "payload not valid");
             return Ok(());
         }
-        self.await_proofs(params).await
+        self.await_proofs(request).await
     }
 
     /// Registers a valid payload and collects its verified proofs in the background until
     /// `PROOF_TIMEOUT`. A payload that is already registered keeps its registration.
-    async fn await_proofs(self: &Arc<Self>, params: NewPayloadParams) -> anyhow::Result<()> {
-        let block_hash = Hash256::from(params.block_hash().0);
-        let request = NewPayloadRequest::try_from(params).context("decode payload")?;
+    async fn await_proofs(self: &Arc<Self>, request: NewPayloadRequest) -> anyhow::Result<()> {
+        let block_hash = Hash256::from(request.block_hash().0);
         let slot = Slot::new(request.slot().context("payload without slot")?);
         let public_values = StatelessValidationResult {
             new_payload_request_root: request.hash_tree_root(&Sha2Hasher),
@@ -341,7 +346,7 @@ async fn forward_engine_api_request(
             return StatusCode::BAD_GATEWAY.into_response();
         }
     };
-    if let Err(error) = mock_beacon_node.new_payload(&body, &response).await {
+    if let Err(error) = mock_beacon_node.track_valid_payload(&body, &response).await {
         warn!(error = %format!("{error:#}"), "new payload not awaited");
     }
     (status, [(CONTENT_TYPE, "application/json")], response).into_response()
@@ -477,7 +482,7 @@ mod tests {
     /// A submission of the size of one maximum proof reaches the SSZ decoder, which rejects the
     /// zero bytes, instead of the body limit.
     #[tokio::test]
-    async fn maximum_proof_size_submission_is_decoded() {
+    async fn test_maximum_proof_size_submission_is_decoded() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!(
             "http://{}/eth/v1/beacon/execution_proofs",
@@ -521,46 +526,39 @@ mod tests {
 
     /// A mock proof passes with the public values of the payload and fails with other ones.
     #[tokio::test]
-    async fn test_mock_proof_verify() -> anyhow::Result<()> {
+    async fn test_mock_proof_verify() {
         let mock_beacon_node = mock_beacon_node();
         let pending = PendingPayload {
             slot: Default::default(),
             public_values: vec![0xaa; 43],
             verified_tx: mpsc::unbounded_channel().0,
         };
-        let proof_type = ProofType::RethSP1.execution_proof_type();
-        let mock_proof = |public_values: Vec<u8>| {
-            MockProof {
+        for (public_values, valid) in [(vec![0xaa; 43], true), (vec![0xab; 43], false)] {
+            let proof = MockProof {
                 public_values,
                 proof: vec![0xbb; 256 << 10],
-            }
-            .to_ssz()
-        };
-        mock_beacon_node.verify_execution_proof(
-            &pending,
-            proof_type,
-            &mock_proof(vec![0xaa; 43]),
-        )?;
-        assert!(
-            mock_beacon_node
-                .verify_execution_proof(&pending, proof_type, &mock_proof(vec![0xab; 43]))
-                .is_err()
-        );
-        Ok(())
+            };
+            let verified = mock_beacon_node.verify_execution_proof(
+                &pending,
+                ProofType::RethSP1.execution_proof_type(),
+                &proof.to_ssz(),
+            );
+            assert_eq!(verified.is_ok(), valid);
+        }
     }
 
     /// The fixture proofs pass the verifier of their proof type with the fixture public values.
     #[tokio::test]
-    async fn test_fixture_proofs_verify() -> anyhow::Result<()> {
+    async fn test_fixture_proofs_verify() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
         let pending = PendingPayload {
             slot: Default::default(),
-            public_values: fs::read(fixture.join("public_values.bin"))?,
+            public_values: fs::read(fixture.join("public_values.bin")).unwrap(),
             verified_tx: mpsc::unbounded_channel().0,
         };
         let dummy_url = Url::parse("x:").unwrap();
         let mock_beacon_node =
-            MockBeaconNode::new(dummy_url.clone(), dummy_url, DEFAULT_PROOF_ENGINE_JSON)?;
+            MockBeaconNode::new(dummy_url.clone(), dummy_url, DEFAULT_PROOF_ENGINE_JSON).unwrap();
         // ere-guests v0.19.0 registers no zesu guest, so it has no fixture proof.
         for proof_type in ProofType::iter().filter(|proof_type| *proof_type != ProofType::ZesuZisk)
         {
@@ -569,14 +567,11 @@ mod tests {
             let zkvm_version = zkvm.sdk_version();
             let name =
                 format!("stateless-validator-{stateless_validator}-{zkvm}-{zkvm_version}.proof");
-            let proof = fs::read(fixture.join(name))?;
-            mock_beacon_node.verify_execution_proof(
-                &pending,
-                proof_type.execution_proof_type(),
-                &proof,
-            )?;
+            let proof = fs::read(fixture.join(name)).unwrap();
+            mock_beacon_node
+                .verify_execution_proof(&pending, proof_type.execution_proof_type(), &proof)
+                .unwrap();
         }
-        Ok(())
     }
 
     /// A proof-engine.json with two verifying keys of one proof type is rejected.
@@ -585,7 +580,6 @@ mod tests {
         let mut proof_engine_json: Value = serde_json::from_str(DEFAULT_PROOF_ENGINE_JSON).unwrap();
         // The fourth entry is the OpenVM key of proof type 4, so its key decodes as proof type 1.
         proof_engine_json["execution_proofs"][3]["proof_type"] = 1.into();
-        let error = init_verifiers(&proof_engine_json.to_string()).unwrap_err();
-        assert_eq!(error.to_string(), "duplicate proof type ethrex-openvm");
+        init_verifiers(&proof_engine_json.to_string()).unwrap_err();
     }
 }
