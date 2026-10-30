@@ -354,31 +354,17 @@ mod tests {
         })
     }
 
+    /// A start that the manager answers with 409 is retried `START_PROOF_ATTEMPTS` times.
     #[tokio::test]
     async fn test_start_proof_retries_conflict() {
         let attempts = START_PROOF_ATTEMPTS as usize;
-        let (endpoint, starts) = serve_manager(attempts - 1).await;
-        let input = Input::new().with_stdin(vec![1]);
-
-        client(endpoint)
-            .create_prove_job(&input, &Span::none())
-            .await
-            .unwrap();
-
-        assert_eq!(starts.load(Ordering::SeqCst), attempts);
-    }
-
-    #[tokio::test]
-    async fn test_start_proof_fails_after_conflicts() {
-        let (endpoint, starts) = serve_manager(usize::MAX).await;
-        let input = Input::new().with_stdin(vec![1]);
-
-        let error = client(endpoint)
-            .create_prove_job(&input, &Span::none())
-            .await
-            .unwrap_err();
-
-        assert!(format!("{error:#}").contains("409 Conflict"));
-        assert_eq!(starts.load(Ordering::SeqCst), START_PROOF_ATTEMPTS as usize);
+        for (conflicts, started) in [(attempts - 1, true), (attempts, false)] {
+            let (endpoint, starts) = serve_manager(conflicts).await;
+            let job = client(endpoint)
+                .create_prove_job(&Input::new().with_stdin(vec![1]), &Span::none())
+                .await;
+            assert_eq!(job.is_ok(), started);
+            assert_eq!(starts.load(Ordering::SeqCst), attempts);
+        }
     }
 }

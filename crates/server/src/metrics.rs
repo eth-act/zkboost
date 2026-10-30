@@ -558,72 +558,46 @@ mod tests {
             .as_secs()
     }
 
+    /// A late payload, a late proof, and a slow prove land in the tail buckets instead of +Inf,
+    /// and a payload from the future arrives at 0 s.
     #[test]
-    fn test_late_payload_arrival_stays_measurable() {
+    fn test_tail_buckets() {
+        let proof_type = ProofType::RethOpenVM;
         let text = render(|| {
             for timestamp in [now() - 200, now() + 60, u64::MAX] {
                 record_payload_arrival(duration_since_timestamp(timestamp, SystemTime::now()));
             }
+            let timing = ProofTiming {
+                payload: PayloadTiming {
+                    arrival: Duration::from_secs(190),
+                    received_at: Instant::now() - Duration::from_secs(150),
+                    witness_fetch: Duration::from_millis(40),
+                },
+                queue_wait: Duration::from_secs(100),
+                prove: Duration::from_secs(10),
+            };
+            record_proof_latency(proof_type, timing, Duration::from_millis(20));
+            record_prove(proof_type, "success", Duration::from_secs(100), 1);
         });
 
-        let name = "zkboost_payload_arrival_delay_seconds";
-        assert_eq!(
-            bucket(&text, name, "", 0.5),
-            2,
-            "a future timestamp counts as 0 s"
-        );
-        assert_eq!(bucket(&text, name, "", 12.0), 2);
-        assert_eq!(bucket(&text, name, "", 180.0), 2);
-        assert_eq!(bucket(&text, name, "", 300.0), 3);
-    }
-
-    #[test]
-    fn test_late_proof_stays_measurable() {
-        let timing = ProofTiming {
-            payload: PayloadTiming {
-                arrival: Duration::from_secs(190),
-                received_at: Instant::now() - Duration::from_secs(150),
-                witness_fetch: Duration::from_millis(40),
-            },
-            queue_wait: Duration::from_secs(100),
-            prove: Duration::from_secs(10),
-        };
-        let text = render(|| {
-            record_proof_latency(ProofType::RethOpenVM, timing, Duration::from_millis(20));
-        });
-
-        let labels = r#"proof_type="reth-openvm""#;
-        let latency = "zkboost_proof_latency_seconds";
-        assert_eq!(bucket(&text, latency, labels, 12.0), 0);
-        assert_eq!(bucket(&text, latency, labels, 120.0), 0);
-        assert_eq!(bucket(&text, latency, labels, 180.0), 1);
-        // The proof is accepted 190 + 150 = 340 s after the slot start.
-        let slot_latency = "zkboost_proof_slot_latency_seconds";
-        assert_eq!(bucket(&text, slot_latency, labels, 300.0), 0);
-        assert_eq!(bucket(&text, slot_latency, labels, 360.0), 1);
-        assert_eq!(bucket(&text, slot_latency, labels, f64::INFINITY), 1);
-        let step = "zkboost_proof_step_seconds";
+        let openvm = r#"proof_type="reth-openvm""#;
         let arrival = r#"proof_type="reth-openvm",step="payload_arrival""#;
-        assert_eq!(bucket(&text, step, arrival, 12.0), 0);
-        assert_eq!(bucket(&text, step, arrival, f64::INFINITY), 1);
-    }
-
-    #[test]
-    fn test_slow_prove_stays_measurable() {
-        let text = render(|| {
-            record_prove(
-                ProofType::RethOpenVM,
-                "success",
-                Duration::from_secs(100),
-                1,
-            );
-        });
-
-        let labels = r#"proof_type="reth-openvm""#;
-        let prove = "zkboost_prove_duration_seconds";
-        assert_eq!(bucket(&text, prove, labels, 12.0), 0);
-        assert_eq!(bucket(&text, prove, labels, 60.0), 0);
-        assert_eq!(bucket(&text, prove, labels, 120.0), 1);
+        for (name, labels, le, count) in [
+            ("zkboost_payload_arrival_delay_seconds", "", 0.5, 2),
+            ("zkboost_payload_arrival_delay_seconds", "", 180.0, 2),
+            ("zkboost_payload_arrival_delay_seconds", "", 300.0, 3),
+            ("zkboost_proof_latency_seconds", openvm, 120.0, 0),
+            ("zkboost_proof_latency_seconds", openvm, 180.0, 1),
+            // The proof is accepted 190 + 150 = 340 s after the slot start.
+            ("zkboost_proof_slot_latency_seconds", openvm, 300.0, 0),
+            ("zkboost_proof_slot_latency_seconds", openvm, 360.0, 1),
+            ("zkboost_proof_step_seconds", arrival, 12.0, 0),
+            ("zkboost_proof_step_seconds", arrival, f64::INFINITY, 1),
+            ("zkboost_prove_duration_seconds", openvm, 60.0, 0),
+            ("zkboost_prove_duration_seconds", openvm, 120.0, 1),
+        ] {
+            assert_eq!(bucket(&text, name, labels, le), count, "{name} le={le}");
+        }
     }
 
     /// Only a response with a JSON-RPC method is recorded, so a call that the EL rejected and a

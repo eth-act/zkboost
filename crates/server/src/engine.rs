@@ -90,7 +90,7 @@ struct NewPayloadOutcome {
 }
 
 /// The state of a proof of a payload before a claim.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum ProofState {
     /// Proven, with the proof.
     Proven(Vec<u8>),
@@ -783,47 +783,43 @@ mod tests {
 
     use alloy_rlp::Header;
     use serde_json::json;
-    use zkboost_types::{Hash256, ProofType};
+    use zkboost_types::{ExecutionWitness, Hash256, ProgressiveList, ProofType, SszList};
 
     use crate::{
         engine::{
-            ProofState, Proofs, decode_engine_witness,
-            engine_api::{JsonRpcResponse, NewPayloadStatus, NewPayloadWithWitnessResponse},
-            new_payload_status,
+            ProofState::{InProgress, Proven, Unproven},
+            Proofs, decode_engine_witness,
+            engine_api::{
+                JsonRpcResponse,
+                NewPayloadStatus::{Accepted, Invalid, Syncing, Valid},
+                NewPayloadWithWitnessResponse,
+            },
+            new_payload_status, ssz_bytes_list,
         },
         metrics::PayloadTiming,
     };
 
+    /// An answer has a status only with a known status, and passes through without the witness.
     #[test]
-    fn test_new_payload_status_is_bounded() {
-        let answer = |result: &str| format!(r#"{{"jsonrpc":"2.0","id":1,"result":{result}}}"#);
-        for status in ["VALID", "INVALID", "SYNCING", "ACCEPTED"] {
-            let body = answer(&format!(
-                r#"{{"status":"{status}","latestValidHash":null}}"#
-            ));
-            assert_eq!(
-                new_payload_status(body.as_bytes()).map(NewPayloadStatus::as_str),
-                Some(status)
-            );
+    fn test_new_payload_response() {
+        for (result, status) in [
+            (json!({"status": "VALID", "witness": "0xc0"}), Some(Valid)),
+            (json!({"status": "INVALID"}), Some(Invalid)),
+            (json!({"status": "SYNCING"}), Some(Syncing)),
+            (json!({"status": "ACCEPTED"}), Some(Accepted)),
+            (json!({"status": "UNKNOWN", "witness": "0xc0"}), None),
+        ] {
+            let body = json!({"jsonrpc": "2.0", "id": 1, "result": result});
+            assert_eq!(new_payload_status(body.to_string().as_bytes()), status);
+            let response: JsonRpcResponse<NewPayloadWithWitnessResponse> =
+                serde_json::from_value(body).unwrap();
+            let mut result = result;
+            result.as_object_mut().unwrap().remove("witness");
+            assert_eq!(serde_json::to_value(response).unwrap()["result"], result);
         }
-        let unknown = answer(r#"{"status":"INVALID_BLOCK_HASH"}"#);
-        assert_eq!(new_payload_status(unknown.as_bytes()), None);
-        let error = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"no method"}}"#;
-        assert_eq!(new_payload_status(error.as_bytes()), None);
+        let error = json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -32601}});
+        assert_eq!(new_payload_status(error.to_string().as_bytes()), None);
         assert_eq!(new_payload_status(b"not json"), None);
-    }
-
-    /// An answer with an unknown status passes through without the witness.
-    #[test]
-    fn test_witness_removed_with_unknown_status() {
-        let body = r#"{"jsonrpc":"2.0","id":1,"result":{"status":"UNKNOWN","latestValidHash":null,"witness":"0xc0"}}"#;
-        let response =
-            serde_json::from_str::<JsonRpcResponse<NewPayloadWithWitnessResponse>>(body).unwrap();
-        assert_eq!(response.status(), None);
-        assert_eq!(
-            serde_json::to_value(&response).unwrap(),
-            json!({"jsonrpc":"2.0","id":1,"result":{"status":"UNKNOWN","latestValidHash":null}})
-        );
     }
 
     /// A proof is claimed only while it is neither proven nor in progress.
@@ -837,27 +833,38 @@ mod tests {
             witness_fetch: Duration::ZERO,
         };
 
-        assert!(matches!(
-            proofs.claim(root, proof_type, timing),
-            ProofState::Unproven
-        ));
-        assert!(matches!(
-            proofs.claim(root, proof_type, timing),
-            ProofState::InProgress
-        ));
-
-        assert!(proofs.end_claim(root, proof_type, None).is_some());
-        assert!(matches!(
-            proofs.claim(root, proof_type, timing),
-            ProofState::Unproven
-        ));
-
-        assert!(proofs.end_claim(root, proof_type, Some(vec![1])).is_some());
-        assert!(matches!(
-            proofs.claim(root, proof_type, timing),
-            ProofState::Proven(proof) if proof == [1]
-        ));
+        assert_eq!(proofs.claim(root, proof_type, timing), Unproven);
+        assert_eq!(proofs.claim(root, proof_type, timing), InProgress);
+        proofs.end_claim(root, proof_type, None).unwrap();
+        assert_eq!(proofs.claim(root, proof_type, timing), Unproven);
+        proofs.end_claim(root, proof_type, Some(vec![1])).unwrap();
+        assert_eq!(proofs.claim(root, proof_type, timing), Proven(vec![1]));
         assert!(proofs.in_progress.is_empty());
+    }
+
+    /// A witness keeps the raw RLP of every header and ignores a trailing `keys` list, and a
+    /// witness without the state does not decode.
+    #[test]
+    fn test_decode_engine_witness() {
+        let header = alloy_rlp::encode(vec![vec![0xaau8; 32], vec![0x01u8]]);
+        for (fields, witness) in [
+            (
+                vec![
+                    rlp_list(std::slice::from_ref(&header)),
+                    rlp_strings(&[&[0x60, 0x00]]),
+                    rlp_strings(&[&[0xf8; 3], &[]]),
+                    rlp_strings(&[&[0x02]]),
+                ],
+                Some(ExecutionWitness {
+                    headers: SszList::try_from(ssz(&[&header])).unwrap(),
+                    codes: ProgressiveList::from(ssz(&[&[0x60, 0x00]])),
+                    state: ProgressiveList::from(ssz(&[&[0xf8; 3], &[]])),
+                }),
+            ),
+            (vec![rlp_list(&[]), rlp_strings(&[])], None),
+        ] {
+            assert_eq!(decode_engine_witness(&rlp_list(&fields)).ok(), witness);
+        }
     }
 
     /// Wraps already RLP-encoded items into an RLP list.
@@ -876,33 +883,7 @@ mod tests {
         rlp_list(&items.iter().map(alloy_rlp::encode).collect::<Vec<_>>())
     }
 
-    /// A header in the witness is kept as its raw RLP encoding, and the trailing `keys` list
-    /// emitted by some clients is ignored.
-    #[test]
-    fn test_decode_engine_witness_keeps_header_encoding_and_ignores_keys() {
-        let header = alloy_rlp::encode(vec![vec![0xaau8; 32], vec![0x01u8]]);
-        let encoded = rlp_list(&[
-            rlp_list(std::slice::from_ref(&header)),
-            rlp_strings(&[&[0x60, 0x00]]),
-            rlp_strings(&[&[0xf8; 3], &[]]),
-            rlp_strings(&[&[0x02]]),
-        ]);
-
-        let decoded = decode_engine_witness(&encoded).unwrap();
-
-        assert_eq!(decoded.headers.len(), 1);
-        assert_eq!(decoded.headers[0].to_vec(), header);
-        assert_eq!(decoded.codes.len(), 1);
-        assert_eq!(decoded.codes[0].to_vec(), vec![0x60, 0x00]);
-        assert_eq!(decoded.state.len(), 2);
-        assert_eq!(decoded.state[0].to_vec(), vec![0xf8; 3]);
-        assert!(decoded.state[1].is_empty());
-    }
-
-    #[test]
-    fn test_decode_engine_witness_rejects_short_list() {
-        let encoded = rlp_list(&[rlp_list(&[]), rlp_strings(&[])]);
-        let error = decode_engine_witness(&encoded).unwrap_err().to_string();
-        assert!(error.contains("missing the state field"), "{error}");
+    fn ssz<const M: usize>(items: &[&[u8]]) -> Vec<SszList<u8, M>> {
+        ssz_bytes_list(items.to_vec(), "").unwrap()
     }
 }

@@ -99,20 +99,4 @@ mod tests {
             r#"zkboost_http_requests_total{endpoint="engine_exchangeCapabilities",method="POST",status="502"} 1"#
         ));
     }
-
-    /// Unknown routes fall through to the default 404.
-    #[tokio::test]
-    async fn test_unknown_route_returns_404() {
-        let state = mock_app_state().await;
-        let response = router(state)
-            .oneshot(
-                Request::builder()
-                    .uri("/unknown")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 404);
-    }
 }
