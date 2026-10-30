@@ -2427,8 +2427,8 @@ checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
 
 [[package]]
 name = "stateless-validator-common"
-version = "0.19.0"
-source = "git+https://github.com/eth-act/ere-guests?tag=v0.19.0#d6145e3201db3191d5bf5db3d47caa81fad0b226"
+version = "0.19.1"
+source = "git+https://github.com/eth-act/ere-guests?tag=v0.19.1#18dde0290b51ef7062ad8b3890335476054071f9"
 dependencies = [
  "libssz",
  "libssz-derive",

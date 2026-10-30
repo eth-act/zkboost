@@ -83,8 +83,8 @@ ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.19
 ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.19.6" }
 
 # ere-guests
-stateless-validator-catalog = { git = "https://github.com/eth-act/ere-guests", tag = "v0.19.0" }
-stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.19.0", features = ["host"] }
+stateless-validator-catalog = { git = "https://github.com/eth-act/ere-guests", tag = "v0.19.1" }
+stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.19.1", features = ["host"] }
 
 # local
 zkboost-types = { path = "crates/types" }
