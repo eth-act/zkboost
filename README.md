@@ -131,15 +131,22 @@ mock_failure = true
 
 Available proof types:
 
-| Name            | EL       | zkVM   |
-| --------------- | -------- | ------ |
-| `ethrex-openvm` | `ethrex` | OpenVM |
-| `ethrex-sp1`    | `ethrex` | SP1    |
-| `ethrex-zisk`   | `ethrex` | ZisK   |
-| `reth-openvm`   | `reth`   | OpenVM |
-| `reth-sp1`      | `reth`   | SP1    |
-| `reth-zisk`     | `reth`   | ZisK   |
-| `zesu-zisk`     | `zesu`   | ZisK   |
+| Name              | EL           | zkVM   |
+| ----------------- | ------------ | ------ |
+| `ethrex-openvm`   | `ethrex`     | OpenVM |
+| `ethrex-sp1`      | `ethrex`     | SP1    |
+| `ethrex-zisk`     | `ethrex`     | ZisK   |
+| `reth-openvm`     | `reth`       | OpenVM |
+| `reth-sp1`        | `reth`       | SP1    |
+| `reth-zisk`       | `reth`       | ZisK   |
+| `zesu-openvm`     | `zesu`       | OpenVM |
+| `zesu-sp1`        | `zesu`       | SP1    |
+| `zesu-zisk`       | `zesu`       | ZisK   |
+| `nimbus-sp1`      | `nimbus`     | SP1    |
+| `nimbus-zisk`     | `nimbus`     | ZisK   |
+| `nethermind-sp1`  | `nethermind` | SP1    |
+| `nethermind-zisk` | `nethermind` | ZisK   |
+| `zilkworm-sp1`    | `zilkworm`   | SP1    |
 
 ## Engine API
 
@@ -187,6 +194,13 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 | `5`          | `reth-sp1`         |
 | `6`          | `reth-zisk`        |
 | `7`          | `zesu-zisk`        |
+| `8`          | `nimbus-sp1`       |
+| `9`          | `nimbus-zisk`      |
+| `10`         | `nethermind-sp1`   |
+| `11`         | `nethermind-zisk`  |
+| `12`         | `zilkworm-sp1`     |
+| `13`         | `zesu-openvm`      |
+| `14`         | `zesu-sp1`         |
 
 ## Mock Beacon Node
 
