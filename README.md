@@ -131,15 +131,22 @@ mock_failure = true
 
 Available proof types:
 
-| Name            | EL       | zkVM   |
-| --------------- | -------- | ------ |
-| `ethrex-openvm` | `ethrex` | OpenVM |
-| `ethrex-sp1`    | `ethrex` | SP1    |
-| `ethrex-zisk`   | `ethrex` | ZisK   |
-| `reth-openvm`   | `reth`   | OpenVM |
-| `reth-sp1`      | `reth`   | SP1    |
-| `reth-zisk`     | `reth`   | ZisK   |
-| `zesu-zisk`     | `zesu`   | ZisK   |
+| Name              | EL           | zkVM   |
+| ----------------- | ------------ | ------ |
+| `ethrex-openvm`   | `ethrex`     | OpenVM |
+| `ethrex-sp1`      | `ethrex`     | SP1    |
+| `ethrex-zisk`     | `ethrex`     | ZisK   |
+| `reth-openvm`     | `reth`       | OpenVM |
+| `reth-sp1`        | `reth`       | SP1    |
+| `reth-zisk`       | `reth`       | ZisK   |
+| `zesu-openvm`     | `zesu`       | OpenVM |
+| `zesu-sp1`        | `zesu`       | SP1    |
+| `zesu-zisk`       | `zesu`       | ZisK   |
+| `nimbus-sp1`      | `nimbus`     | SP1    |
+| `nimbus-zisk`     | `nimbus`     | ZisK   |
+| `nethermind-sp1`  | `nethermind` | SP1    |
+| `nethermind-zisk` | `nethermind` | ZisK   |
+| `zilkworm-sp1`    | `zilkworm`   | SP1    |
 
 ## Engine API
 
@@ -153,13 +160,13 @@ The CL uses zkboost as its Engine API endpoint at `POST /`.
 
 zkboost also serves these endpoints.
 
-| Method | Endpoint            | Purpose                             |
-| ------ | ------------------- | ----------------------------------- |
-| `GET`  | `/health`           | Health check                        |
-| `GET`  | `/metrics`          | Prometheus metrics                  |
+| Method | Endpoint            | Purpose                              |
+| ------ | ------------------- | ------------------------------------ |
+| `GET`  | `/health`           | Health check                         |
+| `GET`  | `/metrics`          | Prometheus metrics                   |
 | `GET`  | `/dashboard`        | Built-in dashboard UI (when enabled) |
-| `GET`  | `/dashboard/state`  | Dashboard state JSON snapshot       |
-| `GET`  | `/dashboard/events` | Dashboard SSE event stream          |
+| `GET`  | `/dashboard/state`  | Dashboard state JSON snapshot        |
+| `GET`  | `/dashboard/events` | Dashboard SSE event stream           |
 
 ## Proof Submission
 
@@ -187,6 +194,13 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 | `5`          | `reth-sp1`         |
 | `6`          | `reth-zisk`        |
 | `7`          | `zesu-zisk`        |
+| `8`          | `nimbus-sp1`       |
+| `9`          | `nimbus-zisk`      |
+| `10`         | `nethermind-sp1`   |
+| `11`         | `nethermind-zisk`  |
+| `12`         | `zilkworm-sp1`     |
+| `13`         | `zesu-openvm`      |
+| `14`         | `zesu-sp1`         |
 
 ## Mock Beacon Node
 
@@ -196,12 +210,12 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 - It verifies the signature and the proof of every submitted envelope. The public values must be the ones of a valid payload.
 - A proof that decodes as a `MockProof` passes without a proof verification for any proof type. Every other proof goes to the verifier of its proof type.
 
-| Flag                       | Description                                 |
-| -------------------------- | ------------------------------------------- |
+| Flag                       | Description                                                               |
+| -------------------------- | ------------------------------------------------------------------------- |
 | `--cl-endpoint <URL>`      | Beacon API endpoint of the CL whose Engine API requests the mock forwards |
-| `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost              |
-| `--port <u16>`             | Port serving the beacon API (default: 3001) |
-| `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551) |
+| `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost                                            |
+| `--port <u16>`             | Port serving the beacon API (default: 3001)                               |
+| `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551)                     |
 
 ## Observability
 

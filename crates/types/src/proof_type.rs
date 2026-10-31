@@ -52,6 +52,10 @@ pub enum ProofType {
     NethermindZisk = 11,
     /// Zilkworm with SP1 backend.
     ZilkwormSP1 = 12,
+    /// Zesu with OpenVM backend.
+    ZesuOpenVM = 13,
+    /// Zesu with SP1 backend.
+    ZesuSP1 = 14,
 }
 
 impl ProofType {
@@ -67,7 +71,7 @@ impl ProofType {
                 StatelessValidatorKind::Ethrex
             }
             Self::RethSP1 | Self::RethOpenVM | Self::RethZisk => StatelessValidatorKind::Reth,
-            Self::ZesuZisk => StatelessValidatorKind::Zesu,
+            Self::ZesuOpenVM | Self::ZesuSP1 | Self::ZesuZisk => StatelessValidatorKind::Zesu,
             Self::NimbusSP1 | Self::NimbusZisk => StatelessValidatorKind::Nimbus,
             Self::NethermindSP1 | Self::NethermindZisk => StatelessValidatorKind::Nethermind,
             Self::ZilkwormSP1 => StatelessValidatorKind::Zilkworm,
@@ -81,8 +85,9 @@ impl ProofType {
             | Self::RethSP1
             | Self::NimbusSP1
             | Self::NethermindSP1
-            | Self::ZilkwormSP1 => zkVMKind::SP1,
-            Self::EthrexOpenVM | Self::RethOpenVM => zkVMKind::OpenVM,
+            | Self::ZilkwormSP1
+            | Self::ZesuSP1 => zkVMKind::SP1,
+            Self::EthrexOpenVM | Self::RethOpenVM | Self::ZesuOpenVM => zkVMKind::OpenVM,
             Self::EthrexZisk
             | Self::RethZisk
             | Self::ZesuZisk
@@ -111,6 +116,8 @@ impl ProofType {
             Self::NethermindSP1 => "nethermind-sp1",
             Self::NethermindZisk => "nethermind-zisk",
             Self::ZilkwormSP1 => "zilkworm-sp1",
+            Self::ZesuOpenVM => "zesu-openvm",
+            Self::ZesuSP1 => "zesu-sp1",
         }
     }
 }
@@ -138,6 +145,8 @@ impl FromStr for ProofType {
             "nethermind-sp1" => Self::NethermindSP1,
             "nethermind-zisk" => Self::NethermindZisk,
             "zilkworm-sp1" => Self::ZilkwormSP1,
+            "zesu-openvm" => Self::ZesuOpenVM,
+            "zesu-sp1" => Self::ZesuSP1,
             _ => return Err(ProofTypeParseError(s.to_string())),
         })
     }

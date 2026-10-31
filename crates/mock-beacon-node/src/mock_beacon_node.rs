@@ -559,9 +559,7 @@ mod tests {
         let dummy_url = Url::parse("x:").unwrap();
         let mock_beacon_node =
             MockBeaconNode::new(dummy_url.clone(), dummy_url, DEFAULT_PROOF_ENGINE_JSON).unwrap();
-        // TODO: add the fixture proof of the zesu guest that ere-guests v0.19.1 re-adds.
-        for proof_type in ProofType::iter().filter(|proof_type| *proof_type != ProofType::ZesuZisk)
-        {
+        for proof_type in ProofType::iter() {
             let stateless_validator = proof_type.stateless_validator_kind();
             let zkvm = proof_type.zkvm_kind();
             let zkvm_version = zkvm.sdk_version();
