@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.3](https://github.com/eth-act/zkboost/compare/v0.19.2...v0.19.3) (2026-10-31)
+
+
+### Features
+
+* add zesu variants ([#101](https://github.com/eth-act/zkboost/issues/101)) ([400f78d](https://github.com/eth-act/zkboost/commit/400f78da92575ef5b5c8ef3ba8e85c065e0a1786))
+
+
+### Bug Fixes
+
+* update ere-guests to v0.19.1 ([#99](https://github.com/eth-act/zkboost/issues/99)) ([31b9151](https://github.com/eth-act/zkboost/commit/31b9151b164a2e442884d2deabf977c8dc75318c))
+
 ## [0.19.2](https://github.com/eth-act/zkboost/compare/v0.19.1...v0.19.2) (2026-10-30)
 
 
