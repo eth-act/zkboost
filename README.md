@@ -160,13 +160,13 @@ The CL uses zkboost as its Engine API endpoint at `POST /`.
 
 zkboost also serves these endpoints.
 
-| Method | Endpoint            | Purpose                             |
-| ------ | ------------------- | ----------------------------------- |
-| `GET`  | `/health`           | Health check                        |
-| `GET`  | `/metrics`          | Prometheus metrics                  |
+| Method | Endpoint            | Purpose                              |
+| ------ | ------------------- | ------------------------------------ |
+| `GET`  | `/health`           | Health check                         |
+| `GET`  | `/metrics`          | Prometheus metrics                   |
 | `GET`  | `/dashboard`        | Built-in dashboard UI (when enabled) |
-| `GET`  | `/dashboard/state`  | Dashboard state JSON snapshot       |
-| `GET`  | `/dashboard/events` | Dashboard SSE event stream          |
+| `GET`  | `/dashboard/state`  | Dashboard state JSON snapshot        |
+| `GET`  | `/dashboard/events` | Dashboard SSE event stream           |
 
 ## Proof Submission
 
@@ -210,12 +210,12 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 - It verifies the signature and the proof of every submitted envelope. The public values must be the ones of a valid payload.
 - A proof that decodes as a `MockProof` passes without a proof verification for any proof type. Every other proof goes to the verifier of its proof type.
 
-| Flag                       | Description                                 |
-| -------------------------- | ------------------------------------------- |
+| Flag                       | Description                                                               |
+| -------------------------- | ------------------------------------------------------------------------- |
 | `--cl-endpoint <URL>`      | Beacon API endpoint of the CL whose Engine API requests the mock forwards |
-| `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost              |
-| `--port <u16>`             | Port serving the beacon API (default: 3001) |
-| `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551) |
+| `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost                                            |
+| `--port <u16>`             | Port serving the beacon API (default: 3001)                               |
+| `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551)                     |
 
 ## Observability
 
