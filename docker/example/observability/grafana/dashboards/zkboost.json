@@ -1769,6 +1769,21 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/ p50$/"
             },
             "properties": [
@@ -2084,6 +2099,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "#AEA2E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
                   "mode": "fixed"
                 }
               }
@@ -2463,6 +2493,21 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/ p50$/"
             },
             "properties": [
@@ -2779,6 +2824,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "#AEA2E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
                   "mode": "fixed"
                 }
               }
@@ -3105,6 +3165,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "#AEA2E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
                   "mode": "fixed"
                 }
               }
@@ -3446,6 +3521,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "#AEA2E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
                   "mode": "fixed"
                 }
               }
@@ -4535,6 +4625,21 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/\\(error\\)$/"
             },
             "properties": [
@@ -4845,6 +4950,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "#AEA2E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
                   "mode": "fixed"
                 }
               }
@@ -5171,6 +5291,21 @@
                 "id": "color",
                 "value": {
                   "fixedColor": "#AEA2E0",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^reth-pico( |$)/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#E24D42",
                   "mode": "fixed"
                 }
               }

@@ -56,6 +56,8 @@ pub enum ProofType {
     ZesuOpenVM = 13,
     /// Zesu with SP1 backend.
     ZesuSP1 = 14,
+    /// Reth with Pico backend.
+    RethPico = 15,
 }
 
 impl ProofType {
@@ -70,7 +72,9 @@ impl ProofType {
             Self::EthrexSP1 | Self::EthrexOpenVM | Self::EthrexZisk => {
                 StatelessValidatorKind::Ethrex
             }
-            Self::RethSP1 | Self::RethOpenVM | Self::RethZisk => StatelessValidatorKind::Reth,
+            Self::RethSP1 | Self::RethOpenVM | Self::RethZisk | Self::RethPico => {
+                StatelessValidatorKind::Reth
+            }
             Self::ZesuOpenVM | Self::ZesuSP1 | Self::ZesuZisk => StatelessValidatorKind::Zesu,
             Self::NimbusSP1 | Self::NimbusZisk => StatelessValidatorKind::Nimbus,
             Self::NethermindSP1 | Self::NethermindZisk => StatelessValidatorKind::Nethermind,
@@ -93,6 +97,7 @@ impl ProofType {
             | Self::ZesuZisk
             | Self::NimbusZisk
             | Self::NethermindZisk => zkVMKind::Zisk,
+            Self::RethPico => zkVMKind::Pico,
         }
     }
 
@@ -118,6 +123,7 @@ impl ProofType {
             Self::ZilkwormSP1 => "zilkworm-sp1",
             Self::ZesuOpenVM => "zesu-openvm",
             Self::ZesuSP1 => "zesu-sp1",
+            Self::RethPico => "reth-pico",
         }
     }
 }
@@ -147,6 +153,7 @@ impl FromStr for ProofType {
             "zilkworm-sp1" => Self::ZilkwormSP1,
             "zesu-openvm" => Self::ZesuOpenVM,
             "zesu-sp1" => Self::ZesuSP1,
+            "reth-pico" => Self::RethPico,
             _ => return Err(ProofTypeParseError(s.to_string())),
         })
     }
