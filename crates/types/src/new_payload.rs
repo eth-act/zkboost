@@ -79,7 +79,9 @@ impl TryFrom<NewPayloadRequestV5> for NewPayloadRequest {
             .collect();
         Ok(Self::Gloas(NewPayloadRequestGloas {
             execution_payload: execution_payload_v4(request.execution_payload)?,
-            versioned_hashes: versioned_hashes.into(),
+            versioned_hashes: SszList::try_from(versioned_hashes).map_err(|err| {
+                anyhow!("versioned hashes count should be within bounds: {err:?}")
+            })?,
             parent_beacon_block_root: request.parent_beacon_block_root.0,
             execution_requests: execution_requests_gloas(&request.execution_requests)?,
         }))

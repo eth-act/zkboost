@@ -559,7 +559,11 @@ mod tests {
         let dummy_url = Url::parse("x:").unwrap();
         let mock_beacon_node =
             MockBeaconNode::new(dummy_url.clone(), dummy_url, DEFAULT_PROOF_ENGINE_JSON).unwrap();
-        for proof_type in ProofType::iter() {
+        // The ZisK v1.4.0-alpha GPU prover cannot link the emulator of the ethrex ZisK guest, so it
+        // has no fixture proof.
+        for proof_type in
+            ProofType::iter().filter(|proof_type| *proof_type != ProofType::EthrexZisk)
+        {
             let stateless_validator = proof_type.stateless_validator_kind();
             let zkvm = proof_type.zkvm_kind();
             let zkvm_version = zkvm.sdk_version();

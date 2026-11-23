@@ -75,7 +75,7 @@ const FORK_VERSION: [u8; 4] = [0x10, 0x00, 0x00, 0x38];
 const AMSTERDAM_STATELESS_INPUT: &[u8] = include_bytes!("fixture/stateless_input_amsterdam.ssz");
 /// The SSZ `StatelessValidationResult` that the guest commits for the fixture.
 const EXPECTED_OUTPUT: [u8; 43] =
-    hex!("8c3a890206a189727e151767653f846ccddbd269eb29fb0a2f97371f23a481c6016ecca8a6010000000115");
+    hex!("ae5c1a4a1808f07a248132e44180babaa796b5499b78509b96392cd7709f814e016ecca8a6010000000115");
 /// The size of the proof data of the mock zkVMs.
 const MOCK_PROOF_SIZE: usize = 256 << 10;
 

@@ -1,4 +1,4 @@
-#![cfg_attr(any(feature = "sp1", feature = "zisk"), no_main)]
+#![cfg_attr(any(feature = "pico", feature = "sp1", feature = "zisk"), no_main)]
 
 use stateless_validator_common::{
     guest::{StatelessInput, StatelessValidationResult},
@@ -7,6 +7,12 @@ use stateless_validator_common::{
 
 #[cfg(feature = "openvm")]
 use ere_platform_openvm::{OpenVMPlatform as P, Platform};
+
+#[cfg(feature = "pico")]
+use ere_platform_pico::{pico_sdk, Platform, PicoPlatform as P};
+
+#[cfg(feature = "pico")]
+pico_sdk::entrypoint!(main);
 
 #[cfg(feature = "sp1")]
 use ere_platform_sp1::{sp1_zkvm, Platform, SP1Platform as P};

@@ -1,5 +1,6 @@
 {
   "openvm": "v2.1.0-preview",
+  "pico": "v3.1.5",
   "sp1": "v6.9.0",
-  "zisk": "v1.3.2-alpha"
+  "zisk": "v1.4.0-alpha"
 }

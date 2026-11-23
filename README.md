@@ -141,6 +141,7 @@ Available proof types:
 | `reth-zisk`       | `reth`       | ZisK   |
 | `zesu-openvm`     | `zesu`       | OpenVM |
 | `zesu-sp1`        | `zesu`       | SP1    |
+| `reth-pico`       | `reth`       | Pico   |
 | `zesu-zisk`       | `zesu`       | ZisK   |
 | `nimbus-sp1`      | `nimbus`     | SP1    |
 | `nimbus-zisk`     | `nimbus`     | ZisK   |
@@ -201,6 +202,7 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 | `12`         | `zilkworm-sp1`     |
 | `13`         | `zesu-openvm`      |
 | `14`         | `zesu-sp1`         |
+| `15`         | `reth-pico`        |
 
 ## Mock Beacon Node
 

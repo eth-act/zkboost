@@ -10,7 +10,7 @@ set -Eeuo pipefail
 MOCK_GUEST_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 ERE_VERSION=$(sed -nE 's|.*eth-act/ere", tag = "v([0-9.]+)".*|\1|p' "$MOCK_GUEST_DIR/Cargo.toml" | head -n 1)
 
-for ZKVM in openvm sp1 zisk; do
+for ZKVM in openvm pico sp1 zisk; do
     ERE_RUSTFLAGS=""
     if [[ $ZKVM == zisk ]]; then
         ERE_RUSTFLAGS="-C target-feature=+unaligned-scalar-mem"
