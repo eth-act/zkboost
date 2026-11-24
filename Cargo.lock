@@ -3795,7 +3795,7 @@ dependencies = [
 
 [[package]]
 name = "mock-beacon-node"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -8937,7 +8937,7 @@ dependencies = [
 
 [[package]]
 name = "zkboost-server"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
@@ -8984,7 +8984,7 @@ dependencies = [
 
 [[package]]
 name = "zkboost-types"
-version = "0.19.3"
+version = "0.20.0"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-engine",

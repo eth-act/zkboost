@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.20.0](https://github.com/eth-act/zkboost/compare/v0.19.3...v0.20.0) (2026-11-24)
+
+
+### Features
+
+* update ere and ere-guests to v0.20.x ([#102](https://github.com/eth-act/zkboost/issues/102)) ([ae8ac2a](https://github.com/eth-act/zkboost/commit/ae8ac2ae31530c66c2143422244413758ba25b4c))
+
+
+### Bug Fixes
+
+* use the ere-guests asset version of Pico in zkvm-version.json ([#104](https://github.com/eth-act/zkboost/issues/104)) ([53d7d82](https://github.com/eth-act/zkboost/commit/53d7d82600b7a697001b26d8e2756a172e49254a))
+
 ## [0.19.3](https://github.com/eth-act/zkboost/compare/v0.19.2...v0.19.3) (2026-10-31)
 
 
