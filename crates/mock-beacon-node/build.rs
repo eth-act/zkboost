@@ -16,15 +16,15 @@ fn main() {
     let (platform, sha256) = match env::var("TARGET").unwrap().as_str() {
         "x86_64-unknown-linux-gnu" => (
             "linux-amd64",
-            "c51b01524c97d08bea7d2e4917adf643225b6d201b2d1e6b1b662a7c6355c7f5",
+            "536d37fe209194841cc7cdaa5a84f6ae64b9b3b66f2e34fba9ac18ec7b6c8d57",
         ),
         "aarch64-unknown-linux-gnu" => (
             "linux-arm64",
-            "aff72b8f477314a6c189d417407bc70670536f1f42c3c807d3d5c01c62b64806",
+            "5dea125f40c6af755deef9ede374fc9deb4412e738fc9120d3a64b1b66dfa9cd",
         ),
         "aarch64-apple-darwin" => (
             "darwin-arm64",
-            "66f0b7a00c5b1439976058d5b6ecf28645db989635222e492ba10960da788b08",
+            "18daea2770a4615cdaed539a4e5395315cd2c5440063f6ba2c8744d739301383",
         ),
         target => panic!("ere has no prebuilt verifier for {target}"),
     };

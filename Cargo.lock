@@ -301,7 +301,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -312,7 +312,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -714,7 +714,7 @@ dependencies = [
 [[package]]
 name = "bls"
 version = "0.2.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "alloy-primitives",
  "blst",
@@ -1553,8 +1553,8 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "ere-catalog"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "ere-util-build",
  "serde",
@@ -1563,8 +1563,8 @@ dependencies = [
 
 [[package]]
 name = "ere-cluster-client-zisk"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "bincode",
  "ere-compiler-core",
@@ -1583,21 +1583,21 @@ dependencies = [
 
 [[package]]
 name = "ere-codec"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 
 [[package]]
 name = "ere-compiler-core"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "ere-prover-core"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "anyhow",
  "auto_impl",
@@ -1616,8 +1616,8 @@ dependencies = [
 
 [[package]]
 name = "ere-server-api"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "prost",
  "serde",
@@ -1626,8 +1626,8 @@ dependencies = [
 
 [[package]]
 name = "ere-server-client"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "ere-prover-core",
  "ere-server-api",
@@ -1641,16 +1641,16 @@ dependencies = [
 
 [[package]]
 name = "ere-util-build"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "cargo_metadata",
 ]
 
 [[package]]
 name = "ere-verifier-core"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "auto_impl",
  "ere-codec",
@@ -1660,12 +1660,12 @@ dependencies = [
 [[package]]
 name = "ere-verifier-rust"
 version = "0.0.0"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 
 [[package]]
 name = "ere-verifier-zisk"
-version = "0.20.2"
-source = "git+https://github.com/eth-act/ere?tag=v0.20.2#4d21321114d3423f67c8e447e4b1d9f1b786789f"
+version = "0.20.4"
+source = "git+https://github.com/eth-act/ere?tag=v0.20.4#f37c6f4a2e622c3368e23a2c8bb8b7ffca3e2d76"
 dependencies = [
  "bincode",
  "ere-util-build",
@@ -1682,13 +1682,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
 name = "eth2_interop_keypairs"
 version = "0.2.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "bls",
  "ethereum_hashing",
@@ -1701,7 +1701,7 @@ dependencies = [
 [[package]]
 name = "eth2_key_derivation"
 version = "0.1.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "bls",
  "num-bigint-dig",
@@ -1713,7 +1713,7 @@ dependencies = [
 [[package]]
 name = "eth2_keystore"
 version = "0.1.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "aes",
  "bls",
@@ -1747,9 +1747,9 @@ dependencies = [
 
 [[package]]
 name = "ethereum_serde_utils"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dc1355dbb41fbbd34ec28d4fb2a57d9a70c67ac3c19f6a5ca4d4a176b9e997a"
+checksum = "38df44a7a271ab43835678f9215b53cc2523e4714a215da6643d83dc110245da"
 dependencies = [
  "alloy-primitives",
  "hex",
@@ -1867,7 +1867,7 @@ dependencies = [
 [[package]]
 name = "fixed_bytes"
 version = "0.1.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "alloy-primitives",
  "safe_arith",
@@ -2521,7 +2521,7 @@ dependencies = [
 [[package]]
 name = "int_to_bytes"
 version = "0.2.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "bytes",
 ]
@@ -2628,7 +2628,7 @@ dependencies = [
 [[package]]
 name = "kzg"
 version = "0.1.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "educe",
  "ethereum_hashing",
@@ -2784,7 +2784,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "merkle_proof"
 version = "0.2.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "alloy-primitives",
  "ethereum_hashing",
@@ -2985,7 +2985,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3912,7 +3912,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4471,7 +4471,7 @@ dependencies = [
 [[package]]
 name = "swap_or_not_shuffle"
 version = "0.2.0"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "alloy-primitives",
  "ethereum_hashing",
@@ -4568,7 +4568,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5061,7 +5061,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 [[package]]
 name = "types"
 version = "0.2.1"
-source = "git+https://github.com/sigp/lighthouse?branch=unstable#c8fef25ec52e7c95e0f26795bc0eee9e3fe00168"
+source = "git+https://github.com/sigp/lighthouse?branch=unstable#dbd2824326af23655a9e50b75046a29739203dac"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
