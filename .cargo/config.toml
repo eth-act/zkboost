@@ -1,0 +1,11 @@
+# The build script of the mock beacon node fetches the prebuilt ere verifier library. It runs after
+# `ere-verifier-rust` compiles, so these entries replace the build script of `ere-verifier-rust`
+# and move the library to the last link step.
+[target.x86_64-unknown-linux-gnu.ere_verifier_c]
+rustc-link-lib = ["static:-bundle=ere_verifier_c"]
+
+[target.aarch64-unknown-linux-gnu.ere_verifier_c]
+rustc-link-lib = ["static:-bundle=ere_verifier_c"]
+
+[target.aarch64-apple-darwin.ere_verifier_c]
+rustc-link-lib = ["static:-bundle=ere_verifier_c"]

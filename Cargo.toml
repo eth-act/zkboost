@@ -32,7 +32,7 @@ clap = "4.5"
 lru = "0.12"
 memchr = "2"
 metrics = "0.24"
-metrics-exporter-prometheus = "0.16"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
 rand = "0.9.2"
 reqwest = "0.12"
 reqwest-eventsource = "0.6"
@@ -46,7 +46,7 @@ tokio-util = "0.7"
 toml_edit = "0.24"
 tower-http = "0.6"
 opentelemetry = "0.31"
-opentelemetry-otlp = "0.31"
+opentelemetry-otlp = { version = "0.31", default-features = false }
 opentelemetry_sdk = "0.31"
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
@@ -72,10 +72,10 @@ alloy-rpc-types-engine = "2"
 
 # ere
 ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
-ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
+ere-verifier-rust = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
 ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
 ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
-ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
+ere-codec = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
 
 # ere-guests
 stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.20.0", features = ["host"] }

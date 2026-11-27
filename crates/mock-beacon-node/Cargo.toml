@@ -27,10 +27,14 @@ lighthouse_types.workspace = true
 ethereum_serde_utils.workspace = true
 
 # ere
-ere-verifier.workspace = true
+ere-catalog.workspace = true
+ere-verifier-rust.workspace = true
 
 # local
 zkboost-server.workspace = true
+
+[build-dependencies]
+sha2.workspace = true
 
 [dev-dependencies]
 metrics.workspace = true

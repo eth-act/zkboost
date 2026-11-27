@@ -24,7 +24,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use ere_verifier::Verifier;
+use ere_catalog::zkVMKind;
+use ere_verifier_rust::{Verifier, ZkVMKind};
 use lighthouse_bls::{PublicKey, Signature};
 use lighthouse_types::{ChainSpec, EthSpec, MainnetEthSpec, Slot};
 use reqwest::redirect::Policy;
@@ -327,7 +328,7 @@ impl MockBeaconNode {
                 let Some(verifier) = self.verifiers.get(&proof_type) else {
                     bail!("unsupported proof type {proof_type}")
                 };
-                verifier.verify(proof)?.to_vec()
+                verifier.verify(proof)?
             }
         };
         // A zkVM with fixed size public values pads the SSZ result with zeros.
@@ -383,7 +384,14 @@ fn verifiers(proof_engine_json: &str) -> anyhow::Result<HashMap<u8, Verifier>> {
     {
         let proof_type =
             ProofType::from_repr(id).with_context(|| format!("unknown proof type {id}"))?;
-        let verifier = Verifier::new(proof_type.zkvm_kind(), &program_vk)
+        let zkvm_kind = match proof_type.zkvm_kind() {
+            zkVMKind::OpenVM => ZkVMKind::OpenVM,
+            zkVMKind::SP1 => ZkVMKind::SP1,
+            zkVMKind::Zisk => ZkVMKind::Zisk,
+            zkVMKind::LambdaVM => ZkVMKind::LambdaVM,
+            zkVMKind::Pico => ZkVMKind::Pico,
+        };
+        let verifier = Verifier::new(zkvm_kind, &program_vk)
             .with_context(|| format!("decode verifying key of {proof_type}"))?;
         ensure!(
             verifiers.insert(id, verifier).is_none(),

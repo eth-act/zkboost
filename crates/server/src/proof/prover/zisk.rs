@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use ere_cluster_client_zisk::{Error, Input, RemoteProverConfig, ZiskClusterClient};
-use ere_verifier_zisk::codec::Encode;
+use ere_codec::Encode;
 use tokio_util::task::TaskTracker;
 use tracing::Span;
 
