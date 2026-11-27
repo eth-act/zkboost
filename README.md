@@ -125,7 +125,7 @@ mock_proving_time = { kind = "linear", ms_per_mgas = 300 }
 # Simulated failure (always returns a proving error)
 [[zkvm]]
 kind = "mock"
-proof_type = "reth-openvm"
+proof_type = "zesu-sp1"
 mock_failure = true
 ```
 
@@ -182,7 +182,7 @@ zkboost signs every proof as the configured validator and posts it to `cl_beacon
 | `GET /eth/v1/beacon/headers?parent_root=`            | The children of the parent beacon block root    | Per proof without an event |
 | `GET /eth/v2/beacon/blocks/{root}`                   | The payload bid of a listed child               | Per listed child           |
 
-zkboost forwards payloads without proving until the beacon node answers the startup routes. zkboost submits no proof if two child blocks carry the payload, or if the child block has another slot.
+zkboost forwards payloads without proving until the beacon node answers the startup routes and a zkVM is connected. zkboost submits no proof if two child blocks carry the payload, or if the child block has another slot.
 
 The table gives the EIP-8025 proof type of every zkboost proof type.
 
@@ -218,6 +218,7 @@ The table gives the EIP-8025 proof type of every zkboost proof type.
 | `--zkboost-endpoint <URL>` | Engine API endpoint of zkboost                                            |
 | `--port <u16>`             | Port serving the beacon API (default: 3001)                               |
 | `--engine-port <u16>`      | Port serving the Engine API to the CL (default: 8551)                     |
+| `--proof-engine <PATH>`    | `proof-engine.json` with the verifying keys (default: every proof type)   |
 
 ## Observability
 
@@ -252,9 +253,9 @@ The zkboost dashboard is auto-provisioned and available at Grafana > Dashboards 
 | `zkboost_witness_fetch_total`              | Counter   | Witness fetch round trips by status                  |
 | `zkboost_witness_fetch_duration_seconds`   | Histogram | Witness fetch round trip time                        |
 | `zkboost_witness_bytes`                    | Histogram | Witness sizes of valid payloads                      |
-| `zkboost_proof_dispatch_failures_total`    | Counter   | Proof requests that end before a worker, by reason   |
-| `zkboost_queue_depth`                      | Gauge     | Proof inputs waiting for a worker                    |
-| `zkboost_queue_wait_duration_seconds`      | Histogram | Time a proof request waits for a worker              |
+| `zkboost_proof_dispatch_failures_total`    | Counter   | Proof requests that end before a prover, by reason   |
+| `zkboost_queue_depth`                      | Gauge     | Proof inputs waiting for a prover                    |
+| `zkboost_queue_wait_duration_seconds`      | Histogram | Time a proof request waits for a prover              |
 | `zkboost_prove_total`                      | Counter   | Prove operations by proof type and status            |
 | `zkboost_prove_duration_seconds`           | Histogram | Proof generation time                                |
 | `zkboost_prove_proof_bytes`                | Histogram | Generated proof sizes                                |
@@ -265,7 +266,7 @@ The zkboost dashboard is auto-provisioned and available at Grafana > Dashboards 
 | `zkboost_proof_slot_latency_seconds`       | Histogram | Time from the slot start to the accepted proof       |
 | `zkboost_proof_step_seconds`               | Histogram | Time of each step of an accepted proof               |
 | `zkboost_validator_ready`                  | Gauge     | 1 once the validator that proving needs is ready     |
-| `zkboost_programs_loaded`                  | Gauge     | Number of loaded zkVMs                               |
+| `zkboost_programs_loaded`                  | Gauge     | Number of zkVMs ready to prove                       |
 | `zkboost_build_info`                       | Gauge     | Build version info                                   |
 
 ## Supported Backends

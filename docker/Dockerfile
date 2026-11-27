@@ -14,7 +14,7 @@ COPY . .
 RUN --mount=type=cache,sharing=locked,target=/app/target/ \
     --mount=type=cache,sharing=locked,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry/ \
-    cargo build --release --features otel --bin zkboost --bin mock-beacon-node && \
+    cargo build --release --bin zkboost --bin mock-beacon-node && \
     cp /app/target/release/zkboost /app/zkboost && \
     cp /app/target/release/mock-beacon-node /app/mock-beacon-node
 

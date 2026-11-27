@@ -6,7 +6,7 @@ The Kurtosis testnet has three Geth/Lighthouse participants that produce blocks 
 
 ## Proof flow
 
-- The execution endpoint of the fourth Lighthouse is the mock beacon node. The mock forwards every Engine API request to zkboost with the JWT of the Lighthouse unchanged and answers with the response of zkboost.
+- The execution endpoint of the fourth Lighthouse is the mock beacon node. The mock forwards every Engine API request to zkboost with the JWT of the Lighthouse unchanged and returns the response of zkboost.
 - zkboost forwards the request to the dedicated Geth. For a valid `engine_newPayloadV5` payload it obtains the witness, proves the payload with the mocks, and exports its spans to Tempo.
 - zkboost submits the signed proofs to the mock beacon node. The mock looks up the beacon block of every envelope at the fourth Lighthouse and verifies the signature and the proof. Every other beacon API request goes to that Lighthouse.
 

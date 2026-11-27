@@ -1,14 +1,13 @@
-//! zkboost proof node library.
-//!
-//! Re-exports internal modules so that integration tests and the binary
-//! can share the same code.
+//! zkboost, an Engine API proxy that proves execution payloads.
 
+pub use stateless_validator_common;
+
+pub use crate::server::Server;
+
+pub mod beacon;
 pub mod config;
-pub(crate) mod dashboard;
-pub(crate) mod engine;
-pub mod http;
-pub mod metrics;
-#[cfg(feature = "otel")]
-pub mod otel;
+pub mod engine;
+pub mod observability;
 pub mod proof;
-pub mod server;
+mod server;
+pub mod util;
