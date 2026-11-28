@@ -1,8 +1,2 @@
 target/
-local/
-notes.md
-.env
 .vscode
-test-fixture
-*.log
-.DS_Store
