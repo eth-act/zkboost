@@ -5,22 +5,29 @@
 
 zkboost is an Engine API proxy between a consensus layer and its execution layer.
 
-1. The CL sends its Engine API requests to zkboost in place of the EL.
-2. zkboost forwards every request as is to the EL. Except `engine_newPayloadV5`, it forwards as `engine_newPayloadWithWitnessV5` to get the execution witness in the same request, and reponds the CL without the witness.
-3. For each `VALID` payload, every configured prover creates the execution proofs 
-4. zkboost signs execution proofs as a validator and submits it to the beacon node.
+- The CL sends its Engine API requests to zkboost in place of the EL.
+- zkboost forwards each request to the EL unchanged. It sends `newPayload` as `newPayloadWithWitness` to get the witness, and removes the witness from the response to the CL.
+- Each configured prover proves every `VALID` payload.
+- zkboost signs the proofs as a validator and submits them to the beacon node.
 
 ```mermaid
 flowchart LR
-    CL["Beacon Node"] -- "1. newPayload" --> Z["zkboost"]
-    Z -- "4. signed execution proofs" --> CL
-    %% The hidden box balances the provers, so the three boxes stay in one row.
-    Z ~~~ S[" "]
-    Z ~~~ S
-    Z -- "2. newPayloadWithWitness" --> EL["Execution Layer"]
-    Z -- "3. payload and witness" --> P["Provers"]
-    P -- "proof" --> Z
-    style S fill:none,stroke:none
+    CL["Beacon Node"] 
+    Z["zkboost"]
+    EL["Execution Layer"]
+    P["Provers"]
+    D[" "]
+
+    CL -- "1. newPayload" --> Z
+    Z ~~~ D
+    Z ~~~ D
+    Z -- "2. newPayloadWithWitness" --> EL
+    EL -- "3. payload status & witness" --> Z
+    Z -- "4. payload status" --> CL
+    Z -- "5. payload & witness" --> P
+    P -- "6. proof" --> Z
+    Z -- "7. signed execution proofs" --> CL
+    style D fill:none,stroke:none
 ```
 
 The proving runs after the response to the CL. zkboost forwards without proving until the beacon node responds at startup and a zkVM is connected, and for an EL without `engine_newPayloadWithWitnessV5`.
