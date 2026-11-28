@@ -204,7 +204,7 @@ mod tests {
         let (_, toml) = readme.split_once("```toml\n").unwrap();
         let (toml, _) = toml.split_once("```").unwrap();
         let config: Config = toml.parse().unwrap();
-        assert_eq!(config.zkvm.len(), 7);
+        assert_eq!(config.zkvm.len(), 6);
 
         for example in ["mock-beacon-node", "observability", "testnet"] {
             let path = format!("{ROOT}/docker/example/{example}/zkboost/config.toml");
