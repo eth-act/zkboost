@@ -7,20 +7,20 @@ zkboost is an Engine API proxy between a consensus layer and its execution layer
 
 1. The CL sends its Engine API requests to zkboost in place of the EL.
 2. zkboost forwards every request as is to the EL. Except `engine_newPayloadV5`, it forwards as `engine_newPayloadWithWitnessV5` to get the execution witness in the same request, and reponds the CL without the witness.
-3. For each `VALID` payload, every configured zkVM creates the execution proofs 
+3. For each `VALID` payload, every configured prover creates the execution proofs 
 4. zkboost signs execution proofs as a validator and submits it to the beacon node.
 
 ```mermaid
-flowchart TB
-    subgraph row[" "]
-        direction LR
-        CL["Beacon node"] -- "1. Engine API" --> Z["zkboost"]
-        Z -- "2. Engine API<br/>newPayload with witness" --> EL["Execution layer"]
-        Z -- "4. signed execution proofs" --> CL
-    end
-    row -- "3. payload and witness" --> P["zkVM provers"]
-    P -- "proof" --> row
-    style row fill:none,stroke:none
+flowchart LR
+    CL["Beacon Node"] -- "1. newPayload" --> Z["zkboost"]
+    Z -- "4. signed execution proofs" --> CL
+    %% The hidden box balances the provers, so the three boxes stay in one row.
+    Z ~~~ S[" "]
+    Z ~~~ S
+    Z -- "2. newPayloadWithWitness" --> EL["Execution Layer"]
+    Z -- "3. payload and witness" --> P["Provers"]
+    P -- "proof" --> Z
+    style S fill:none,stroke:none
 ```
 
 The proving runs after the response to the CL. zkboost forwards without proving until the beacon node responds at startup and a zkVM is connected, and for an EL without `engine_newPayloadWithWitnessV5`.
@@ -118,14 +118,14 @@ zkboost submits each proof with `POST /eth/v1/beacon/execution_proofs` to `cl_be
 
 It reads these routes of the beacon API.
 
-| Route                                                | Reads                                   | When                      |
-| ---------------------------------------------------- | --------------------------------------- | ------------------------- |
-| `GET /eth/v1/config/spec`                            | The chain spec                          | At startup                |
-| `GET /eth/v1/beacon/genesis`                         | The genesis validators root             | At startup                |
-| `GET /eth/v1/beacon/states/head/validators/{pubkey}` | The index of the signing validator      | At startup                |
-| `GET /eth/v1/events?topics=execution_payload`        | The beacon block root of each payload   | Streamed                  |
-| `GET /eth/v1/beacon/headers?slot=&parent_root=`      | The beacon blocks of the payload slot   | Per payload without event |
-| `GET /eth/v2/beacon/blocks/{root}`                   | The payload bid of a listed block       | Per listed block          |
+| Route                                                | Reads                                 | When                      |
+| ---------------------------------------------------- | ------------------------------------- | ------------------------- |
+| `GET /eth/v1/config/spec`                            | The chain spec                        | At startup                |
+| `GET /eth/v1/beacon/genesis`                         | The genesis validators root           | At startup                |
+| `GET /eth/v1/beacon/states/head/validators/{pubkey}` | The index of the signing validator    | At startup                |
+| `GET /eth/v1/events?topics=execution_payload`        | The beacon block root of each payload | Streamed                  |
+| `GET /eth/v1/beacon/headers?slot=&parent_root=`      | The beacon blocks of the payload slot | Per payload without event |
+| `GET /eth/v2/beacon/blocks/{root}`                   | The payload bid of a listed block     | Per listed block          |
 
 ## Mock Beacon Node
 
