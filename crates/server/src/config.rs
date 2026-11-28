@@ -1,32 +1,114 @@
-//! TOML configuration of the proof node, with validation of the zkVM entries.
-
 use std::{
     collections::HashSet,
     fs,
+    num::{NonZeroU64, NonZeroUsize},
     path::{Path, PathBuf},
-    time::Duration,
+    str::FromStr,
 };
 
 use anyhow::{Context, ensure};
 use ere_catalog::zkVMKind;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use url::Url;
-use zkboost_types::{MAX_PROOF_SIZE, ProofType};
 
-const DEFAULT_PORT: u16 = 3000;
-const DEFAULT_PROOF_TIMEOUT_SECS: u64 = 12;
-const DEFAULT_MOCK_PROOF_SIZE: usize = 256 << 10;
-/// Leaves room for the SSZ overhead and the public values in the proof data of a mock proof.
+use crate::{beacon::execution_proof::MAX_PROOF_SIZE, proof::proof_type::ProofType};
+
+/// Leaves room for the two SSZ offsets and the public values of a mock proof.
 const MIN_MOCK_PROOF_SIZE: usize = 128;
-const DEFAULT_DASHBOARD_ENABLED: bool = false;
-const DEFAULT_DASHBOARD_RETENTION: usize = 256;
 
-fn default_port() -> u16 {
-    DEFAULT_PORT
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_port")]
+    pub port: u16,
+    pub el_engine_endpoint: Url,
+    /// Beacon API endpoint that receives the proofs.
+    pub cl_beacon_endpoint: Url,
+    /// EIP-2335 keystore of the validator that signs the proofs.
+    pub validator_keystore_path: PathBuf,
+    /// Plain text password of the keystore.
+    pub validator_keystore_password_path: PathBuf,
+    #[serde(default)]
+    pub dashboard: DashboardConfig,
+    /// Without a zkVM, every request is forwarded unchanged.
+    #[serde(default)]
+    pub zkvm: Vec<ZkvmConfig>,
 }
 
-fn default_proof_timeout_secs() -> u64 {
-    DEFAULT_PROOF_TIMEOUT_SECS
+/// The live dashboard at `/dashboard`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct DashboardConfig {
+    pub enabled: bool,
+    /// Number of recent blocks that the dashboard keeps.
+    pub retention: NonZeroUsize,
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            retention: NonZeroUsize::new(256).unwrap(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ZkvmConfig {
+    pub proof_type: ProofType,
+    #[serde(default = "default_proof_timeout_secs")]
+    pub proof_timeout_secs: NonZeroU64,
+    #[serde(flatten)]
+    pub backend: Backend,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Backend {
+    /// A remote ere-server.
+    Ere { endpoint: Url },
+    /// An in-process mock that sleeps and returns a `MockProof`.
+    Mock {
+        #[serde(default = "default_mock_proving_time")]
+        mock_proving_time: MockProvingTime,
+        /// Size of the proof data in bytes.
+        #[serde(default = "default_mock_proof_size")]
+        mock_proof_size: usize,
+        #[serde(default)]
+        mock_failure: bool,
+    },
+    /// A remote ZisK or OpenVM proving cluster.
+    Cluster {
+        endpoint: String,
+        /// Path of the guest ELF, exclusive with `elf_url`.
+        elf_path: Option<PathBuf>,
+        /// URL of the guest ELF, exclusive with `elf_path`.
+        elf_url: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MockProvingTime {
+    Constant {
+        ms: u64,
+    },
+    /// Uniform in `[min_ms, max_ms]`.
+    Random {
+        min_ms: u64,
+        max_ms: u64,
+    },
+    /// Proportional to the gas used by the block.
+    Linear {
+        ms_per_mgas: u64,
+    },
+}
+
+fn default_port() -> u16 {
+    3000
+}
+
+fn default_proof_timeout_secs() -> NonZeroU64 {
+    NonZeroU64::new(12).unwrap()
 }
 
 fn default_mock_proving_time() -> MockProvingTime {
@@ -34,518 +116,150 @@ fn default_mock_proving_time() -> MockProvingTime {
 }
 
 fn default_mock_proof_size() -> usize {
-    DEFAULT_MOCK_PROOF_SIZE
-}
-
-fn default_dashboard_enabled() -> bool {
-    DEFAULT_DASHBOARD_ENABLED
-}
-
-fn default_dashboard_retention() -> usize {
-    DEFAULT_DASHBOARD_RETENTION
-}
-
-/// Unified configuration for the zkboost proof node.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
-    /// Engine API server port.
-    #[serde(default = "default_port")]
-    pub port: u16,
-    /// EL Engine API endpoint that every Engine API request is forwarded to.
-    pub el_engine_endpoint: Url,
-    /// Beacon API endpoint that receives every proof at `POST /eth/v1/beacon/execution_proofs`.
-    pub cl_beacon_endpoint: Url,
-    /// EIP-2335 keystore of the validator that signs the proofs.
-    pub validator_keystore_path: PathBuf,
-    /// Plain text password of the keystore.
-    pub validator_keystore_password_path: PathBuf,
-    /// Dashboard feature configuration.
-    #[serde(default)]
-    pub dashboard: DashboardConfig,
-    /// zkVM backend configurations. Without an entry, every request is forwarded unchanged.
-    #[serde(default)]
-    pub zkvm: Vec<zkVMConfig>,
+    256 << 10
 }
 
 impl Config {
-    /// Loads configuration from a TOML file at the given path.
-    pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let content = fs::read_to_string(path.as_ref())?;
-        let config: Self = toml_edit::de::from_str(&content)?;
-        config.validate()?;
-        Ok(config)
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
+        fs::read_to_string(path)
+            .with_context(|| format!("read {}", path.display()))?
+            .parse()
     }
+}
 
-    fn validate(&self) -> anyhow::Result<()> {
-        ensure!(
-            self.dashboard.retention > 0,
-            "dashboard.retention must be > 0"
-        );
+impl FromStr for Config {
+    type Err = anyhow::Error;
+
+    fn from_str(toml: &str) -> anyhow::Result<Self> {
+        let config: Self = toml_edit::de::from_str(toml)?;
         let mut proof_types = HashSet::new();
-        for zkvm in &self.zkvm {
-            let proof_type = zkvm.proof_type();
+        for ZkvmConfig {
+            proof_type,
+            backend,
+            ..
+        } in &config.zkvm
+        {
             ensure!(
                 proof_types.insert(proof_type),
-                "duplicate proof_type: {proof_type}"
+                "duplicate proof_type {proof_type}"
             );
-            match zkvm {
-                zkVMConfig::Ere {
-                    proof_timeout_secs, ..
-                }
-                | zkVMConfig::Mock {
-                    proof_timeout_secs, ..
-                }
-                | zkVMConfig::Cluster {
-                    proof_timeout_secs, ..
+            match backend {
+                Backend::Ere { .. } => {}
+                Backend::Mock {
+                    mock_proving_time,
+                    mock_proof_size,
+                    ..
                 } => {
                     ensure!(
-                        *proof_timeout_secs > 0,
-                        "proof_timeout_secs must be > 0 for {proof_type}"
+                        (MIN_MOCK_PROOF_SIZE..=MAX_PROOF_SIZE).contains(mock_proof_size),
+                        "{proof_type}: mock_proof_size must be in [{MIN_MOCK_PROOF_SIZE}, {MAX_PROOF_SIZE}]"
+                    );
+                    if let MockProvingTime::Random { min_ms, max_ms } = mock_proving_time {
+                        ensure!(min_ms <= max_ms, "{proof_type}: min_ms must be <= max_ms");
+                    }
+                }
+                Backend::Cluster {
+                    elf_path, elf_url, ..
+                } => {
+                    ensure!(
+                        matches!(proof_type.zkvm_kind(), zkVMKind::Zisk | zkVMKind::OpenVM),
+                        "{proof_type}: a cluster proves zisk and openvm proof types only"
+                    );
+                    ensure!(
+                        elf_path.is_some() != elf_url.is_some(),
+                        "{proof_type}: set exactly one of elf_path and elf_url"
                     );
                 }
             }
-            if let zkVMConfig::Mock {
-                mock_proving_time: MockProvingTime::Random { min_ms, max_ms },
-                ..
-            } = zkvm
-            {
-                ensure!(
-                    min_ms <= max_ms,
-                    "mock_proving_time random: min_ms ({min_ms}) must be <= max_ms ({max_ms})"
-                );
-            }
-            if let zkVMConfig::Mock {
-                mock_proof_size, ..
-            } = zkvm
-            {
-                ensure!(
-                    (MIN_MOCK_PROOF_SIZE..=MAX_PROOF_SIZE).contains(mock_proof_size),
-                    "mock_proof_size must be in [{MIN_MOCK_PROOF_SIZE}, {MAX_PROOF_SIZE}] for {proof_type}"
-                );
-            }
-            if let zkVMConfig::Cluster {
-                proof_type,
-                elf_path,
-                elf_url,
-                ..
-            } = zkvm
-            {
-                ensure!(
-                    matches!(proof_type.zkvm_kind(), zkVMKind::Zisk | zkVMKind::OpenVM),
-                    "proof_type {proof_type} is not supported by cluster backend"
-                );
-                ensure!(
-                    elf_path.is_some() || elf_url.is_some(),
-                    "cluster zkvm {proof_type}: one of elf_path or elf_url must be set"
-                );
-                ensure!(
-                    !(elf_path.is_some() && elf_url.is_some()),
-                    "cluster zkvm {proof_type}: elf_path and elf_url are mutually exclusive"
-                );
-            }
         }
-        Ok(())
-    }
-}
-
-/// Mock proving time configuration, supporting constant, random, and gas-proportional modes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum MockProvingTime {
-    /// Fixed proving time.
-    Constant {
-        /// Proving time in milliseconds.
-        ms: u64,
-    },
-    /// Random proving time uniformly sampled from [min_ms, max_ms].
-    Random {
-        /// Minimum proving time in milliseconds.
-        min_ms: u64,
-        /// Maximum proving time in milliseconds.
-        max_ms: u64,
-    },
-    /// Proving time proportional to block gas usage.
-    Linear {
-        /// Milliseconds per million gas used.
-        ms_per_mgas: u64,
-    },
-}
-
-/// zkVM backend configuration. One of a remote ere-server, a mock, or an external proving
-/// cluster.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-#[allow(non_camel_case_types)]
-pub enum zkVMConfig {
-    /// Remote ere-server backend.
-    Ere {
-        /// Proof type.
-        proof_type: ProofType,
-        /// Timeout in seconds for proof generation.
-        #[serde(default = "default_proof_timeout_secs")]
-        proof_timeout_secs: u64,
-        /// HTTP endpoint URL of the ere-server.
-        endpoint: Url,
-    },
-    /// In-process mock backend for testing.
-    Mock {
-        /// Proof type.
-        proof_type: ProofType,
-        /// Timeout in seconds for proof generation.
-        #[serde(default = "default_proof_timeout_secs")]
-        proof_timeout_secs: u64,
-        /// Simulated proving time configuration.
-        #[serde(default = "default_mock_proving_time")]
-        mock_proving_time: MockProvingTime,
-        /// Size in bytes of the proof data of the mock proof.
-        #[serde(default = "default_mock_proof_size")]
-        mock_proof_size: usize,
-        /// Whether the mock should always fail proof generation.
-        #[serde(default)]
-        mock_failure: bool,
-    },
-    /// Remote cluster backend.
-    Cluster {
-        /// Proof type of a ZisK or OpenVM guest.
-        proof_type: ProofType,
-        /// Timeout in seconds for proof generation.
-        #[serde(default = "default_proof_timeout_secs")]
-        proof_timeout_secs: u64,
-        /// Endpoint of the cluster.
-        endpoint: String,
-        /// Optional local file path to the ELF. Mutually exclusive with `elf_url`.
-        #[serde(default)]
-        elf_path: Option<PathBuf>,
-        /// Optional URL to fetch the ELF from. Mutually exclusive with `elf_path`.
-        #[serde(default)]
-        elf_url: Option<String>,
-    },
-}
-
-impl zkVMConfig {
-    /// Returns the proof type identifier for this configuration.
-    pub fn proof_type(&self) -> ProofType {
-        match self {
-            Self::Ere { proof_type, .. }
-            | Self::Mock { proof_type, .. }
-            | Self::Cluster { proof_type, .. } => *proof_type,
-        }
-    }
-}
-
-/// Loads asset bytes from a local path or a remote URL.
-///
-/// Exactly one of `path` or `url` is expected to be set, enforced by config
-/// validation. A set `path` takes precedence.
-pub(crate) async fn load(path: &Option<PathBuf>, url: &Option<String>) -> anyhow::Result<Vec<u8>> {
-    /// Bounds a remote asset fetch so a slow or unresponsive host cannot hang
-    /// startup indefinitely.
-    const ASSET_FETCH_TIMEOUT: Duration = Duration::from_secs(120);
-
-    match (path, url) {
-        (Some(path), _) => fs::read(path).with_context(|| format!("read from {}", path.display())),
-        (_, Some(url)) => {
-            let bytes = reqwest::Client::builder()
-                .timeout(ASSET_FETCH_TIMEOUT)
-                .build()?
-                .get(url)
-                .send()
-                .await
-                .with_context(|| format!("GET {url}"))?
-                .error_for_status()
-                .with_context(|| format!("status from {url}"))?
-                .bytes()
-                .await
-                .with_context(|| format!("body from {url}"))?
-                .to_vec();
-            Ok(bytes)
-        }
-        (None, None) => unreachable!("config validation requires a path or a URL"),
-    }
-}
-
-/// Dashboard feature configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DashboardConfig {
-    /// Whether the live dashboard UI and API endpoints are enabled.
-    #[serde(default = "default_dashboard_enabled")]
-    pub enabled: bool,
-    /// Maximum number of recent block records to keep in the dashboard history.
-    #[serde(default = "default_dashboard_retention")]
-    pub retention: usize,
-}
-
-impl Default for DashboardConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_dashboard_enabled(),
-            retention: default_dashboard_retention(),
-        }
+        Ok(config)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use zkboost_types::ProofType;
+    use std::fs;
 
-    use crate::config::{Config, MockProvingTime, zkVMConfig};
+    use crate::config::{Backend, Config, MockProvingTime};
 
-    /// Parses a config with the shared top-level keys and the given zkVM entries.
-    fn parse(zkvm: &str) -> Config {
-        let toml = format!(
+    const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+
+    fn parse(zkvm: &str) -> anyhow::Result<Config> {
+        format!(
             r#"
             el_engine_endpoint = "http://localhost:8551"
             cl_beacon_endpoint = "http://localhost:4000"
-            validator_keystore_path = "/validator-keys/keys/0xaa/voting-keystore.json"
-            validator_keystore_password_path = "/validator-keys/secrets/0xaa"
+            validator_keystore_path = "voting-keystore.json"
+            validator_keystore_password_path = "password"
             {zkvm}
-        "#
-        );
-        toml_edit::de::from_str(&toml).unwrap()
+            "#
+        )
+        .parse()
     }
 
+    /// The configuration of the README and of every example loads.
     #[test]
-    fn test_parse_multiple_zkvms() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "ere"
-            endpoint = "http://ere-server:3000"
-            proof_type = "ethrex-zisk"
+    fn test_documented_configs_load() {
+        let readme = fs::read_to_string(format!("{ROOT}/README.md")).unwrap();
+        let (_, toml) = readme.split_once("```toml\n").unwrap();
+        let (toml, _) = toml.split_once("```").unwrap();
+        let config: Config = toml.parse().unwrap();
+        assert_eq!(config.zkvm.len(), 6);
 
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-zisk"
-            mock_proving_time = { kind = "constant", ms = 100 }
-        "#;
-
-        let config = parse(toml);
-
-        assert_eq!(config.zkvm.len(), 2);
-        assert_eq!(config.zkvm[0].proof_type(), ProofType::EthrexZisk);
-        assert_eq!(config.zkvm[1].proof_type(), ProofType::RethZisk);
-
-        assert!(matches!(&config.zkvm[0], zkVMConfig::Ere { .. }));
-        assert!(matches!(&config.zkvm[1], zkVMConfig::Mock { .. }));
+        for example in ["mock-beacon-node", "observability", "testnet"] {
+            let path = format!("{ROOT}/docker/example/{example}/zkboost/config.toml");
+            Config::load(path.as_ref()).unwrap();
+        }
     }
 
     #[test]
     fn test_defaults() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config = parse(toml);
+        let config = parse(r#"zkvm = [{ kind = "mock", proof_type = "reth-sp1" }]"#).unwrap();
+        assert_eq!(config.port, 3000);
+        assert_eq!(config.zkvm[0].proof_timeout_secs.get(), 12);
         assert!(matches!(
-            config.zkvm[0],
-            zkVMConfig::Mock {
-                proof_timeout_secs: 12,
+            config.zkvm[0].backend,
+            Backend::Mock {
                 mock_proving_time: MockProvingTime::Constant { ms: 6000 },
                 mock_proof_size: 262144,
-                ..
+                mock_failure: false,
             }
         ));
+        let config = parse("[dashboard]\nenabled = true").unwrap();
+        assert!(config.zkvm.is_empty() && config.dashboard.enabled);
+        assert_eq!(config.dashboard.retention.get(), 256);
+        assert!(parse("[dashboard]\nretention = 0").is_err());
     }
 
+    /// Each zkVM entry loads or is rejected.
     #[test]
-    fn test_oversized_mock_proof_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-            mock_proof_size = 4194305
+    fn test_zkvm_validation() {
+        // An entry after `!` is rejected.
+        let zkvms = r#"
+              kind = "ere", proof_type = "reth-pico", endpoint = "http://ere:3000"
+            ! kind = "ere", proof_type = "reth-pico"
+            ! kind = "ere", proof_type = "reth-risc0", endpoint = "http://ere:3000"
+            ! kind = "mock", proof_type = "reth-sp1", proof_timeout_secs = 0
+            ! kind = "mock", proof_type = "reth-sp1", mock_proof_size = 127
+              kind = "mock", proof_type = "reth-sp1", mock_proof_size = 128
+              kind = "mock", proof_type = "reth-sp1", mock_proof_size = 4194304
+            ! kind = "mock", proof_type = "reth-sp1", mock_proof_size = 4194305
+            ! kind = "mock", proof_type = "reth-sp1", mock_proving_time = { kind = "random", min_ms = 9, max_ms = 1 }
+              kind = "mock", proof_type = "reth-sp1", mock_proving_time = { kind = "linear", ms_per_mgas = 300 }
+            ! kind = "cluster", endpoint = "http://c:7000", proof_type = "reth-zisk"
+              kind = "cluster", endpoint = "http://c:7000", proof_type = "reth-zisk", elf_path = "a.elf"
+              kind = "cluster", endpoint = "http://c:7000", proof_type = "reth-openvm", elf_url = "http://a/a.elf"
+            ! kind = "cluster", endpoint = "http://c:7000", proof_type = "reth-sp1", elf_path = "a.elf"
+            ! kind = "cluster", endpoint = "http://c:7000", proof_type = "reth-zisk", elf_path = "a.elf", elf_url = "http://a/a.elf"
         "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_undersized_mock_proof_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-            mock_proof_size = 127
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_no_zkvm_accepted() {
-        let config = parse("");
-        assert!(config.zkvm.is_empty());
-        assert!(config.validate().is_ok());
-    }
-
-    #[test]
-    fn test_zero_dashboard_retention_rejected() {
-        let toml = r#"
-            [dashboard]
-            enabled = true
-            retention = 0
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_random_proving_time_min_gt_max_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-            mock_proving_time = { kind = "random", min_ms = 1000, max_ms = 50 }
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_zero_proof_timeout_secs_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-            proof_timeout_secs = 0
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_duplicate_proof_type_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-            [[zkvm]]
-            kind = "mock"
-            proof_type = "reth-sp1"
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_parse_cluster() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:7000"
-        "#;
-        let config = parse(toml);
-        assert_eq!(config.zkvm.len(), 1);
-        assert!(matches!(
-            &config.zkvm[0],
-            zkVMConfig::Cluster {
-                endpoint,
-                elf_path: None,
-                elf_url: None,
-                proof_timeout_secs: 12,
-                ..
-            } if endpoint == "http://zisk-cluster:7000"
-        ));
-        // The ELF is mandatory for the cluster backend, so a config that omits
-        // both elf_path and elf_url parses but fails validation.
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_cluster_sp1_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "reth-sp1"
-            endpoint = "http://zisk-cluster:7000"
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_cluster_openvm_accepted() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "reth-openvm"
-            endpoint = "http://openvm-cluster:3000"
-            elf_path = "/tmp/stateless-validator-reth-openvm.elf"
-        "#;
-        let config = parse(toml);
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn test_cluster_zero_proof_timeout_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:7000"
-            proof_timeout_secs = 0
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_cluster_with_elf_path() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "ethrex-zisk"
-            endpoint = "http://zisk-cluster:7000"
-            elf_path = "/tmp/stateless-validator-ethrex-zisk.elf"
-        "#;
-        let config = parse(toml);
-        assert!(matches!(
-            &config.zkvm[0],
-            zkVMConfig::Cluster {
-                elf_path: Some(path),
-                elf_url: None,
-                ..
-            } if path.to_str() == Some("/tmp/stateless-validator-ethrex-zisk.elf")
-        ));
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn test_cluster_with_elf_url() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "ethrex-zisk"
-            endpoint = "http://zisk-cluster:7000"
-            elf_url = "https://example.com/stateless-validator-ethrex-zisk.elf"
-        "#;
-        let config = parse(toml);
-        assert!(matches!(
-            &config.zkvm[0],
-            zkVMConfig::Cluster {
-                elf_path: None,
-                elf_url: Some(url),
-                ..
-            } if url == "https://example.com/stateless-validator-ethrex-zisk.elf"
-        ));
-        config.validate().unwrap();
-    }
-
-    #[test]
-    fn test_cluster_path_and_url_rejected() {
-        let toml = r#"
-            [[zkvm]]
-            kind = "cluster"
-            proof_type = "reth-zisk"
-            endpoint = "http://zisk-cluster:7000"
-            elf_path = "/tmp/x.elf"
-            elf_url = "https://example.com/x.elf"
-        "#;
-        let config = parse(toml);
-        assert!(config.validate().is_err());
+        for zkvm in zkvms.lines().map(str::trim).filter(|zkvm| !zkvm.is_empty()) {
+            let (valid, zkvm) = zkvm
+                .strip_prefix('!')
+                .map_or((true, zkvm), |zkvm| (false, zkvm));
+            let loads = parse(&format!("zkvm = [{{ {zkvm} }}]")).is_ok();
+            assert_eq!(loads, valid, "{zkvm}");
+        }
+        let duplicate = r#"zkvm = [{ kind = "mock", proof_type = "reth-sp1" }, { kind = "mock", proof_type = "reth-sp1" }]"#;
+        assert!(parse(duplicate).is_err());
     }
 }

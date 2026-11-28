@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/server",
-    "crates/types",
     "crates/mock-beacon-node",
 ]
 resolver = "2"
@@ -13,8 +12,6 @@ rust-version = "1.94.1"
 license = "MIT OR Apache-2.0"
 
 [workspace.lints.rust]
-missing_debug_implementations = "warn"
-missing_docs = "warn"
 rust_2018_idioms = { level = "deny", priority = -1 }
 unnameable_types = "warn"
 unreachable_pub = "warn"
@@ -32,10 +29,8 @@ anyhow = "1.0"
 axum = "0.8"
 bytes = "1"
 clap = "4.5"
-jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 lru = "0.12"
-metrics = "0.24"
-metrics-exporter-prometheus = "0.16"
+memchr = "2"
 rand = "0.9.2"
 reqwest = "0.12"
 reqwest-eventsource = "0.6"
@@ -43,26 +38,28 @@ serde = "1.0"
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.10.9"
 strum = "0.27.2"
-thiserror = "2"
 tokio = "1.48"
 tokio-stream = "0.1"
 tokio-util = "0.7"
 toml_edit = "0.24"
-tower = "0.5"
 tower-http = "0.6"
+url = { version = "2.5.7", features = ["serde"] }
+
+# observability
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
 opentelemetry = "0.31"
-opentelemetry-otlp = "0.31"
+opentelemetry-otlp = { version = "0.31", default-features = false }
 opentelemetry_sdk = "0.31"
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
 tracing-subscriber = "0.3"
-url = { version = "2.5.7", features = ["serde"] }
 
 # lighthouse
 ethereum_serde_utils = "0.8.0"
-lighthouse_types = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "types" }
 lighthouse_bls = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "bls" }
 lighthouse_eth2_keystore = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "eth2_keystore" }
+lighthouse_types = { git = "https://github.com/sigp/lighthouse", branch = "unstable", package = "types" }
 
 # libssz
 libssz = "0.3.0"
@@ -76,15 +73,14 @@ alloy-rlp = "0.3"
 alloy-rpc-types-engine = "2"
 
 # ere
-ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
-ere-verifier = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
-ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
-ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
-ere-verifier-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.20.2" }
+ere-catalog = { git = "https://github.com/eth-act/ere", tag = "v0.20.4" }
+ere-cluster-client-zisk = { git = "https://github.com/eth-act/ere", tag = "v0.20.4" }
+ere-codec = { git = "https://github.com/eth-act/ere", tag = "v0.20.4" }
+ere-server-client = { git = "https://github.com/eth-act/ere", tag = "v0.20.4" }
+ere-verifier-rust = { git = "https://github.com/eth-act/ere", tag = "v0.20.4" }
 
 # ere-guests
-stateless-validator-catalog = { git = "https://github.com/eth-act/ere-guests", tag = "v0.20.0" }
 stateless-validator-common = { git = "https://github.com/eth-act/ere-guests", tag = "v0.20.0", features = ["host"] }
 
 # local
-zkboost-types = { path = "crates/types" }
+zkboost-server = { path = "crates/server" }
